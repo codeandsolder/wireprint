@@ -27,8 +27,12 @@ static DATADOME_TOKEN: LazyLock<Regex> = LazyLock::new(|| {
 pub fn normalize_response_template(body: &[u8]) -> String {
     let mut value = String::from_utf8_lossy(body).into_owned();
     value = UUID.replace_all(&value, "<uuid>").into_owned();
-    value = NONCE_DOUBLE.replace_all(&value, "nonce=\"<nonce>\"").into_owned();
-    value = NONCE_SINGLE.replace_all(&value, "nonce='<nonce>'").into_owned();
+    value = NONCE_DOUBLE
+        .replace_all(&value, "nonce=\"<nonce>\"")
+        .into_owned();
+    value = NONCE_SINGLE
+        .replace_all(&value, "nonce='<nonce>'")
+        .into_owned();
     value = DATADOME_TOKEN.replace_all(&value, "$1<token>").into_owned();
     LONG_HEX.replace_all(&value, "<hex>").into_owned()
 }

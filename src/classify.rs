@@ -55,7 +55,10 @@ pub fn classify_response(status: u16, headers: &[Header], body: &[u8]) -> Outcom
     if status == 401 || status == 403 {
         evidence.push(format!("status:{status}"));
         for (needle, marker) in [
-            ("blocked due to a network policy", "body:network-policy-block"),
+            (
+                "blocked due to a network policy",
+                "body:network-policy-block",
+            ),
             ("access denied", "body:access-denied"),
             ("403 forbidden", "body:forbidden"),
             ("whoa there, pardner", "body:reddit-pardner-block"),
