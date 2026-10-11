@@ -84,10 +84,7 @@ fn profile_headers_preserve_order_and_duplicates() {
     let set: wireprint::ProfileSet = serde_json::from_str(raw).unwrap();
     let headers = &set.profiles[0].headers;
     assert_eq!(
-        headers
-            .iter()
-            .map(|h| h.name.as_str())
-            .collect::<Vec<_>>(),
+        headers.iter().map(|h| h.name.as_str()).collect::<Vec<_>>(),
         vec!["x-b", "x-a", "x-b"]
     );
     assert_eq!(headers[2].value, "3");
