@@ -9,9 +9,10 @@ A useful request observation has at least these axes:
 3. **HTTP header shape** — separate from the semantic identity token;
 4. **transport identity** — TLS/H2/H3/client emulation and concrete network endpoint;
 5. **source verification** — source-network or authenticated-bot evidence when available;
-6. **session / reputation state**;
-7. **response semantics** — content-like response, redirect, challenge, CAPTCHA, explicit block, rate limit, application error, unknown;
-8. **raw provenance** — timestamp, vantage, target, exact ordered request headers, final URI, peer, HTTP version, response headers and bounded captured body prefix.
+6. **network-path participation** — explicit evidence for serving edge, downstream platform, proxy/cache, load balancer, API gateway, service mesh, WAF/security, bot-management and server implementation, kept as independent claims rather than one vendor field;
+7. **session / reputation state**;
+8. **response semantics** — content-like response, redirect, challenge, CAPTCHA, explicit block, rate limit, application error, unknown;
+9. **raw provenance** — timestamp, vantage, target, exact ordered request headers, final URI, peer, HTTP version, response headers and bounded captured body prefix.
 
 ## Important non-equivalences
 
@@ -19,6 +20,8 @@ A useful request observation has at least these axes:
 - A User-Agent string does not authenticate a vendor.
 - A browser-looking TLS fingerprint does not prove a browser.
 - A CDN/edge provider identity does not imply its WAF is enabled.
+- A downstream platform/proxy marker does not prove that component is the outer TLS termination provider.
+- Response metadata can prove multiple path participants without proving their linear hop order.
 - Missing evidence is unknown, not negative evidence.
 - Header order and duplicates are evidence; do not round-trip request profiles through unordered maps.
 
