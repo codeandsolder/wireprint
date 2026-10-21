@@ -47,6 +47,7 @@ pub struct Outcome {
 pub enum PathElementRole {
     EdgeProvider,
     ApplicationPlatform,
+    OriginService,
     ReverseProxy,
     Cache,
     LoadBalancer,

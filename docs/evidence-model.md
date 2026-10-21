@@ -9,7 +9,7 @@ A useful request observation has at least these axes:
 3. **HTTP header shape** — separate from the semantic identity token;
 4. **transport identity** — TLS/H2/H3/client emulation and concrete network endpoint;
 5. **source verification** — source-network or authenticated-bot evidence when available;
-6. **network-path participation** — explicit evidence for serving edge, downstream platform, proxy/cache, load balancer, API gateway, service mesh, WAF/security, bot-management and server implementation, kept as independent claims rather than one vendor field;
+6. **network-path participation** — explicit evidence for serving edge, downstream platform/origin service, proxy/cache, load balancer, API gateway, service mesh, WAF/security, bot-management and server implementation, kept as independent claims rather than one vendor field;
 7. **session / reputation state**;
 8. **response semantics** — content-like response, redirect, challenge, CAPTCHA, explicit block, rate limit, application error, unknown;
 9. **raw provenance** — timestamp, vantage, target, exact ordered request headers, final URI, peer, HTTP version, response headers and bounded captured body prefix.

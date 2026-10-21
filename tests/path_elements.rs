@@ -230,12 +230,17 @@ fn fortiweb_session_cookie_is_waf_evidence() {
 }
 
 #[test]
-fn fastly_artisanal_bits_and_akamai_netstorage_are_edge_evidence() {
+fn fastly_artisanal_bits_is_edge_but_akamai_netstorage_is_origin() {
     let fastly = detect_path_elements(&[header("server", "Artisanal bits")]);
     assert!(has(&fastly, PathElementRole::EdgeProvider, "fastly"));
 
     let akamai = detect_path_elements(&[header("server", "AkamaiNetStorage")]);
-    assert!(has(&akamai, PathElementRole::EdgeProvider, "akamai"));
+    assert!(has(
+        &akamai,
+        PathElementRole::OriginService,
+        "akamai-netstorage"
+    ));
+    assert!(!has(&akamai, PathElementRole::EdgeProvider, "akamai"));
 }
 
 #[test]
@@ -296,4 +301,171 @@ fn fly_response_markers_are_edge_participation_evidence() {
         header("fly-request-id", "01JHNX6S1BW8JVCCYG28CGQBWN-chi"),
     ]);
     assert!(has(&elements, PathElementRole::EdgeProvider, "fly-io"));
+}
+
+#[test]
+fn fastly_specific_cache_headers_do_not_claim_outer_edge() {
+    for name in ["fastly-debug-path", "fastly-debug-ttl", "fastly-restarts"] {
+        let elements = detect_path_elements(&[header(name, "1")]);
+        assert!(has(&elements, PathElementRole::Cache, "fastly"));
+        assert!(!has(&elements, PathElementRole::EdgeProvider, "fastly"));
+    }
+}
+
+#[test]
+fn generic_x_cache_hits_does_not_imply_fastly() {
+    let elements = detect_path_elements(&[header("x-cache-hits", "17")]);
+    assert!(!elements.iter().any(|element| element.product == "fastly"));
+}
+
+#[test]
+fn bunny_cache_metadata_can_survive_without_bunny_server_banner() {
+    let elements = detect_path_elements(&[
+        header("cdn-pullzone", "876725"),
+        header("cdn-requestid", "6270904e7bf6eea7f431a0d81482c168"),
+    ]);
+    assert!(has(&elements, PathElementRole::Cache, "bunnycdn"));
+    assert!(!has(&elements, PathElementRole::EdgeProvider, "bunnycdn"));
+}
+
+#[test]
+fn google_frontend_banner_is_google_edge_evidence() {
+    let elements = detect_path_elements(&[header("server", "Google Frontend")]);
+    assert!(has(&elements, PathElementRole::EdgeProvider, "google-gfe"));
+}
+
+#[test]
+fn railway_separates_entry_edge_from_upstream_zone() {
+    let elements = detect_path_elements(&[
+        header("x-railway-edge", "fra1"),
+        header("x-railway-upstream-zone", "railway/europe-west4-drams3a"),
+    ]);
+    assert!(has(&elements, PathElementRole::EdgeProvider, "railway"));
+    assert!(has(
+        &elements,
+        PathElementRole::ApplicationPlatform,
+        "railway"
+    ));
+}
+
+#[test]
+fn gateway_products_use_product_specific_response_markers() {
+    for (headers, product) in [
+        (vec![header("server", "APISIX/3.16.0")], "apache-apisix"),
+        (vec![header("x-krakend-completed", "true")], "krakend"),
+        (vec![header("x-tyk-cached-response", "1")], "tyk"),
+    ] {
+        let elements = detect_path_elements(&headers);
+        assert!(has(&elements, PathElementRole::ApiGateway, product));
+    }
+}
+
+#[test]
+fn linkerd_proxy_error_is_mesh_participation() {
+    let elements = detect_path_elements(&[header(
+        "l5d-proxy-error",
+        "logical service example:80: service in fail-fast",
+    )]);
+    assert!(has(&elements, PathElementRole::ServiceMesh, "linkerd"));
+}
+
+#[test]
+fn akamai_bm_sv_is_bot_manager_evidence() {
+    let elements = detect_path_elements(&[header("set-cookie", "bm_sv=opaque; path=/; secure")]);
+    assert!(has(
+        &elements,
+        PathElementRole::BotManagement,
+        "akamai-bot-manager"
+    ));
+}
+
+#[test]
+fn s3_origin_can_be_preserved_behind_fastly() {
+    let elements = detect_path_elements(&[
+        header("server", "Fastly"),
+        header("x-amz-bucket-region", "us-east-1"),
+    ]);
+    assert!(has(&elements, PathElementRole::OriginService, "aws-s3"));
+    assert!(has(&elements, PathElementRole::EdgeProvider, "fastly"));
+}
+
+#[test]
+fn uploadserver_is_implementation_not_gfe_or_gcs_by_itself() {
+    let elements = detect_path_elements(&[header("server", "UploadServer")]);
+    assert!(has(
+        &elements,
+        PathElementRole::ServerImplementation,
+        "google-uploadserver"
+    ));
+    assert!(!has(&elements, PathElementRole::EdgeProvider, "google-gfe"));
+    assert!(!has(
+        &elements,
+        PathElementRole::OriginService,
+        "google-cloud-storage"
+    ));
+}
+
+#[test]
+fn storage_origins_use_service_specific_response_metadata() {
+    for (headers, product) in [
+        (
+            vec![header("x-goog-storage-class", "STANDARD")],
+            "google-cloud-storage",
+        ),
+        (
+            vec![header("x-ms-blob-type", "BlockBlob")],
+            "azure-blob-storage",
+        ),
+        (vec![header("x-bz-file-id", "4_zopaque")], "backblaze-b2"),
+    ] {
+        let elements = detect_path_elements(&headers);
+        assert!(has(&elements, PathElementRole::OriginService, product));
+    }
+}
+
+#[test]
+fn documented_platform_markers_can_coexist_with_outer_edges() {
+    let elements = detect_path_elements(&[
+        header("server", "cloudflare"),
+        header("x-pantheon-styx-hostname", "styx-fe1-a"),
+        header("x-ah-environment", "prod"),
+        header("via", "1.1 vegur, 1.1 opaque.cloudfront.net (CloudFront)"),
+    ]);
+    assert!(has(&elements, PathElementRole::EdgeProvider, "cloudflare"));
+    assert!(has(
+        &elements,
+        PathElementRole::EdgeProvider,
+        "aws-cloudfront"
+    ));
+    assert!(has(
+        &elements,
+        PathElementRole::ApplicationPlatform,
+        "pantheon"
+    ));
+    assert!(has(
+        &elements,
+        PathElementRole::ApplicationPlatform,
+        "acquia-cloud-platform"
+    ));
+    assert!(has(
+        &elements,
+        PathElementRole::ApplicationPlatform,
+        "heroku"
+    ));
+}
+
+#[test]
+fn gravitee_and_tyk_use_documented_gateway_markers() {
+    let gravitee = detect_path_elements(&[header("x-gravitee-request-id", "opaque")]);
+    assert!(has(&gravitee, PathElementRole::ApiGateway, "gravitee"));
+
+    let tyk = detect_path_elements(&[header("x-generator", "tyk.io")]);
+    assert!(has(&tyk, PathElementRole::ApiGateway, "tyk"));
+}
+
+#[test]
+fn aws_waf_token_cookie_is_waf_participation() {
+    let elements =
+        detect_path_elements(&[header("set-cookie", "aws-waf-token=opaque; Path=/; Secure")]);
+    assert!(has(&elements, PathElementRole::Waf, "aws-waf"));
 }

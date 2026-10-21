@@ -119,7 +119,6 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
         );
     }
     if server.contains("akamaighost")
-        || server.contains("akamainetstorage")
         || has_header(headers, "akamai-grn")
         || has_header(headers, "akamai-request-bc")
         || headers
@@ -150,12 +149,12 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
         || has_header(headers, "x-fastly-backend-reqs")
         || has_header_prefix(headers, "fastly-debug-")
     {
-        add(
-            &mut elements,
-            PathElementRole::Cache,
-            "fastly",
-            "marker:fastly-cache-participation",
-        );
+        let evidence = if has_header_prefix(headers, "fastly-debug-") {
+            "header:fastly-debug-*"
+        } else {
+            "marker:fastly-cache-participation"
+        };
+        add(&mut elements, PathElementRole::Cache, "fastly", evidence);
     }
     if server.contains("volt-adc") || has_header(headers, "x-volterra-location") {
         add(
@@ -192,7 +191,20 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             "server:bunnycdn",
         );
     }
-    if ["gws", "esf", "uploadserver"]
+    if has_header(headers, "cdn-pullzone")
+        || has_header(headers, "cdn-requestid")
+        || has_header(headers, "cdn-edgestorageid")
+    {
+        let evidence = if has_header(headers, "cdn-pullzone") {
+            "header:cdn-pullzone"
+        } else if has_header(headers, "cdn-requestid") {
+            "header:cdn-requestid"
+        } else {
+            "header:cdn-edgestorageid"
+        };
+        add(&mut elements, PathElementRole::Cache, "bunnycdn", evidence);
+    }
+    if ["gws", "esf", "google frontend"]
         .iter()
         .any(|value| has_header_value(headers, "server", value))
     {
@@ -272,16 +284,56 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             "header:rndr-id",
         );
     }
+    if has_header(headers, "x-railway-edge") {
+        add(
+            &mut elements,
+            PathElementRole::EdgeProvider,
+            "railway",
+            "header:x-railway-edge",
+        );
+    }
     if has_header(headers, "x-railway-edge") || has_header(headers, "x-railway-upstream-zone") {
         add(
             &mut elements,
             PathElementRole::ApplicationPlatform,
             "railway",
-            if has_header(headers, "x-railway-edge") {
-                "header:x-railway-edge"
-            } else {
+            if has_header(headers, "x-railway-upstream-zone") {
                 "header:x-railway-upstream-zone"
+            } else {
+                "header:x-railway-edge"
             },
+        );
+    }
+    if has_header(headers, "x-pantheon-styx-hostname") || has_header(headers, "x-styx-req-id") {
+        add(
+            &mut elements,
+            PathElementRole::ApplicationPlatform,
+            "pantheon",
+            if has_header(headers, "x-pantheon-styx-hostname") {
+                "header:x-pantheon-styx-hostname"
+            } else {
+                "header:x-styx-req-id"
+            },
+        );
+    }
+    if has_header(headers, "x-ah-environment") || has_header(headers, "x-ah-app-trace") {
+        add(
+            &mut elements,
+            PathElementRole::ApplicationPlatform,
+            "acquia-cloud-platform",
+            if has_header(headers, "x-ah-environment") {
+                "header:x-ah-environment"
+            } else {
+                "header:x-ah-app-trace"
+            },
+        );
+    }
+    if via.contains("vegur") {
+        add(
+            &mut elements,
+            PathElementRole::ApplicationPlatform,
+            "heroku",
+            "via:vegur",
         );
     }
 
@@ -313,6 +365,61 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             PathElementRole::ApiGateway,
             "kong",
             "marker:kong-gateway",
+        );
+    }
+
+    if server.starts_with("apisix/")
+        || has_header(headers, "x-apisix-upstream-status")
+        || has_header(headers, "apisix-plugins")
+    {
+        let evidence = if server.starts_with("apisix/") {
+            "server:apisix"
+        } else if has_header(headers, "x-apisix-upstream-status") {
+            "header:x-apisix-upstream-status"
+        } else {
+            "header:apisix-plugins"
+        };
+        add(
+            &mut elements,
+            PathElementRole::ApiGateway,
+            "apache-apisix",
+            evidence,
+        );
+    }
+    if has_header_prefix(headers, "x-krakend-") {
+        add(
+            &mut elements,
+            PathElementRole::ApiGateway,
+            "krakend",
+            "header:x-krakend-*",
+        );
+    }
+    if has_header(headers, "x-tyk-cached-response")
+        || header_values(headers, "x-generator").any(|value| value.eq_ignore_ascii_case("tyk.io"))
+    {
+        add(
+            &mut elements,
+            PathElementRole::ApiGateway,
+            "tyk",
+            if has_header(headers, "x-tyk-cached-response") {
+                "header:x-tyk-cached-response"
+            } else {
+                "header:x-generator=tyk.io"
+            },
+        );
+    }
+    if has_header(headers, "x-gravitee-request-id")
+        || has_header(headers, "x-gravitee-transaction-id")
+    {
+        add(
+            &mut elements,
+            PathElementRole::ApiGateway,
+            "gravitee",
+            if has_header(headers, "x-gravitee-request-id") {
+                "header:x-gravitee-request-id"
+            } else {
+                "header:x-gravitee-transaction-id"
+            },
         );
     }
 
@@ -405,6 +512,24 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             "server:istio-envoy",
         );
     }
+    if has_header(headers, "l5d-proxy-error")
+        || has_header(headers, "l5d-proxy-connection")
+        || has_header(headers, "l5d-client-id")
+    {
+        let evidence = if has_header(headers, "l5d-proxy-error") {
+            "header:l5d-proxy-error"
+        } else if has_header(headers, "l5d-client-id") {
+            "header:l5d-client-id"
+        } else {
+            "header:l5d-proxy-connection"
+        };
+        add(
+            &mut elements,
+            PathElementRole::ServiceMesh,
+            "linkerd",
+            evidence,
+        );
+    }
     if server.starts_with("nginx") {
         add(
             &mut elements,
@@ -489,6 +614,14 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             "server:litespeed",
         );
     }
+    if has_header_value(headers, "server", "UploadServer") {
+        add(
+            &mut elements,
+            PathElementRole::ServerImplementation,
+            "google-uploadserver",
+            "server:uploadserver",
+        );
+    }
     if has_header(headers, "x-varnish") || via.contains("varnish") {
         add(
             &mut elements,
@@ -514,13 +647,80 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
         );
     }
 
+    // Explicit backend/origin services. These can coexist with any outer
+    // edge/cache/gateway marker preserved in the same response.
+    if has_header_value(headers, "server", "AmazonS3") || has_header(headers, "x-amz-bucket-region")
+    {
+        add(
+            &mut elements,
+            PathElementRole::OriginService,
+            "aws-s3",
+            if has_header_value(headers, "server", "AmazonS3") {
+                "server:amazons3"
+            } else {
+                "header:x-amz-bucket-region"
+            },
+        );
+    }
+    if server.contains("akamainetstorage") {
+        add(
+            &mut elements,
+            PathElementRole::OriginService,
+            "akamai-netstorage",
+            "server:akamainetstorage",
+        );
+    }
+    if has_header(headers, "x-goog-storage-class")
+        || (has_header(headers, "x-goog-generation")
+            && has_header(headers, "x-goog-metageneration"))
+    {
+        add(
+            &mut elements,
+            PathElementRole::OriginService,
+            "google-cloud-storage",
+            if has_header(headers, "x-goog-storage-class") {
+                "header:x-goog-storage-class"
+            } else {
+                "headers:x-goog-generation+x-goog-metageneration"
+            },
+        );
+    }
+    if has_header(headers, "x-ms-blob-type") || server.contains("windows-azure-blob") {
+        add(
+            &mut elements,
+            PathElementRole::OriginService,
+            "azure-blob-storage",
+            if has_header(headers, "x-ms-blob-type") {
+                "header:x-ms-blob-type"
+            } else {
+                "server:windows-azure-blob"
+            },
+        );
+    }
+    if has_header(headers, "x-bz-file-id") || has_header(headers, "x-bz-file-name") {
+        add(
+            &mut elements,
+            PathElementRole::OriginService,
+            "backblaze-b2",
+            if has_header(headers, "x-bz-file-id") {
+                "header:x-bz-file-id"
+            } else {
+                "header:x-bz-file-name"
+            },
+        );
+    }
+
     // Security and bot-management middleware.
-    if has_header(headers, "x-amzn-waf-action") {
+    if has_header(headers, "x-amzn-waf-action") || has_cookie(&cookies, "aws-waf-token") {
         add(
             &mut elements,
             PathElementRole::Waf,
             "aws-waf",
-            "header:x-amzn-waf-action",
+            if has_header(headers, "x-amzn-waf-action") {
+                "header:x-amzn-waf-action"
+            } else {
+                "cookie:aws-waf-token"
+            },
         );
     }
     if has_header(headers, "cf-mitigated") || has_cookie(&cookies, "cf_clearance") {
@@ -546,6 +746,7 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
     if has_cookie(&cookies, "ak_bmsc")
         || has_cookie(&cookies, "bm_sz")
         || has_cookie(&cookies, "_abck")
+        || has_cookie(&cookies, "bm_sv")
     {
         add(
             &mut elements,
