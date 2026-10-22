@@ -1,127 +1,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde::{Deserialize, Serialize};
-
-use crate::model::{Observation, PathElement, PathElementRole};
+use crate::model::{
+    EndpointAssessment, EndpointEvidence, PathElement, PathElementRole, ProviderCandidate,
+    ProviderEvidenceChannel, ProviderSupport, TerminationState,
+};
 
 pub const ENDPOINT_FUSION_VERSION: &str = "builtin-endpoint-v1";
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
-#[serde(rename_all = "snake_case")]
-pub enum ProviderEvidenceChannel {
-    ResponseMetadata,
-    RoutingCname,
-    H2Transport,
-    H3Transport,
-    TlsMorphology,
-}
 
 impl ProviderEvidenceChannel {
     fn originates_termination(self) -> bool {
         !matches!(self, Self::TlsMorphology)
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ProviderSignal {
-    pub provider: String,
-    pub channel: ProviderEvidenceChannel,
-    pub classifier: String,
-    #[serde(default)]
-    pub evidence: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct RoutingContext {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub prefix: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub asn: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub holder: Option<String>,
-    #[serde(default)]
-    pub evidence: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
-pub struct EndpointEvidence {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub target: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub observed_unix_ms: Option<u128>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub vantage: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub selected_endpoint: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub actual_peer: Option<String>,
-    #[serde(default)]
-    pub response_elements: Vec<PathElement>,
-    #[serde(default)]
-    pub routing_elements: Vec<PathElement>,
-    #[serde(default)]
-    pub provider_signals: Vec<ProviderSignal>,
-    #[serde(default)]
-    pub routing_context: Vec<RoutingContext>,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum ProviderSupport {
-    OriginatingEvidence,
-    CrossChannelCorroborated,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum TerminationState {
-    Unresolved,
-    SingleCandidate,
-    MultipleCandidates,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ProviderCandidate {
-    pub provider: String,
-    pub support: ProviderSupport,
-    pub originating_channels: Vec<ProviderEvidenceChannel>,
-    pub corroborating_channels: Vec<ProviderEvidenceChannel>,
-    pub evidence: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct EndpointAssessment {
-    pub classifier: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub target: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub observed_unix_ms: Option<u128>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub vantage: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub selected_endpoint: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub actual_peer: Option<String>,
-    pub state: TerminationState,
-    pub candidates: Vec<ProviderCandidate>,
-    pub path_elements: Vec<PathElement>,
-    pub unanchored_corroborating_signals: Vec<ProviderSignal>,
-    pub routing_context: Vec<RoutingContext>,
-}
-
-impl From<&Observation> for EndpointEvidence {
-    fn from(observation: &Observation) -> Self {
-        Self {
-            target: Some(observation.target.clone()),
-            observed_unix_ms: Some(observation.observed_unix_ms),
-            vantage: observation.vantage.clone(),
-            selected_endpoint: None,
-            actual_peer: observation.remote.clone(),
-            response_elements: observation.path_elements.clone(),
-            routing_elements: Vec::new(),
-            provider_signals: Vec::new(),
-            routing_context: Vec::new(),
-        }
     }
 }
 

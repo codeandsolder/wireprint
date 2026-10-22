@@ -6,9 +6,17 @@ use futures_util::StreamExt;
 use sha2::{Digest, Sha256};
 
 use crate::classify_response;
-use crate::model::{Header, Observation, RequestProfile};
+use crate::dns::{
+    RecordingResolver, RoutingDnsSnapshot, RoutingDnsSnapshotter, build_dns_provenance,
+    host_from_url, routing_names, selected_endpoint,
+};
+use crate::fusion::assess_endpoint;
+use crate::model::{
+    DnsProvenance, EndpointEvidence, Header, Observation, PathElement, RequestProfile,
+};
 use crate::normalize::{NORMALIZER_VERSION, normalize_response_template};
 use crate::path::detect_path_elements;
+use crate::routing::detect_routing_elements;
 use crate::transport::{PlatformKind, TransportProfile};
 
 #[derive(Debug, Clone)]
@@ -35,10 +43,13 @@ pub async fn probe_batch(
     targets: &[String],
     config: &ProbeConfig,
 ) -> Result<Vec<Observation>> {
+    let connection_resolver = RecordingResolver::default();
+    let routing_resolver = RoutingDnsSnapshotter::new();
     let builder = wreq::Client::builder()
         .tls_info(true)
         .timeout(Duration::from_secs(20))
-        .connect_timeout(Duration::from_secs(8));
+        .connect_timeout(Duration::from_secs(8))
+        .dns_resolver(connection_resolver.clone());
     let client = transport.configure(builder, platform).build()?;
     let mut observations = Vec::with_capacity(targets.len());
 
@@ -49,6 +60,8 @@ pub async fn probe_batch(
         observations.push(
             probe_one(
                 &client,
+                &connection_resolver,
+                &routing_resolver,
                 profile,
                 transport,
                 platform,
@@ -62,8 +75,11 @@ pub async fn probe_batch(
     Ok(observations)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn probe_one(
     client: &wreq::Client,
+    connection_resolver: &RecordingResolver,
+    routing_resolver: &RoutingDnsSnapshotter,
     profile: &RequestProfile,
     transport: TransportProfile,
     platform: PlatformKind,
@@ -76,18 +92,39 @@ async fn probe_one(
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis();
-    let mut request = client.get(target);
-    for header in &profile.headers {
-        request = request.header(header.name.as_str(), header.value.as_str());
-    }
+    let resolver_cursor = connection_resolver.cursor();
+    let target_host = host_from_url(target);
 
-    let response = match request.send().await {
+    let routing_future = async {
+        match target_host.as_deref() {
+            Some(host) => Some(routing_resolver.capture(host).await),
+            None => None,
+        }
+    };
+
+    let request_future = async {
+        let mut request = client.get(target);
+        for header in &profile.headers {
+            request = request.header(header.name.as_str(), header.value.as_str());
+        }
+        request.send().await
+    };
+
+    let (response, target_routing) = tokio::join!(request_future, routing_future);
+    let response = match response {
         Ok(response) => response,
         Err(error) => {
-            return Observation {
+            let dns = target_host
+                .as_deref()
+                .zip(target_routing)
+                .map(|(host, routing)| {
+                    dns_for_host(connection_resolver, host, resolver_cursor, routing)
+                });
+            let routing_elements = routing_elements_for_dns(dns.as_ref());
+            let observation = Observation {
                 target: target.into(),
                 observed_unix_ms,
-                vantage: vantage.clone(),
+                vantage,
                 request_profile: profile.name.clone(),
                 request_role: profile.role.clone(),
                 request_provenance: profile.provenance.clone(),
@@ -100,8 +137,13 @@ async fn probe_one(
                 http_version: None,
                 final_uri: None,
                 remote: None,
+                selected_endpoint: None,
+                dns,
                 response_headers: Vec::new(),
                 path_elements: Vec::new(),
+                routing_elements,
+                provider_signals: Vec::new(),
+                endpoint_assessment: None,
                 body_captured_bytes: None,
                 body_prefix_sha256: None,
                 body_template_sha256: None,
@@ -111,13 +153,16 @@ async fn probe_one(
                 outcome: None,
                 error: Some(error.to_string()),
             };
+            return finalize_observation(observation);
         }
     };
 
     let status = response.status().as_u16();
     let http_version = format!("{:?}", response.version());
     let final_uri = response.uri().to_string();
-    let remote = response.remote_addr().map(|value| value.to_string());
+    let final_host = host_from_url(&final_uri).or(target_host.clone());
+    let remote_addr = response.remote_addr();
+    let remote = remote_addr.map(|value| value.to_string());
     let content_length = response.content_length();
     let headers = response
         .headers()
@@ -127,6 +172,20 @@ async fn probe_one(
             value: String::from_utf8_lossy(value.as_bytes()).into_owned(),
         })
         .collect::<Vec<_>>();
+
+    let routing = match (&target_host, &final_host, target_routing) {
+        (Some(target_host), Some(final_host), Some(snapshot)) if target_host == final_host => {
+            Some(snapshot)
+        }
+        (_, Some(final_host), _) => Some(routing_resolver.capture(final_host).await),
+        _ => None,
+    };
+    let dns = final_host
+        .as_deref()
+        .zip(routing)
+        .map(|(host, routing)| dns_for_host(connection_resolver, host, resolver_cursor, routing));
+    let selected_endpoint = selected_endpoint(remote_addr, dns.as_ref());
+    let routing_elements = routing_elements_for_dns(dns.as_ref());
 
     let mut body = Vec::with_capacity(body_bytes.min(64 * 1024));
     let mut truncated = content_length.is_some_and(|length| length > body_bytes as u64);
@@ -168,7 +227,8 @@ async fn probe_one(
     } else {
         (None, None, None)
     };
-    Observation {
+
+    let observation = Observation {
         target: target.into(),
         observed_unix_ms,
         vantage,
@@ -189,8 +249,16 @@ async fn probe_one(
         http_version: Some(http_version),
         final_uri: Some(final_uri),
         remote,
+        selected_endpoint,
+        dns,
         response_headers: headers,
         path_elements,
+        routing_elements,
+        // Current wreq observations do not expose the server H2/H3/TLS family
+        // features used by the research classifiers. Do not manufacture provider
+        // signals from client transport profile or negotiated HTTP version.
+        provider_signals: Vec::new(),
+        endpoint_assessment: None,
         body_captured_bytes: Some(body.len()),
         body_prefix_sha256: Some(digest),
         body_template_sha256: template_digest,
@@ -199,7 +267,29 @@ async fn probe_one(
         body_truncated: Some(truncated),
         outcome: Some(outcome),
         error: body_error,
-    }
+    };
+    finalize_observation(observation)
+}
+
+fn dns_for_host(
+    connection_resolver: &RecordingResolver,
+    host: &str,
+    cursor: u64,
+    routing: RoutingDnsSnapshot,
+) -> DnsProvenance {
+    build_dns_provenance(host, cursor, connection_resolver.latest(host), routing)
+}
+
+fn routing_elements_for_dns(dns: Option<&DnsProvenance>) -> Vec<PathElement> {
+    dns.map(routing_names)
+        .map(|names| detect_routing_elements(&names))
+        .unwrap_or_default()
+}
+
+fn finalize_observation(mut observation: Observation) -> Observation {
+    let evidence = EndpointEvidence::from(&observation);
+    observation.endpoint_assessment = Some(assess_endpoint(&evidence));
+    observation
 }
 
 fn hex_digest(bytes: impl AsRef<[u8]>) -> String {
