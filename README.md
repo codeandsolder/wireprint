@@ -22,7 +22,7 @@ RequestProfile × TransportProfile × Target
 
 A request profile describes application identity and HTTP headers. A transport profile describes the wreq client emulation. The resulting observation retains raw provenance and a semantic outcome classification.
 
-Each successful observation also runs the versioned network-path recognizer (`builtin-path-v2`). It emits an unordered set of explicit participation claims — edge-provider participation, downstream platform/origin service, proxy/cache, load balancer, API gateway, service mesh, identity proxy, traffic management, WAF/security, bot-management and server implementation — without guessing hop order. See [`docs/path-elements.md`](docs/path-elements.md).
+Each successful observation also runs the versioned network-path recognizer (`builtin-path-v3`). It emits an unordered set of explicit participation claims — edge-provider participation, downstream platform/origin service, proxy/cache, load balancer, API gateway, service mesh, identity proxy, traffic management, WAF/security, bot-management and server implementation — without guessing hop order. See [`docs/path-elements.md`](docs/path-elements.md).
 
 Built-in outcome classes currently include:
 

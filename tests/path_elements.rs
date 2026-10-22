@@ -657,3 +657,65 @@ fn minio_marker_distinguishes_minio_from_generic_s3_compatibility() {
     ));
     assert!(!has(&elements, PathElementRole::OriginService, "aws-s3"));
 }
+
+#[test]
+fn cdn77_separates_edge_and_cache_participation() {
+    let elements = detect_path_elements(&[
+        header("x-77-pop", "pragueCZ"),
+        header("x-77-cache", "HIT"),
+        header("x-77-age", "10"),
+    ]);
+    assert!(has(&elements, PathElementRole::EdgeProvider, "cdn77"));
+    assert!(has(&elements, PathElementRole::Cache, "cdn77"));
+
+    let cache_only = detect_path_elements(&[header("x-77-cache", "MISS")]);
+    assert!(has(&cache_only, PathElementRole::Cache, "cdn77"));
+    assert!(!has(&cache_only, PathElementRole::EdgeProvider, "cdn77"));
+}
+
+#[test]
+fn oracle_lb_default_cookie_is_load_balancer_evidence() {
+    let elements = detect_path_elements(&[header(
+        "set-cookie",
+        "X-Oracle-BMC-LBS-Route=opaque; Path=/; HttpOnly",
+    )]);
+    assert!(has(
+        &elements,
+        PathElementRole::LoadBalancer,
+        "oracle-cloud-load-balancer"
+    ));
+}
+
+#[test]
+fn identity_proxy_defaults_are_product_specific_positive_markers() {
+    for (headers, product) in [
+        (
+            vec![header("set-cookie", "_oauth2_proxy=opaque; Path=/; Secure")],
+            "oauth2-proxy",
+        ),
+        (
+            vec![header(
+                "set-cookie",
+                "_oauth2_proxy_1=opaque; Path=/; Secure",
+            )],
+            "oauth2-proxy",
+        ),
+        (
+            vec![header(
+                "set-cookie",
+                "authelia_session=opaque; Path=/; Secure",
+            )],
+            "authelia",
+        ),
+        (
+            vec![header(
+                "location",
+                "/outpost.goauthentik.io/start?rd=https%3A%2F%2Fapp.example%2F",
+            )],
+            "authentik",
+        ),
+    ] {
+        let elements = detect_path_elements(&headers);
+        assert!(has(&elements, PathElementRole::IdentityProxy, product));
+    }
+}

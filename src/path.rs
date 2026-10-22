@@ -1,6 +1,6 @@
 use crate::model::{Header, PathElement, PathElementRole};
 
-pub const PATH_CLASSIFIER_VERSION: &str = "builtin-path-v2";
+pub const PATH_CLASSIFIER_VERSION: &str = "builtin-path-v3";
 
 fn header_values<'a>(headers: &'a [Header], name: &str) -> impl Iterator<Item = &'a str> {
     headers
@@ -144,6 +144,26 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             PathElementRole::Cache,
             "quic-cloud",
             "header:x-qc-cache",
+        );
+    }
+    if has_header(headers, "x-77-pop") {
+        add(
+            &mut elements,
+            PathElementRole::EdgeProvider,
+            "cdn77",
+            "header:x-77-pop",
+        );
+    }
+    if has_header(headers, "x-77-cache") || has_header(headers, "x-77-age") {
+        add(
+            &mut elements,
+            PathElementRole::Cache,
+            "cdn77",
+            if has_header(headers, "x-77-cache") {
+                "header:x-77-cache"
+            } else {
+                "header:x-77-age"
+            },
         );
     }
     if has_header(headers, "x-amz-cf-id")
@@ -565,6 +585,14 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             "cookie:__cflb",
         );
     }
+    if has_cookie(&cookies, "x-oracle-bmc-lbs-route") {
+        add(
+            &mut elements,
+            PathElementRole::LoadBalancer,
+            "oracle-cloud-load-balancer",
+            "cookie:X-Oracle-BMC-LBS-Route",
+        );
+    }
 
     if has_header_value(headers, "server", "awselb/2.0") {
         add(
@@ -848,6 +876,34 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             PathElementRole::IdentityProxy,
             "cloudflare-access",
             "cookie:CF_Authorization",
+        );
+    }
+    if has_cookie(&cookies, "_oauth2_proxy") || has_cookie_prefix(&cookies, "_oauth2_proxy_") {
+        add(
+            &mut elements,
+            PathElementRole::IdentityProxy,
+            "oauth2-proxy",
+            if has_cookie(&cookies, "_oauth2_proxy") {
+                "cookie:_oauth2_proxy"
+            } else {
+                "cookie:_oauth2_proxy_*"
+            },
+        );
+    }
+    if has_cookie(&cookies, "authelia_session") {
+        add(
+            &mut elements,
+            PathElementRole::IdentityProxy,
+            "authelia",
+            "cookie:authelia_session",
+        );
+    }
+    if header_values(headers, "location").any(|value| value.contains("/outpost.goauthentik.io/")) {
+        add(
+            &mut elements,
+            PathElementRole::IdentityProxy,
+            "authentik",
+            "location:/outpost.goauthentik.io/",
         );
     }
     if has_cookie_prefix(&cookies, "__cfwaitingroom") {

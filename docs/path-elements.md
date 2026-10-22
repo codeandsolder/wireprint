@@ -6,7 +6,7 @@ That distinction matters. A response can preserve evidence from an outer CDN, a 
 
 ## Roles
 
-`builtin-path-v2` currently separates these roles:
+`builtin-path-v3` currently separates these roles:
 
 - `edge_provider` — managed serving/edge layer with explicit provider evidence;
 - `application_platform` — downstream delivery/application platform participation;
@@ -27,16 +27,16 @@ Each element stores the role, product label, classifier version, and the concret
 
 ## Current explicit markers
 
-The v2 recognizer includes:
+The v3 recognizer includes:
 
-- edge/provider: Cloudflare, CloudFront, Akamai, Fastly, F5 Distributed Cloud/Volt, Imperva, Sucuri, BunnyCDN, Google Front End, OpenResty Edge, Vercel, Netlify, Fly.io, Railway, KeyCDN, QUIC.cloud;
+- edge/provider: Cloudflare, CloudFront, Akamai, Fastly, F5 Distributed Cloud/Volt, Imperva, Sucuri, BunnyCDN, Google Front End, OpenResty Edge, Vercel, Netlify, Fly.io, Railway, KeyCDN, QUIC.cloud, CDN77;
 - downstream platforms: Vercel, Netlify, Azure Front Door, Render, Railway, Pantheon, Acquia Cloud Platform, Heroku;
 - origin services: Amazon S3, generic S3-compatible object storage, MinIO, Akamai NetStorage, Google Cloud Storage, Azure Blob Storage, Backblaze B2;
 - API gateways: AWS API Gateway, Kong, Apache APISIX, KrakenD, Tyk, Gravitee;
-- load balancers: AWS Application Load Balancer, AWS Classic Load Balancer, Google Cloud Application Load Balancer, F5 BIG-IP LTM, NetScaler ADC, Azure Application Gateway, Azure/Microsoft ARR affinity family, Cloudflare Load Balancer;
+- load balancers: AWS Application Load Balancer, AWS Classic Load Balancer, Google Cloud Application Load Balancer, F5 BIG-IP LTM, NetScaler ADC, Azure Application Gateway, Azure/Microsoft ARR affinity family, Cloudflare Load Balancer, Oracle Cloud Load Balancer;
 - reverse proxies / caches: Envoy, nghttpx, HAProxy, Traefik, Varnish, Squid, Apache Traffic Server;
 - service mesh: Istio when explicitly exposed as `istio-envoy`, and Linkerd when `l5d-*` response markers are exposed;
-- identity proxies: Google Cloud IAP, Cloudflare Access;
+- identity proxies: Google Cloud IAP, Cloudflare Access, OAuth2 Proxy, Authelia, authentik;
 - traffic management: Cloudflare Waiting Room, Queue-it;
 - server implementations: nginx, OpenResty, Caddy, Apache HTTP Server, Microsoft IIS, LiteSpeed, Google UploadServer, SFFE, GSE;
 - WAF/security: AWS WAF (including `aws-waf-token` state), AWS ALB authentication, Cloudflare security/challenge and rate-limiting state, Imperva WAF, F5 BIG-IP ASM, FortiWeb;
@@ -45,6 +45,8 @@ The v2 recognizer includes:
 Fastly-specific `Fastly-Debug-*`, `fastly-restarts`, `x-fastly-backend-reqs`, and explicit Fastly `Via` responses are treated as Fastly cache participation rather than automatically asserting that Fastly was the outer edge. Generic `X-Cache-Hits` is deliberately excluded because Acquia and Pantheon also emit it. The same conservative rule is used for BunnyCDN's `cdn-*` cache metadata. Railway is different: its own documentation defines `X-Railway-Edge` as the POP that received the request and terminated TLS, so that marker supports an edge-provider claim while `X-Railway-Upstream-Zone` remains downstream platform/origin-zone evidence.
 
 Origin-service markers are deliberately separate from edge identity. `Server: AkamaiNetStorage` is Akamai NetStorage origin evidence, not proof that an Akamai edge terminated the client connection. Likewise, `Server: UploadServer` is kept as a Google server-implementation marker; Google Cloud Storage is only claimed from storage-specific `x-goog-*` response metadata. `x-amz-bucket-region` is only S3-compatible object-storage evidence by itself because non-AWS implementations can emit the S3 header; `Server: AmazonS3` is required for the stronger `aws-s3` label, while `x-minio-deployment-id` identifies MinIO directly.
+
+The v3 additions follow the same positive-evidence rule. CDN77 documents `X-77-POP` as the edge location that handled and delivered the response, while `X-77-Cache` / `X-77-Age` describe cache state; cache-only evidence therefore does not promote itself to `edge_provider`. Oracle Cloud Load Balancer's default generated stickiness cookie `X-Oracle-BMC-LBS-Route` is load-balancer evidence when present. OAuth2 Proxy's `_oauth2_proxy`, Authelia's `authelia_session`, and authentik's `/outpost.goauthentik.io/` redirect namespace are identity-proxy evidence. The OAuth2 Proxy and Authelia cookie names are configurable, so their absence is especially meaningless.
 
 Absence of a marker is not negative evidence. Products can strip, rename, disable, or route around these markers.
 
