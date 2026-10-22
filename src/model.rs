@@ -53,6 +53,8 @@ pub enum PathElementRole {
     LoadBalancer,
     ApiGateway,
     ServiceMesh,
+    IdentityProxy,
+    TrafficManagement,
     Waf,
     SecurityMiddleware,
     BotManagement,

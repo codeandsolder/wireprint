@@ -249,6 +249,8 @@ fn common_server_implementations_are_not_promoted_to_edge_providers() {
         ("Apache/2.4.65", "apache-http-server"),
         ("Microsoft-IIS/10.0", "microsoft-iis"),
         ("LiteSpeed", "litespeed"),
+        ("sffe", "sffe"),
+        ("GSE", "gse"),
     ] {
         let elements = detect_path_elements(&[header("server", server)]);
         assert!(has(
@@ -380,13 +382,24 @@ fn akamai_bm_sv_is_bot_manager_evidence() {
 }
 
 #[test]
-fn s3_origin_can_be_preserved_behind_fastly() {
+fn s3_compatible_origin_can_be_preserved_behind_fastly_without_claiming_aws() {
     let elements = detect_path_elements(&[
         header("server", "Fastly"),
         header("x-amz-bucket-region", "us-east-1"),
     ]);
-    assert!(has(&elements, PathElementRole::OriginService, "aws-s3"));
+    assert!(has(
+        &elements,
+        PathElementRole::OriginService,
+        "s3-compatible-object-storage"
+    ));
+    assert!(!has(&elements, PathElementRole::OriginService, "aws-s3"));
     assert!(has(&elements, PathElementRole::EdgeProvider, "fastly"));
+}
+
+#[test]
+fn amazon_s3_requires_an_aws_specific_server_marker() {
+    let elements = detect_path_elements(&[header("server", "AmazonS3")]);
+    assert!(has(&elements, PathElementRole::OriginService, "aws-s3"));
 }
 
 #[test]
@@ -468,4 +481,179 @@ fn aws_waf_token_cookie_is_waf_participation() {
     let elements =
         detect_path_elements(&[header("set-cookie", "aws-waf-token=opaque; Path=/; Secure")]);
     assert!(has(&elements, PathElementRole::Waf, "aws-waf"));
+}
+
+#[test]
+fn explicit_cdn_cache_markers_stay_separate_from_edge_identity() {
+    for (headers, product) in [
+        (vec![header("cf-cache-status", "HIT")], "cloudflare"),
+        (vec![header("x-qc-cache", "hit")], "quic-cloud"),
+        (vec![header("x-sucuri-cache", "HIT")], "sucuri"),
+        (vec![header("x-vercel-cache", "HIT")], "vercel"),
+    ] {
+        let elements = detect_path_elements(&headers);
+        assert!(has(&elements, PathElementRole::Cache, product));
+    }
+
+    let cloudflare = detect_path_elements(&[header("cf-cache-status", "HIT")]);
+    assert!(!has(
+        &cloudflare,
+        PathElementRole::EdgeProvider,
+        "cloudflare"
+    ));
+    let quic = detect_path_elements(&[header("x-qc-cache", "hit")]);
+    assert!(!has(&quic, PathElementRole::EdgeProvider, "quic-cloud"));
+}
+
+#[test]
+fn keycdn_and_quic_cloud_use_product_specific_edge_markers() {
+    let keycdn = detect_path_elements(&[
+        header("server", "keycdn-engine"),
+        header("x-cache", "HIT"),
+        header("x-edge-location", "defr"),
+    ]);
+    assert!(has(&keycdn, PathElementRole::EdgeProvider, "keycdn"));
+    assert!(has(&keycdn, PathElementRole::Cache, "keycdn"));
+
+    let quic = detect_path_elements(&[header("x-qc-pop", "USDFW1"), header("x-qc-cache", "hit")]);
+    assert!(has(&quic, PathElementRole::EdgeProvider, "quic-cloud"));
+    assert!(has(&quic, PathElementRole::Cache, "quic-cloud"));
+}
+
+#[test]
+fn google_load_balancer_generated_affinity_cookies_are_explicit() {
+    for cookie in ["GCLB=opaque; Path=/", "GCILB=opaque; Path=/"] {
+        let elements = detect_path_elements(&[header("set-cookie", cookie)]);
+        assert!(has(
+            &elements,
+            PathElementRole::LoadBalancer,
+            "google-cloud-application-load-balancer"
+        ));
+    }
+}
+
+#[test]
+fn azure_arr_affinity_is_load_balancing_family_evidence() {
+    for cookie in [
+        "ARRAffinity=opaque; Path=/; HttpOnly",
+        "ARRAffinitySameSite=opaque; Path=/; SameSite=None; Secure",
+    ] {
+        let elements = detect_path_elements(&[header("set-cookie", cookie)]);
+        assert!(has(
+            &elements,
+            PathElementRole::LoadBalancer,
+            "azure-arr-affinity"
+        ));
+        assert!(!has(
+            &elements,
+            PathElementRole::ApplicationPlatform,
+            "azure-app-service"
+        ));
+    }
+}
+
+#[test]
+fn awselb_server_banner_is_alb_participation() {
+    let elements = detect_path_elements(&[header("server", "awselb/2.0")]);
+    assert!(has(
+        &elements,
+        PathElementRole::LoadBalancer,
+        "aws-application-load-balancer"
+    ));
+}
+
+#[test]
+fn cloudflare_rate_limit_cookies_are_security_middleware() {
+    for cookie in [
+        "__cfruid=opaque; Path=/; Secure; HttpOnly",
+        "_cfuvid=opaque; Path=/; Secure; HttpOnly",
+    ] {
+        let elements = detect_path_elements(&[header("set-cookie", cookie)]);
+        assert!(has(
+            &elements,
+            PathElementRole::SecurityMiddleware,
+            "cloudflare-rate-limiting"
+        ));
+    }
+}
+
+#[test]
+fn identity_aware_proxy_markers_are_first_class_path_elements() {
+    let iap = detect_path_elements(&[header("x-goog-iap-generated-response", "true")]);
+    assert!(has(
+        &iap,
+        PathElementRole::IdentityProxy,
+        "google-cloud-iap"
+    ));
+
+    let access = detect_path_elements(&[header(
+        "set-cookie",
+        "CF_Authorization=opaque; Path=/; Secure; HttpOnly",
+    )]);
+    assert!(has(
+        &access,
+        PathElementRole::IdentityProxy,
+        "cloudflare-access"
+    ));
+}
+
+#[test]
+fn waiting_rooms_are_traffic_management_not_generic_security() {
+    let cloudflare = detect_path_elements(&[header(
+        "set-cookie",
+        "__cfwaitingroom_shop=opaque; Path=/; Secure",
+    )]);
+    assert!(has(
+        &cloudflare,
+        PathElementRole::TrafficManagement,
+        "cloudflare-waiting-room"
+    ));
+
+    for cookie in [
+        "QueueITAccepted-SDFrts345E-V3_event42=opaque; Path=/; Secure",
+        "Queue-it-visitorsession=opaque; Path=/; Secure",
+    ] {
+        let queueit = detect_path_elements(&[header("set-cookie", cookie)]);
+        assert!(has(
+            &queueit,
+            PathElementRole::TrafficManagement,
+            "queue-it"
+        ));
+    }
+}
+
+#[test]
+fn alb_auth_cookie_identifies_both_alb_and_auth_middleware() {
+    let elements = detect_path_elements(&[header(
+        "set-cookie",
+        "AWSELBAuthSessionCookie-0=opaque; Path=/; Secure; HttpOnly",
+    )]);
+    assert!(has(
+        &elements,
+        PathElementRole::LoadBalancer,
+        "aws-application-load-balancer"
+    ));
+    assert!(has(
+        &elements,
+        PathElementRole::SecurityMiddleware,
+        "aws-alb-authentication"
+    ));
+}
+
+#[test]
+fn minio_marker_distinguishes_minio_from_generic_s3_compatibility() {
+    let elements = detect_path_elements(&[
+        header(
+            "x-minio-deployment-id",
+            "00000000-0000-0000-0000-000000000000",
+        ),
+        header("x-amz-bucket-region", "us-east-1"),
+    ]);
+    assert!(has(&elements, PathElementRole::OriginService, "minio"));
+    assert!(has(
+        &elements,
+        PathElementRole::OriginService,
+        "s3-compatible-object-storage"
+    ));
+    assert!(!has(&elements, PathElementRole::OriginService, "aws-s3"));
 }

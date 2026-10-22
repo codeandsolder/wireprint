@@ -1,6 +1,6 @@
 use crate::model::{Header, PathElement, PathElementRole};
 
-pub const PATH_CLASSIFIER_VERSION: &str = "builtin-path-v1";
+pub const PATH_CLASSIFIER_VERSION: &str = "builtin-path-v2";
 
 fn header_values<'a>(headers: &'a [Header], name: &str) -> impl Iterator<Item = &'a str> {
     headers
@@ -106,6 +106,46 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             },
         );
     }
+    if has_header(headers, "cf-cache-status") {
+        add(
+            &mut elements,
+            PathElementRole::Cache,
+            "cloudflare",
+            "header:cf-cache-status",
+        );
+    }
+    if server.contains("keycdn-engine") {
+        add(
+            &mut elements,
+            PathElementRole::EdgeProvider,
+            "keycdn",
+            "server:keycdn-engine",
+        );
+        if has_header(headers, "x-cache") {
+            add(
+                &mut elements,
+                PathElementRole::Cache,
+                "keycdn",
+                "header:x-cache+server:keycdn-engine",
+            );
+        }
+    }
+    if has_header(headers, "x-qc-pop") {
+        add(
+            &mut elements,
+            PathElementRole::EdgeProvider,
+            "quic-cloud",
+            "header:x-qc-pop",
+        );
+    }
+    if has_header(headers, "x-qc-cache") {
+        add(
+            &mut elements,
+            PathElementRole::Cache,
+            "quic-cloud",
+            "header:x-qc-cache",
+        );
+    }
     if has_header(headers, "x-amz-cf-id")
         || has_header(headers, "x-amz-cf-pop")
         || server.contains("cloudfront")
@@ -181,6 +221,14 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             PathElementRole::EdgeProvider,
             "sucuri",
             "marker:sucuri",
+        );
+    }
+    if has_header(headers, "x-sucuri-cache") {
+        add(
+            &mut elements,
+            PathElementRole::Cache,
+            "sucuri",
+            "header:x-sucuri-cache",
         );
     }
     if server.contains("bunnycdn") {
@@ -259,6 +307,14 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             "header:x-vercel-id",
         );
     }
+    if has_header(headers, "x-vercel-cache") {
+        add(
+            &mut elements,
+            PathElementRole::Cache,
+            "vercel",
+            "header:x-vercel-cache",
+        );
+    }
     if has_header(headers, "x-nf-request-id") {
         add(
             &mut elements,
@@ -334,6 +390,18 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             PathElementRole::ApplicationPlatform,
             "heroku",
             "via:vegur",
+        );
+    }
+    if has_cookie(&cookies, "arraffinity") || has_cookie(&cookies, "arraffinitysamesite") {
+        add(
+            &mut elements,
+            PathElementRole::LoadBalancer,
+            "azure-arr-affinity",
+            if has_cookie(&cookies, "arraffinitysamesite") {
+                "cookie:ARRAffinitySameSite"
+            } else {
+                "cookie:ARRAffinity"
+            },
         );
     }
 
@@ -437,11 +505,27 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
                 format!("cookie:{cookie}"),
             );
         }
+        if cookie.starts_with("awselbauthsessioncookie") {
+            add(
+                &mut elements,
+                PathElementRole::LoadBalancer,
+                "aws-application-load-balancer",
+                format!("cookie:{cookie}"),
+            );
+        }
         if matches!(cookie.as_str(), "awselb" | "awselbcors") {
             add(
                 &mut elements,
                 PathElementRole::LoadBalancer,
                 "aws-classic-load-balancer",
+                format!("cookie:{cookie}"),
+            );
+        }
+        if matches!(cookie.as_str(), "gclb" | "gcilb") {
+            add(
+                &mut elements,
+                PathElementRole::LoadBalancer,
+                "google-cloud-application-load-balancer",
                 format!("cookie:{cookie}"),
             );
         }
@@ -479,6 +563,15 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             PathElementRole::LoadBalancer,
             "cloudflare-load-balancer",
             "cookie:__cflb",
+        );
+    }
+
+    if has_header_value(headers, "server", "awselb/2.0") {
+        add(
+            &mut elements,
+            PathElementRole::LoadBalancer,
+            "aws-application-load-balancer",
+            "server:awselb/2.0",
         );
     }
 
@@ -622,6 +715,22 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             "server:uploadserver",
         );
     }
+    if has_header_value(headers, "server", "sffe") {
+        add(
+            &mut elements,
+            PathElementRole::ServerImplementation,
+            "sffe",
+            "server:sffe",
+        );
+    }
+    if has_header_value(headers, "server", "GSE") {
+        add(
+            &mut elements,
+            PathElementRole::ServerImplementation,
+            "gse",
+            "server:gse",
+        );
+    }
     if has_header(headers, "x-varnish") || via.contains("varnish") {
         add(
             &mut elements,
@@ -649,16 +758,30 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
 
     // Explicit backend/origin services. These can coexist with any outer
     // edge/cache/gateway marker preserved in the same response.
-    if has_header_value(headers, "server", "AmazonS3") || has_header(headers, "x-amz-bucket-region")
-    {
+    if has_header_value(headers, "server", "AmazonS3") {
         add(
             &mut elements,
             PathElementRole::OriginService,
             "aws-s3",
-            if has_header_value(headers, "server", "AmazonS3") {
-                "server:amazons3"
+            "server:amazons3",
+        );
+    } else if has_header(headers, "x-amz-bucket-region") {
+        add(
+            &mut elements,
+            PathElementRole::OriginService,
+            "s3-compatible-object-storage",
+            "header:x-amz-bucket-region",
+        );
+    }
+    if server.starts_with("minio") || has_header(headers, "x-minio-deployment-id") {
+        add(
+            &mut elements,
+            PathElementRole::OriginService,
+            "minio",
+            if has_header(headers, "x-minio-deployment-id") {
+                "header:x-minio-deployment-id"
             } else {
-                "header:x-amz-bucket-region"
+                "server:minio"
             },
         );
     }
@@ -710,7 +833,55 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
         );
     }
 
+    // Identity-aware proxies and traffic-management layers.
+    if has_header(headers, "x-goog-iap-generated-response") {
+        add(
+            &mut elements,
+            PathElementRole::IdentityProxy,
+            "google-cloud-iap",
+            "header:x-goog-iap-generated-response",
+        );
+    }
+    if has_cookie(&cookies, "cf_authorization") {
+        add(
+            &mut elements,
+            PathElementRole::IdentityProxy,
+            "cloudflare-access",
+            "cookie:CF_Authorization",
+        );
+    }
+    if has_cookie_prefix(&cookies, "__cfwaitingroom") {
+        add(
+            &mut elements,
+            PathElementRole::TrafficManagement,
+            "cloudflare-waiting-room",
+            "cookie:__cfwaitingroom*",
+        );
+    }
+    if has_cookie_prefix(&cookies, "queueitaccepted-sdfrts345e-v3_")
+        || has_cookie(&cookies, "queue-it-visitorsession")
+    {
+        add(
+            &mut elements,
+            PathElementRole::TrafficManagement,
+            "queue-it",
+            if has_cookie_prefix(&cookies, "queueitaccepted-sdfrts345e-v3_") {
+                "cookie:QueueITAccepted-SDFrts345E-V3_*"
+            } else {
+                "cookie:Queue-it-visitorsession"
+            },
+        );
+    }
+
     // Security and bot-management middleware.
+    if has_cookie_prefix(&cookies, "awselbauthsessioncookie") {
+        add(
+            &mut elements,
+            PathElementRole::SecurityMiddleware,
+            "aws-alb-authentication",
+            "cookie:AWSELBAuthSessionCookie*",
+        );
+    }
     if has_header(headers, "x-amzn-waf-action") || has_cookie(&cookies, "aws-waf-token") {
         add(
             &mut elements,
@@ -732,6 +903,18 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
                 "header:cf-mitigated"
             } else {
                 "cookie:cf_clearance"
+            },
+        );
+    }
+    if has_cookie(&cookies, "__cfruid") || has_cookie(&cookies, "_cfuvid") {
+        add(
+            &mut elements,
+            PathElementRole::SecurityMiddleware,
+            "cloudflare-rate-limiting",
+            if has_cookie(&cookies, "__cfruid") {
+                "cookie:__cfruid"
+            } else {
+                "cookie:_cfuvid"
             },
         );
     }
