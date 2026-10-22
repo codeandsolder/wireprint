@@ -42,6 +42,33 @@ pub struct Outcome {
     pub evidence: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PathElementRole {
+    EdgeProvider,
+    ApplicationPlatform,
+    OriginService,
+    ReverseProxy,
+    Cache,
+    LoadBalancer,
+    ApiGateway,
+    ServiceMesh,
+    IdentityProxy,
+    TrafficManagement,
+    Waf,
+    SecurityMiddleware,
+    BotManagement,
+    ServerImplementation,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PathElement {
+    pub role: PathElementRole,
+    pub product: String,
+    pub classifier: String,
+    pub evidence: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Observation {
     pub target: String,
@@ -67,6 +94,7 @@ pub struct Observation {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remote: Option<String>,
     pub response_headers: Vec<Header>,
+    pub path_elements: Vec<PathElement>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub body_captured_bytes: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -8,6 +8,7 @@ use sha2::{Digest, Sha256};
 use crate::classify_response;
 use crate::model::{Header, Observation, RequestProfile};
 use crate::normalize::{NORMALIZER_VERSION, normalize_response_template};
+use crate::path::detect_path_elements;
 use crate::transport::{PlatformKind, TransportProfile};
 
 #[derive(Debug, Clone)]
@@ -100,6 +101,7 @@ async fn probe_one(
                 final_uri: None,
                 remote: None,
                 response_headers: Vec::new(),
+                path_elements: Vec::new(),
                 body_captured_bytes: None,
                 body_prefix_sha256: None,
                 body_template_sha256: None,
@@ -153,6 +155,7 @@ async fn probe_one(
     }
 
     let outcome = classify_response(status, &headers, &body);
+    let path_elements = detect_path_elements(&headers);
     let digest = hex_digest(Sha256::digest(&body));
     let textual = is_textual_response(&headers, &body);
     let (template_digest, template_normalizer, body_prefix) = if textual {
@@ -187,6 +190,7 @@ async fn probe_one(
         final_uri: Some(final_uri),
         remote,
         response_headers: headers,
+        path_elements,
         body_captured_bytes: Some(body.len()),
         body_prefix_sha256: Some(digest),
         body_template_sha256: template_digest,

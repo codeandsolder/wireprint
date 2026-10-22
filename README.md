@@ -22,6 +22,8 @@ RequestProfile × TransportProfile × Target
 
 A request profile describes application identity and HTTP headers. A transport profile describes the wreq client emulation. The resulting observation retains raw provenance and a semantic outcome classification.
 
+Each successful observation also runs the versioned network-path recognizer (`builtin-path-v3`). It emits an unordered set of explicit participation claims — edge-provider participation, downstream platform/origin service, proxy/cache, load balancer, API gateway, service mesh, identity proxy, traffic management, WAF/security, bot-management and server implementation — without guessing hop order. See [`docs/path-elements.md`](docs/path-elements.md).
+
 Built-in outcome classes currently include:
 
 - `content_like`
@@ -70,6 +72,19 @@ wireprint matrix \
 
 Each request-profile/transport combination gets a fresh client so transport/session state does not silently bleed across identities.
 
+## Replay captured path evidence
+
+Classify captured response headers into network-path participants without sending a request:
+
+```bash
+wireprint path \
+  --header 'via: 1.1 google, 1.1 varnish' \
+  --header 'x-fastly-backend-reqs: 10' \
+  --header 'server: DataDome'
+```
+
+This is intended for corpus replay: it applies exactly the same versioned path recognizer used by live observations.
+
 The bundled AI-retriever profiles are **synthetic research profiles**, not claims that the transport matches the vendor's production fetcher. Provenance is stored alongside each profile so a later live capture can replace an approximation without rewriting history.
 
 ## Why semantic outcomes matter
@@ -83,7 +98,7 @@ The classifier is intentionally conservative and versioned (`builtin-v1`). Raw s
 
 ## Evidence model
 
-See [`docs/evidence-model.md`](docs/evidence-model.md). The short version is that request identity, agent role, HTTP shape, TLS/H2/H3 transport, source verification, session/reputation, response semantics and raw provenance are different axes.
+See [`docs/evidence-model.md`](docs/evidence-model.md) and [`docs/path-elements.md`](docs/path-elements.md). The short version is that request identity, agent role, HTTP shape, TLS/H2/H3 transport, source verification, network-path participation, session/reputation, response semantics and raw provenance are different axes.
 
 ## Scope
 
