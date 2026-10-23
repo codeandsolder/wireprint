@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::h2::H2ServerPreface;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfileSet {
     pub profiles: Vec<RequestProfile>,
@@ -219,6 +221,8 @@ pub struct Observation {
     pub routing_elements: Vec<PathElement>,
     #[serde(default)]
     pub provider_signals: Vec<ProviderSignal>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub h2_server_preface: Option<H2ServerPreface>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub endpoint_assessment: Option<EndpointAssessment>,
     #[serde(skip_serializing_if = "Option::is_none")]

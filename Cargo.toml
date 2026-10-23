@@ -17,8 +17,11 @@ serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"
 tokio = { version = "1.52", features = ["macros", "rt-multi-thread", "time"] }
 url = "2.5"
-wreq = { version = "0.16.1", features = ["gzip", "brotli", "deflate", "stream"] }
+wreq = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "953ea576f699c8664ecbff30805e746368c5cb5b", features = ["gzip", "brotli", "deflate", "stream"] }
 wreq-util = { version = "0.2.0", features = ["tokio-rt"] }
 
 [dev-dependencies]
 pretty_assertions = "1"
+
+[patch.crates-io]
+wreq = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "953ea576f699c8664ecbff30805e746368c5cb5b" }
