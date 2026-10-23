@@ -11,6 +11,7 @@ use crate::dns::{
     host_from_url, routing_names, selected_endpoint,
 };
 use crate::fusion::assess_endpoint;
+use crate::h2::{H2Setting, classify_h2_preface, provider_signals as h2_provider_signals};
 use crate::model::{
     DnsProvenance, EndpointEvidence, Header, Observation, PathElement, RequestProfile,
 };
@@ -143,6 +144,7 @@ async fn probe_one(
                 path_elements: Vec::new(),
                 routing_elements,
                 provider_signals: Vec::new(),
+                h2_server_preface: None,
                 endpoint_assessment: None,
                 body_captured_bytes: None,
                 body_prefix_sha256: None,
@@ -164,6 +166,28 @@ async fn probe_one(
     let remote_addr = response.remote_addr();
     let remote = remote_addr.map(|value| value.to_string());
     let content_length = response.content_length();
+    let h2_server_preface = response
+        .extensions()
+        .get::<wreq::http2::Http2Info>()
+        .map(|info| {
+            classify_h2_preface(
+                info.peer_initial_settings_received(),
+                info.peer_initial_settings()
+                    .iter()
+                    .map(|setting| H2Setting {
+                        id: setting.id(),
+                        value: setting.value(),
+                    })
+                    .collect(),
+                info.peer_first_connection_window_update(),
+                info.peer_first_connection_window_update_before_settings_ack(),
+                info.peer_acknowledged_local_initial_settings(),
+            )
+        });
+    let provider_signals = h2_server_preface
+        .as_ref()
+        .map(h2_provider_signals)
+        .unwrap_or_default();
     let headers = response
         .headers()
         .iter()
@@ -254,10 +278,8 @@ async fn probe_one(
         response_headers: headers,
         path_elements,
         routing_elements,
-        // Current wreq observations do not expose the server H2/H3/TLS family
-        // features used by the research classifiers. Do not manufacture provider
-        // signals from client transport profile or negotiated HTTP version.
-        provider_signals: Vec::new(),
+        provider_signals,
+        h2_server_preface,
         endpoint_assessment: None,
         body_captured_bytes: Some(body.len()),
         body_prefix_sha256: Some(digest),
