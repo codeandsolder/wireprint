@@ -7,7 +7,7 @@ A useful request observation has at least these axes:
 1. **request application identity** — for example `ChatGPT-User`, `Claude-User`, or a neutral control;
 2. **agent role** — user fetch, search crawler, training crawler, local client, control;
 3. **HTTP header shape** — separate from the semantic identity token;
-4. **transport identity** — TLS/H2/H3/client emulation and concrete network endpoint;
+4. **transport identity** — TLS/H2/H3/client emulation and concrete network endpoint; live H2 preserves peer SETTINGS/window/control order, while the H3 observer additionally preserves ordered peer SETTINGS and the raw TLS-authenticated QUIC transport-parameter extension before normalization;
 5. **source verification** — source-network or authenticated-bot evidence when available;
 6. **network-path participation** — explicit evidence for serving edge, downstream platform/origin service, proxy/cache, load balancer, API gateway, service mesh, WAF/security, bot-management and server implementation, kept as independent claims rather than one vendor field;
 7. **session / reputation state**;

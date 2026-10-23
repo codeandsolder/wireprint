@@ -6,9 +6,10 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
 use wireprint::{
-    EndpointEvidence, Header, HostAggregationConfig, Observation, PlatformKind, ProbeConfig,
-    ProfileSet, RequestProfile, TransportProfile, aggregate_observations, assess_endpoint,
-    classify_response, detect_path_elements, detect_routing_elements, probe_batch,
+    EndpointEvidence, H3AddressFamily, H3ProbeConfig, Header, HostAggregationConfig, Observation,
+    PlatformKind, ProbeConfig, ProfileSet, RequestProfile, TransportProfile,
+    aggregate_observations, assess_endpoint, classify_response, detect_path_elements,
+    detect_routing_elements, probe_batch, probe_h3,
 };
 
 #[derive(Debug, Parser)]
@@ -32,6 +33,8 @@ enum Command {
     Route(RouteArgs),
     /// Fuse one endpoint/vantage evidence document into termination candidates.
     AssessEndpoint(AssessEndpointArgs),
+    /// Observe HTTP/3 and raw peer QUIC transport parameters.
+    H3(H3Args),
     /// Aggregate JSONL probe observations into freshness-aware hostname state.
     AggregateHost(AggregateHostArgs),
 }
@@ -79,6 +82,20 @@ struct MatrixArgs {
 }
 
 #[derive(Debug, Args)]
+struct H3Args {
+    #[arg(required = true)]
+    urls: Vec<String>,
+    #[arg(long, default_value_t = 1)]
+    repeat: usize,
+    #[arg(long, default_value_t = 8.0)]
+    timeout_secs: f64,
+    #[arg(long, value_enum, default_value_t = H3AddressFamily::Auto)]
+    family: H3AddressFamily,
+    #[arg(long)]
+    vantage: Option<String>,
+}
+
+#[derive(Debug, Args)]
 struct ClassifyArgs {
     body: PathBuf,
     #[arg(long)]
@@ -114,6 +131,7 @@ async fn main() -> Result<()> {
         Command::Path(args) => run_path(args),
         Command::Route(args) => run_route(args),
         Command::AssessEndpoint(args) => run_assess_endpoint(args),
+        Command::H3(args) => run_h3(args).await,
         Command::AggregateHost(args) => run_aggregate_host(args),
     }
 }
@@ -134,6 +152,36 @@ async fn run_probe(args: ProbeArgs) -> Result<()> {
         probe_batch(&profile, args.transport, args.platform, &args.urls, &config).await?
     {
         println!("{}", serde_json::to_string(&observation)?);
+    }
+    Ok(())
+}
+
+async fn run_h3(args: H3Args) -> Result<()> {
+    if args.repeat == 0 {
+        bail!("--repeat must be at least 1");
+    }
+    if !args.timeout_secs.is_finite() || args.timeout_secs <= 0.0 {
+        bail!("--timeout-secs must be a positive finite number");
+    }
+    let config = H3ProbeConfig {
+        timeout: Duration::from_secs_f64(args.timeout_secs),
+        family: args.family,
+        vantage: args.vantage,
+    };
+    for url in &args.urls {
+        for _ in 0..args.repeat {
+            match probe_h3(url, &config).await {
+                Ok(observation) => println!("{}", serde_json::to_string(&observation)?),
+                Err(error) => println!(
+                    "{}",
+                    serde_json::json!({
+                        "target": url,
+                        "result": "error",
+                        "error": format!("{error:#}"),
+                    })
+                ),
+            }
+        }
     }
     Ok(())
 }

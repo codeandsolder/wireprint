@@ -2,6 +2,8 @@ pub mod classify;
 pub mod dns;
 pub mod fusion;
 pub mod h2;
+pub mod h3;
+pub mod h3_probe;
 pub mod host;
 pub mod model;
 pub mod normalize;
@@ -17,6 +19,12 @@ pub use h2::{
     H2_PREFACE_CLASSIFIER_VERSION, H2ControlFrame, H2FingerprintMatch, H2FingerprintMatchKind,
     H2ServerPreface, H2Setting, classify_h2_preface, provider_signals as h2_provider_signals,
 };
+pub use h3::{
+    H3_QUIC_CLASSIFIER_VERSION, H3FingerprintMatch, H3FingerprintMatchKind, H3ServerFingerprint,
+    H3Setting, QuicStableTransportParameters, QuicTransportParameterWire, QuicTransportStructure,
+    QuicVersionInformation, classify_h3_quic, provider_signals as h3_provider_signals,
+};
+pub use h3_probe::{H3AddressFamily, H3ProbeConfig, probe_h3};
 pub use host::{
     DEFAULT_HOST_FRESHNESS_WINDOW_MS, DEFAULT_SUPPORT_BUCKET_MS, HOST_FUSION_VERSION,
     HostAggregationConfig, HostAssessment, HostFreshnessBasis, HostProviderMembership,
