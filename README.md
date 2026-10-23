@@ -59,6 +59,20 @@ wireprint probe \
 
 Observations are emitted as JSONL. Add `--vantage NAME` when the collection point has a stable label; every row also records an observation timestamp, actual peer, HTTP version, exact ordered request headers, response headers, bounded raw body prefix, semantic outcome and body-prefix hash.
 
+## Observe HTTP/3 / QUIC
+
+The dedicated H3 observer preserves raw peer QUIC transport-parameter order and ordered peer HTTP/3 SETTINGS before high-level decoding discards those wire facts:
+
+```bash
+wireprint h3 \
+  --family auto \
+  --repeat 2 \
+  --vantage acer \
+  https://www.cloudflare.com/
+```
+
+Successful H3 rows use the ordinary `Observation` JSON schema, including DNS/routing provenance, response path elements, `H3Transport` provider evidence when an independently validated exact signature matches, and a normal endpoint assessment. Body/outcome fields stay unset because this observer intentionally stops after final response headers. See [`docs/h3-quic.md`](docs/h3-quic.md).
+
 ## Run a matrix
 
 ```bash

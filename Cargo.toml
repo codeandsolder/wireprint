@@ -8,6 +8,10 @@ repository = "https://github.com/codeandsolder/wireprint"
 
 [dependencies]
 anyhow = "1"
+boring = "5.3"
+boring-sys = "5.3"
+foreign-types-shared = "0.3"
+quiche = "0.30"
 clap = { version = "4.5", features = ["derive"] }
 futures-util = "0.3"
 hickory-resolver = { version = "0.26.3", default-features = false, features = ["system-config", "tokio"] }
@@ -15,9 +19,9 @@ regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"
-tokio = { version = "1.52", features = ["macros", "rt-multi-thread", "time"] }
+tokio = { version = "1.52", features = ["macros", "net", "rt-multi-thread", "time"] }
 url = "2.5"
-wreq = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "953ea576f699c8664ecbff30805e746368c5cb5b", features = ["gzip", "brotli", "deflate", "stream"] }
+wreq = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "953ea576f699c8664ecbff30805e746368c5cb5b", features = ["gzip", "brotli", "deflate", "stream", "prefix-symbols"] }
 wreq-util = { version = "0.2.0", features = ["tokio-rt"] }
 
 [dev-dependencies]
