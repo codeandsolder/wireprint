@@ -10,6 +10,8 @@ pub mod normalize;
 pub mod path;
 pub mod probe;
 pub mod routing;
+pub mod tls;
+pub mod tls_probe;
 pub mod transport;
 
 pub use classify::classify_response;
@@ -40,4 +42,10 @@ pub use normalize::{NORMALIZER_VERSION, normalize_response_template};
 pub use path::{PATH_CLASSIFIER_VERSION, detect_path_elements};
 pub use probe::{ProbeConfig, probe_batch};
 pub use routing::{ROUTING_CLASSIFIER_VERSION, detect_routing_elements};
+pub use tls::{
+    TLS_MORPHOLOGY_VERSION, TlsExtensionShape, TlsHandshakeMessageShape, TlsMessageCapture,
+    TlsMorphologyMatch, TlsServerMorphology, TlsSessionTicketShape,
+    provider_signals as tls_provider_signals,
+};
+pub use tls_probe::{TlsAddressFamily, TlsProbeConfig, probe_tls};
 pub use transport::{PlatformKind, TransportProfile};

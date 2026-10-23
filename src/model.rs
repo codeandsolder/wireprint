@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::h2::H2ServerPreface;
 use crate::h3::H3ServerFingerprint;
+use crate::tls::TlsServerMorphology;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfileSet {
@@ -213,6 +214,8 @@ pub struct Observation {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub http_version: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub transport_protocol: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub final_uri: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remote: Option<String>,
@@ -230,6 +233,8 @@ pub struct Observation {
     pub h2_server_preface: Option<H2ServerPreface>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub h3_server_fingerprint: Option<H3ServerFingerprint>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tls_server_morphology: Option<TlsServerMorphology>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub endpoint_assessment: Option<EndpointAssessment>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -256,7 +261,10 @@ impl From<&Observation> for EndpointEvidence {
             target: Some(observation.target.clone()),
             observed_unix_ms: Some(observation.observed_unix_ms),
             vantage: observation.vantage.clone(),
-            protocol: observation.http_version.clone(),
+            protocol: observation
+                .transport_protocol
+                .clone()
+                .or_else(|| observation.http_version.clone()),
             selected_endpoint: observation.selected_endpoint.clone(),
             actual_peer: observation.remote.clone(),
             response_elements: observation.path_elements.clone(),
