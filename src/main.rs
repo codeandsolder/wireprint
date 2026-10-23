@@ -6,9 +6,9 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
 use wireprint::{
-    EndpointEvidence, Header, PlatformKind, ProbeConfig, ProfileSet, RequestProfile,
-    TransportProfile, assess_endpoint, classify_response, detect_path_elements,
-    detect_routing_elements, probe_batch,
+    EndpointEvidence, Header, HostAggregationConfig, Observation, PlatformKind, ProbeConfig,
+    ProfileSet, RequestProfile, TransportProfile, aggregate_observations, assess_endpoint,
+    classify_response, detect_path_elements, detect_routing_elements, probe_batch,
 };
 
 #[derive(Debug, Parser)]
@@ -32,6 +32,8 @@ enum Command {
     Route(RouteArgs),
     /// Fuse one endpoint/vantage evidence document into termination candidates.
     AssessEndpoint(AssessEndpointArgs),
+    /// Aggregate JSONL probe observations into freshness-aware hostname state.
+    AggregateHost(AggregateHostArgs),
 }
 
 #[derive(Debug, Args)]
@@ -112,6 +114,7 @@ async fn main() -> Result<()> {
         Command::Path(args) => run_path(args),
         Command::Route(args) => run_route(args),
         Command::AssessEndpoint(args) => run_assess_endpoint(args),
+        Command::AggregateHost(args) => run_aggregate_host(args),
     }
 }
 
@@ -251,4 +254,48 @@ fn read_targets(path: &Path) -> Result<Vec<String>> {
         targets.push(value.to_owned());
     }
     Ok(targets)
+}
+
+#[derive(Debug, Args)]
+struct AggregateHostArgs {
+    input: PathBuf,
+    #[arg(long, default_value_t = 6)]
+    freshness_hours: u64,
+    #[arg(long, default_value_t = 60)]
+    support_bucket_minutes: u64,
+}
+
+fn run_aggregate_host(args: AggregateHostArgs) -> Result<()> {
+    let observations = read_observations(&args.input)?;
+    let config = HostAggregationConfig {
+        freshness_window_ms: u128::from(args.freshness_hours) * 60 * 60 * 1000,
+        support_bucket_ms: u128::from(args.support_bucket_minutes) * 60 * 1000,
+    };
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&aggregate_observations(&observations, config))?
+    );
+    Ok(())
+}
+
+fn read_observations(path: &Path) -> Result<Vec<Observation>> {
+    let reader =
+        BufReader::new(File::open(path).with_context(|| format!("open {}", path.display()))?);
+    let mut observations = Vec::new();
+    for (index, line) in reader.lines().enumerate() {
+        let line = line?;
+        let value = line.trim();
+        if value.is_empty() || value.starts_with('#') {
+            continue;
+        }
+        let observation = serde_json::from_str(value).with_context(|| {
+            format!(
+                "parse {} line {} as wireprint observation",
+                path.display(),
+                index + 1
+            )
+        })?;
+        observations.push(observation);
+    }
+    Ok(observations)
 }
