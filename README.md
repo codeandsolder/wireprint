@@ -22,7 +22,7 @@ RequestProfile × TransportProfile × Target
 
 A request profile describes application identity and HTTP headers. A transport profile describes the wreq client emulation. The resulting observation retains raw provenance and a semantic outcome classification.
 
-Each successful observation also runs the versioned network-path recognizer (`builtin-path-v3`). It emits an unordered set of explicit participation claims — edge-provider participation, downstream platform/origin service, proxy/cache, load balancer, API gateway, service mesh, identity proxy, traffic management, WAF/security, bot-management and server implementation — without guessing hop order. See [`docs/path-elements.md`](docs/path-elements.md).
+Each successful observation also runs the versioned network-path recognizer (`builtin-path-v3`), DNS/routing provenance (`builtin-dns-v1` / `builtin-routing-v1`), live HTTP/2 server-preface classifier (`builtin-h2-preface-v1`) and per-endpoint fusion (`builtin-endpoint-v1`). Those layers keep path participation, concrete endpoint provenance and likely outer termination separate instead of guessing hop order. `builtin-host-v1` can then aggregate saved observations into freshness-aware current/historical provider state without turning retries into votes. See [`docs/path-elements.md`](docs/path-elements.md) and [`docs/evidence-model.md`](docs/evidence-model.md).
 
 Built-in outcome classes currently include:
 
@@ -84,6 +84,18 @@ wireprint path \
 ```
 
 This is intended for corpus replay: it applies exactly the same versioned path recognizer used by live observations.
+
+## Aggregate hostname history
+
+Aggregate probe JSONL into current and historical provider membership:
+
+```bash
+wireprint aggregate-host results.jsonl \
+  --freshness-hours 6 \
+  --support-bucket-minutes 60
+```
+
+The default current-provider window is six hours, anchored to the latest timed provider-bearing endpoint assessment. Support is deduplicated by provider/channel/protocol/vantage/endpoint/time bucket; repeated requests in one bucket remain one independent support group. Current multi-provider/path-split state is preserved instead of ranked to a winner, while stale providers remain visible only in the historical set.
 
 The bundled AI-retriever profiles are **synthetic research profiles**, not claims that the transport matches the vendor's production fetcher. Provenance is stored alongside each profile so a later live capture can replace an approximation without rewriting history.
 

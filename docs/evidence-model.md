@@ -12,7 +12,8 @@ A useful request observation has at least these axes:
 6. **network-path participation** — explicit evidence for serving edge, downstream platform/origin service, proxy/cache, load balancer, API gateway, service mesh, WAF/security, bot-management and server implementation, kept as independent claims rather than one vendor field;
 7. **session / reputation state**;
 8. **response semantics** — content-like response, redirect, challenge, CAPTCHA, explicit block, rate limit, application error, unknown;
-9. **raw provenance** — timestamp, vantage, target, exact ordered request headers, final URI, peer, HTTP version, response headers and bounded captured body prefix.
+9. **raw provenance** — timestamp, vantage, target, exact ordered request headers, final URI, peer, HTTP version, response headers and bounded captured body prefix;
+10. **hostname history** — freshness-gated current provider membership, historical provider membership, protocol/vantage/endpoint route groups and deduplicated independent support groups.
 
 ## Important non-equivalences
 
@@ -23,6 +24,9 @@ A useful request observation has at least these axes:
 - A downstream platform/proxy marker does not prove that component is the outer TLS termination provider.
 - Response metadata can prove multiple path participants without proving their linear hop order.
 - Missing evidence is unknown, not negative evidence.
+- Historical provider evidence cannot resurrect a provider into the current set; it may only corroborate a provider that has fresh originating evidence.
+- Repeated requests are observations, not votes. Independent support is keyed by channel, protocol, vantage, endpoint and time bucket.
+- Multi-provider/path-split state is preserved rather than collapsed to a numeric winner.
 - Header order and duplicates are evidence; do not round-trip request profiles through unordered maps.
 
 ## Safety boundary

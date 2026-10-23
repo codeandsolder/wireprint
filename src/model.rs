@@ -111,6 +111,8 @@ pub struct EndpointEvidence {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vantage: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub protocol: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub selected_endpoint: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub actual_peer: Option<String>,
@@ -157,6 +159,8 @@ pub struct EndpointAssessment {
     pub observed_unix_ms: Option<u128>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vantage: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub protocol: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selected_endpoint: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -249,6 +253,7 @@ impl From<&Observation> for EndpointEvidence {
             target: Some(observation.target.clone()),
             observed_unix_ms: Some(observation.observed_unix_ms),
             vantage: observation.vantage.clone(),
+            protocol: observation.http_version.clone(),
             selected_endpoint: observation.selected_endpoint.clone(),
             actual_peer: observation.remote.clone(),
             response_elements: observation.path_elements.clone(),
