@@ -19,6 +19,9 @@ use crate::h3::{H3ServerFingerprint, H3Setting, classify_h3_quic, provider_signa
 use crate::model::{DnsProvenance, EndpointEvidence, Header, Observation};
 use crate::path::detect_path_elements;
 use crate::routing::detect_routing_elements;
+use crate::routing_context::{
+    RoutingContextCollector, enrich_observation as enrich_routing_context,
+};
 
 const H3_USER_AGENT: &str = "wireprint-h3-observer/1";
 const MAX_DATAGRAM_SIZE: usize = 65_535;
@@ -37,6 +40,7 @@ pub struct H3ProbeConfig {
     pub timeout: Duration,
     pub family: H3AddressFamily,
     pub vantage: Option<String>,
+    pub routing_context_collector: Option<RoutingContextCollector>,
 }
 
 impl Default for H3ProbeConfig {
@@ -45,6 +49,7 @@ impl Default for H3ProbeConfig {
             timeout: Duration::from_secs(8),
             family: H3AddressFamily::Auto,
             vantage: None,
+            routing_context_collector: None,
         }
     }
 }
@@ -200,7 +205,7 @@ pub async fn probe_h3(target: &str, config: &H3ProbeConfig) -> Result<Observatio
                     .collect(),
                 &raw_transport_parameters,
             )?;
-            return Ok(success_observation(H3ObservationParts {
+            let mut observation = success_observation(H3ObservationParts {
                 target,
                 observed_unix_ms,
                 elapsed: started.elapsed(),
@@ -212,7 +217,13 @@ pub async fn probe_h3(target: &str, config: &H3ProbeConfig) -> Result<Observatio
                 status,
                 response_headers: response_headers.unwrap_or_default(),
                 fingerprint,
-            }));
+            });
+            if let Some(collector) = config.routing_context_collector.as_ref() {
+                enrich_routing_context(&mut observation, collector).await;
+            }
+            observation.endpoint_assessment =
+                Some(assess_endpoint(&EndpointEvidence::from(&observation)));
+            return Ok(observation);
         }
 
         let timeout = conn.timeout().unwrap_or(Duration::from_millis(50));
@@ -251,7 +262,7 @@ struct H3ObservationParts<'a> {
 fn success_observation(parts: H3ObservationParts<'_>) -> Observation {
     let provider_signals = provider_signals(&parts.fingerprint);
     let path_elements = detect_path_elements(&parts.response_headers);
-    let mut observation = Observation {
+    Observation {
         target: parts.target.to_owned(),
         observed_unix_ms: parts.observed_unix_ms,
         vantage: parts.config.vantage.clone(),
@@ -283,6 +294,7 @@ fn success_observation(parts: H3ObservationParts<'_>) -> Observation {
         path_elements,
         routing_elements: parts.routing_elements,
         provider_signals,
+        routing_context_snapshot: None,
         h2_server_preface: None,
         h3_server_fingerprint: Some(parts.fingerprint),
         tls_server_morphology: None,
@@ -295,9 +307,7 @@ fn success_observation(parts: H3ObservationParts<'_>) -> Observation {
         body_truncated: None,
         outcome: None,
         error: None,
-    };
-    observation.endpoint_assessment = Some(assess_endpoint(&EndpointEvidence::from(&observation)));
-    observation
+    }
 }
 
 fn quic_config(raw_peer_transport_parameters: Arc<Mutex<Vec<u8>>>) -> Result<quiche::Config> {
