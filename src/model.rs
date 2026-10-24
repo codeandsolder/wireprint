@@ -98,10 +98,23 @@ pub struct RoutingContext {
     pub prefix: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub asn: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub holder: Option<String>,
+    #[serde(alias = "holder", skip_serializing_if = "Option::is_none")]
+    pub as_name: Option<String>,
     #[serde(default)]
     pub evidence: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RoutingContextSnapshot {
+    pub classifier: String,
+    pub source: String,
+    pub resource: String,
+    pub observed_unix_ms: u128,
+    pub lookup_reused: bool,
+    #[serde(default)]
+    pub contexts: Vec<RoutingContext>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -230,6 +243,8 @@ pub struct Observation {
     #[serde(default)]
     pub provider_signals: Vec<ProviderSignal>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub routing_context_snapshot: Option<RoutingContextSnapshot>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub h2_server_preface: Option<H2ServerPreface>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub h3_server_fingerprint: Option<H3ServerFingerprint>,
@@ -270,7 +285,11 @@ impl From<&Observation> for EndpointEvidence {
             response_elements: observation.path_elements.clone(),
             routing_elements: observation.routing_elements.clone(),
             provider_signals: observation.provider_signals.clone(),
-            routing_context: Vec::new(),
+            routing_context: observation
+                .routing_context_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.contexts.clone())
+                .unwrap_or_default(),
         }
     }
 }
