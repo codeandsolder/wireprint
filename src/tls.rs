@@ -463,19 +463,56 @@ fn parse_alpn(value: &[u8]) -> Result<Option<String>> {
 }
 
 fn classify_morphology(morphology: &TlsServerMorphology) -> Option<TlsMorphologyMatch> {
-    // These rules are intentionally structural and conservative. They are used
-    // only as confirmatory TlsMorphology signals; none may originate provider
-    // membership. The live BoringSSL profile is calibrated separately from the
-    // historical OpenSSL 3.5.7 corpus before provider_family is enabled.
+    // Provider rules are intentionally profile-specific and confirmatory-only.
+    // They were calibrated on repeated 2026-10-24 observations from unrelated
+    // routes using the exact deterministic default BoringSSL observer profile.
+    // A custom group list (or any future profile) must be calibrated separately.
+    if morphology.client_profile == "boringssl-h2-tls13-v1" {
+        if matches_cloudflare_default_profile(morphology) {
+            return Some(provider_match(
+                "cloudflare-boringssl-h2-tls13-v1",
+                "cloudflare",
+                "openssl-boringssl-family-shape",
+            ));
+        }
+        if matches_akamai_default_profile(morphology) {
+            return Some(provider_match(
+                "akamai-boringssl-h2-tls13-v1",
+                "akamai",
+                "openssl-boringssl-family-shape",
+            ));
+        }
+        if matches_imperva_default_profile(morphology) {
+            return Some(provider_match(
+                "imperva-boringssl-h2-tls13-v1",
+                "imperva",
+                "openssl-boringssl-family-shape",
+            ));
+        }
+        if matches_fastly_default_profile(morphology) {
+            return Some(provider_match(
+                "fastly-boringssl-h2-tls13-v1",
+                "fastly",
+                "openssl-boringssl-family-shape",
+            ));
+        }
+    }
+
+    // Broader implementation/configuration shapes are useful descriptive
+    // evidence but never emit provider identity.
     let implementation_family = if morphology.encrypted_extension_ids == [16, 0] {
         Some("go-crypto-tls-like")
     } else if morphology.serverhello_extension_ids == [51, 43]
         && morphology.encrypted_extension_ids == [16]
     {
         Some("google-or-f5-like")
-    } else if morphology.serverhello_extension_ids == [43, 51]
-        && morphology.encrypted_extension_ids == [0, 16]
-    {
+    } else if matches!(
+        (
+            morphology.serverhello_extension_ids.as_slice(),
+            morphology.encrypted_extension_ids.as_slice()
+        ),
+        ([43, 51], [0, 16]) | ([51, 43], [0, 16])
+    ) {
         Some("openssl-boringssl-family-shape")
     } else {
         None
@@ -485,6 +522,92 @@ fn classify_morphology(morphology: &TlsServerMorphology) -> Option<TlsMorphology
         provider_family: None,
         implementation_family: implementation_family.into(),
     })
+}
+
+fn provider_match(name: &str, provider: &str, implementation_family: &str) -> TlsMorphologyMatch {
+    TlsMorphologyMatch {
+        name: name.into(),
+        provider_family: Some(provider.into()),
+        implementation_family: implementation_family.into(),
+    }
+}
+
+fn matches_common_default_profile(
+    morphology: &TlsServerMorphology,
+    cipher_id: u16,
+    serverhello_extension_ids: &[u16],
+    encrypted_extension_ids: &[u16],
+) -> bool {
+    morphology.selected_cipher_id == Some(cipher_id)
+        && morphology.selected_group_id == Some(0x11ec)
+        && morphology.alpn.as_deref() == Some("h2")
+        && !morphology.hello_retry_request
+        && morphology.serverhello_length == Some(1206)
+        && morphology.serverhello_extension_ids == serverhello_extension_ids
+        && morphology.encrypted_extensions_length
+            == Some(if encrypted_extension_ids == [16] {
+                11
+            } else {
+                15
+            })
+        && morphology.encrypted_extension_ids == encrypted_extension_ids
+        && morphology.compressed_certificate_length.is_none()
+}
+
+fn tickets_match(
+    morphology: &TlsServerMorphology,
+    count: usize,
+    mut predicate: impl FnMut(&TlsSessionTicketShape) -> bool,
+) -> bool {
+    morphology.new_session_ticket_count == count
+        && morphology.new_session_tickets.len() == count
+        && morphology.new_session_tickets.iter().all(&mut predicate)
+}
+
+fn matches_cloudflare_default_profile(morphology: &TlsServerMorphology) -> bool {
+    matches_common_default_profile(morphology, 0x1301, &[51, 43], &[0, 16])
+        && tickets_match(morphology, 2, |ticket| {
+            ticket.length == 210
+                && ticket.lifetime_bucket_60s == 64_800
+                && ticket.nonce_length == 1
+                && ticket.extension_ids.is_empty()
+                && ticket.grease_extension_count == 1
+        })
+}
+
+fn matches_akamai_default_profile(morphology: &TlsServerMorphology) -> bool {
+    matches_common_default_profile(morphology, 0x1302, &[43, 51], &[0, 16])
+        && tickets_match(morphology, 2, |ticket| {
+            ticket.length == 277
+                && ticket.lifetime_bucket_60s == 83_100
+                && ticket.nonce_length == 8
+                && ticket.extension_ids.is_empty()
+                && ticket.grease_extension_count == 0
+        })
+}
+
+fn matches_imperva_default_profile(morphology: &TlsServerMorphology) -> bool {
+    matches_common_default_profile(morphology, 0x1301, &[43, 51], &[0, 16])
+        && tickets_match(morphology, 2, |ticket| {
+            ticket.length == 245
+                && ticket.lifetime_bucket_60s == 7_200
+                && ticket.nonce_length == 8
+                && ticket.extension_ids.is_empty()
+                && ticket.grease_extension_count == 0
+        })
+}
+
+fn matches_fastly_default_profile(morphology: &TlsServerMorphology) -> bool {
+    matches_common_default_profile(morphology, 0x1301, &[43, 51], &[0, 16])
+        && tickets_match(morphology, 1, |ticket| {
+            ticket.lifetime_bucket_60s == 86_400
+                && ticket.nonce_length == 0
+                && ticket.grease_extension_count == 0
+                && matches!(
+                    (ticket.length, ticket.extension_ids.as_slice()),
+                    (189, []) | (197, [42])
+                )
+        })
 }
 
 pub fn provider_signals(morphology: &TlsServerMorphology) -> Vec<ProviderSignal> {
@@ -656,6 +779,158 @@ mod tests {
             .collect::<Vec<_>>();
         body.extend(extension_vector(&entries));
         hs(HS_SERVER_HELLO, &body)
+    }
+
+    fn ticket(
+        length: u32,
+        lifetime: u32,
+        nonce_length: u8,
+        extension_ids: Vec<u16>,
+        grease_extension_count: usize,
+    ) -> TlsSessionTicketShape {
+        TlsSessionTicketShape {
+            length,
+            lifetime_hint: lifetime,
+            lifetime_bucket_60s: lifetime,
+            nonce_length,
+            extension_ids,
+            grease_extension_count,
+        }
+    }
+
+    fn synthetic_morphology(
+        cipher_id: u16,
+        serverhello_extension_ids: Vec<u16>,
+        tickets: Vec<TlsSessionTicketShape>,
+    ) -> TlsServerMorphology {
+        TlsServerMorphology {
+            classifier: TLS_MORPHOLOGY_VERSION.into(),
+            client_profile: "boringssl-h2-tls13-v1".into(),
+            selected_cipher: Some(cipher_name(cipher_id).into()),
+            selected_cipher_id: Some(cipher_id),
+            selected_group: Some("X25519MLKEM768".into()),
+            selected_group_id: Some(0x11ec),
+            alpn: Some("h2".into()),
+            hello_retry_request: false,
+            hrr_requested_group: None,
+            hrr_requested_group_id: None,
+            serverhello_length: Some(1206),
+            serverhello_extension_ids,
+            serverhello_grease_extension_count: 0,
+            compat_ccs_before_encrypted_extensions: false,
+            encrypted_extensions_length: Some(15),
+            encrypted_extension_ids: vec![0, 16],
+            encrypted_grease_extension_count: 0,
+            certificate_list_length: None,
+            certificate_lengths: Vec::new(),
+            compressed_certificate_length: None,
+            new_session_ticket_count: tickets.len(),
+            new_session_tickets: tickets,
+            post_handshake_window_ms: Some(1_500),
+            handshake_messages: Vec::new(),
+            handshake_lengths: BTreeMap::new(),
+            family_match: None,
+        }
+    }
+
+    #[test]
+    fn calibrated_default_profile_provider_shapes_are_confirmatory_signals() {
+        let cases = [
+            (
+                "cloudflare",
+                synthetic_morphology(
+                    0x1301,
+                    vec![51, 43],
+                    vec![
+                        ticket(210, 64_800, 1, vec![], 1),
+                        ticket(210, 64_800, 1, vec![], 1),
+                    ],
+                ),
+            ),
+            (
+                "akamai",
+                synthetic_morphology(
+                    0x1302,
+                    vec![43, 51],
+                    vec![
+                        ticket(277, 83_100, 8, vec![], 0),
+                        ticket(277, 83_100, 8, vec![], 0),
+                    ],
+                ),
+            ),
+            (
+                "imperva",
+                synthetic_morphology(
+                    0x1301,
+                    vec![43, 51],
+                    vec![
+                        ticket(245, 7_200, 8, vec![], 0),
+                        ticket(245, 7_200, 8, vec![], 0),
+                    ],
+                ),
+            ),
+            (
+                "fastly",
+                synthetic_morphology(
+                    0x1301,
+                    vec![43, 51],
+                    vec![ticket(189, 86_400, 0, vec![], 0)],
+                ),
+            ),
+        ];
+
+        for (provider, mut morphology) in cases {
+            morphology.family_match = classify_morphology(&morphology);
+            let matched = morphology.family_match.as_ref().unwrap();
+            assert_eq!(matched.provider_family.as_deref(), Some(provider));
+            let signals = provider_signals(&morphology);
+            assert_eq!(signals.len(), 1);
+            assert_eq!(signals[0].provider, provider);
+            assert_eq!(signals[0].channel, ProviderEvidenceChannel::TlsMorphology);
+        }
+    }
+
+    #[test]
+    fn fastly_early_data_ticket_variant_is_calibrated() {
+        let morphology = synthetic_morphology(
+            0x1301,
+            vec![43, 51],
+            vec![ticket(197, 86_400, 0, vec![42], 0)],
+        );
+        assert_eq!(
+            classify_morphology(&morphology).and_then(|matched| matched.provider_family),
+            Some("fastly".into())
+        );
+    }
+
+    #[test]
+    fn provider_rules_do_not_apply_to_custom_client_profile() {
+        let mut morphology = synthetic_morphology(
+            0x1301,
+            vec![51, 43],
+            vec![
+                ticket(210, 64_800, 1, vec![], 1),
+                ticket(210, 64_800, 1, vec![], 1),
+            ],
+        );
+        morphology.client_profile = "boringssl-h2-tls13-v1:groups=X25519".into();
+        let matched = classify_morphology(&morphology).unwrap();
+        assert!(matched.provider_family.is_none());
+    }
+
+    #[test]
+    fn cloudfront_like_ticket_shape_does_not_match_fastly() {
+        let morphology = synthetic_morphology(
+            0x1301,
+            vec![43, 51],
+            vec![ticket(153, 52_800, 2, vec![], 0)],
+        );
+        let matched = classify_morphology(&morphology).unwrap();
+        assert!(matched.provider_family.is_none());
+        assert_eq!(
+            matched.implementation_family,
+            "openssl-boringssl-family-shape"
+        );
     }
 
     #[test]
