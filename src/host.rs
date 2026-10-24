@@ -196,7 +196,7 @@ fn has_provider_candidates(assessment: &EndpointAssessment) -> bool {
     !assessment.candidates.is_empty()
 }
 
-fn is_current(
+fn is_time_current(
     assessment: &EndpointAssessment,
     latest_provider_observed_unix_ms: Option<u128>,
     freshness_window_ms: u128,
@@ -205,13 +205,40 @@ fn is_current(
         Some(latest) => assessment.observed_unix_ms.is_some_and(|observed| {
             observed <= latest && observed >= latest.saturating_sub(freshness_window_ms)
         }),
-        None => has_provider_candidates(assessment),
+        None => assessment.observed_unix_ms.is_none(),
     }
+}
+
+fn is_corroborating_current(
+    assessment: &EndpointAssessment,
+    latest_provider_observed_unix_ms: Option<u128>,
+    freshness_window_ms: u128,
+) -> bool {
+    match latest_provider_observed_unix_ms {
+        Some(latest) => assessment
+            .observed_unix_ms
+            .is_some_and(|observed| observed >= latest.saturating_sub(freshness_window_ms)),
+        None => assessment.observed_unix_ms.is_none(),
+    }
+}
+
+fn is_current(
+    assessment: &EndpointAssessment,
+    latest_provider_observed_unix_ms: Option<u128>,
+    freshness_window_ms: u128,
+) -> bool {
+    has_provider_candidates(assessment)
+        && is_time_current(
+            assessment,
+            latest_provider_observed_unix_ms,
+            freshness_window_ms,
+        )
 }
 
 fn collect_support_groups<'a>(
     assessments: impl IntoIterator<Item = &'a EndpointAssessment>,
     bucket_ms: u128,
+    unanchored_allowed: &BTreeSet<String>,
 ) -> Vec<HostSupportGroup> {
     let mut groups = BTreeMap::<SupportGroupKey, SupportGroupBuilder>::new();
     for assessment in assessments {
@@ -222,20 +249,25 @@ fn collect_support_groups<'a>(
                 .iter()
                 .chain(candidate.corroborating_channels.iter());
             for channel in channels {
-                let key = SupportGroupKey {
-                    provider: candidate.provider.clone(),
-                    protocol: assessment.protocol.clone(),
-                    channel: *channel,
-                    vantage: assessment.vantage.clone(),
-                    endpoint: endpoint.clone(),
-                    bucket_start_unix_ms: bucket_start(assessment.observed_unix_ms, bucket_ms),
-                };
-                let slot = groups.entry(key).or_default();
-                slot.raw_observations += 1;
-                update_time_range(
-                    &mut slot.first_observed_unix_ms,
-                    &mut slot.last_observed_unix_ms,
-                    assessment.observed_unix_ms,
+                add_support_group(
+                    &mut groups,
+                    &candidate.provider,
+                    *channel,
+                    assessment,
+                    endpoint.clone(),
+                    bucket_ms,
+                );
+            }
+        }
+        for signal in &assessment.unanchored_corroborating_signals {
+            if unanchored_allowed.contains(&signal.provider) {
+                add_support_group(
+                    &mut groups,
+                    &signal.provider,
+                    signal.channel,
+                    assessment,
+                    endpoint.clone(),
+                    bucket_ms,
                 );
             }
         }
@@ -255,6 +287,31 @@ fn collect_support_groups<'a>(
             last_observed_unix_ms: built.last_observed_unix_ms,
         })
         .collect()
+}
+
+fn add_support_group(
+    groups: &mut BTreeMap<SupportGroupKey, SupportGroupBuilder>,
+    provider: &str,
+    channel: ProviderEvidenceChannel,
+    assessment: &EndpointAssessment,
+    endpoint: Option<String>,
+    bucket_ms: u128,
+) {
+    let key = SupportGroupKey {
+        provider: provider.to_owned(),
+        protocol: assessment.protocol.clone(),
+        channel,
+        vantage: assessment.vantage.clone(),
+        endpoint,
+        bucket_start_unix_ms: bucket_start(assessment.observed_unix_ms, bucket_ms),
+    };
+    let slot = groups.entry(key).or_default();
+    slot.raw_observations += 1;
+    update_time_range(
+        &mut slot.first_observed_unix_ms,
+        &mut slot.last_observed_unix_ms,
+        assessment.observed_unix_ms,
+    );
 }
 
 fn collect_route_groups<'a>(
@@ -343,10 +400,27 @@ pub fn aggregate_host(
         .map(|candidate| candidate.provider.clone())
         .collect::<BTreeSet<_>>();
 
-    let historical_support_groups =
-        collect_support_groups(assessments.iter(), config.support_bucket_ms);
-    let current_support_groups =
-        collect_support_groups(current.iter().copied(), config.support_bucket_ms);
+    let current_time = assessments
+        .iter()
+        .filter(|assessment| {
+            is_corroborating_current(
+                assessment,
+                latest_provider_observed_unix_ms,
+                config.freshness_window_ms,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let historical_support_groups = collect_support_groups(
+        assessments.iter(),
+        config.support_bucket_ms,
+        &historical_provider_set,
+    );
+    let current_support_groups = collect_support_groups(
+        current_time.iter().copied(),
+        config.support_bucket_ms,
+        &current_provider_set,
+    );
     let current_route_groups =
         collect_route_groups(current.iter().copied(), config.support_bucket_ms);
 
@@ -381,6 +455,42 @@ pub fn aggregate_host(
                     slot.current_vantages.insert(vantage.clone());
                 }
                 if let Some(endpoint) = &endpoint {
+                    slot.current_endpoints.insert(endpoint.clone());
+                }
+            }
+        }
+    }
+
+    // Confirmatory-only signals may strengthen a provider that was originated
+    // elsewhere on this hostname, but can never create membership themselves.
+    for assessment in assessments {
+        let current_assessment = is_corroborating_current(
+            assessment,
+            latest_provider_observed_unix_ms,
+            config.freshness_window_ms,
+        );
+        let assessment_endpoint = endpoint(assessment);
+        for signal in &assessment.unanchored_corroborating_signals {
+            if !historical_provider_set.contains(&signal.provider) {
+                continue;
+            }
+            let slot = memberships.entry(signal.provider.clone()).or_default();
+            slot.historical_corroborating_channels
+                .insert(signal.channel);
+            update_time_range(
+                &mut slot.first_observed_unix_ms,
+                &mut slot.last_observed_unix_ms,
+                assessment.observed_unix_ms,
+            );
+            if current_assessment && current_provider_set.contains(&signal.provider) {
+                slot.current_corroborating_channels.insert(signal.channel);
+                if let Some(protocol) = &assessment.protocol {
+                    slot.current_protocols.insert(protocol.clone());
+                }
+                if let Some(vantage) = &assessment.vantage {
+                    slot.current_vantages.insert(vantage.clone());
+                }
+                if let Some(endpoint) = &assessment_endpoint {
                     slot.current_endpoints.insert(endpoint.clone());
                 }
             }
