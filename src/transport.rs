@@ -27,7 +27,7 @@ pub enum TransportProfile {
     SafariIos16,
     /// Mobile Gecko transport control (Firefox Android 135).
     FirefoxAndroid135,
-    /// Old Chromium/Android transport shape; useful as a WebView-era proxy, not an exact WebView claim.
+    /// Chrome/Chromium 100-era transport shape; useful as a WebView-era proxy, not an exact WebView claim.
     Chromium100Era,
     /// Old native Android application stack control (OkHttp 3.9).
     Okhttp39,
