@@ -27,6 +27,8 @@ A useful request observation has at least these axes:
 - Historical provider evidence cannot resurrect a provider into the current set; it may only corroborate a provider that has fresh originating evidence.
 - Repeated requests are observations, not votes. Independent support is keyed by channel, protocol, vantage, endpoint and time bucket.
 - Multi-provider/path-split state is preserved rather than collapsed to a numeric winner.
+- ASN/prefix ownership describes the concrete selected/peer network context only. It does not originate or corroborate provider identity; hostname-wide DNS candidates must not be substituted for the actual serving endpoint.
+- `pure_in_sample` routing-audit output is a corpus statistic, not a provider-mapping recommendation. Repeated requests do not improve ASN purity; distinct hostnames are the audit unit.
 - Header order and duplicates are evidence; do not round-trip request profiles through unordered maps.
 
 ## Safety boundary

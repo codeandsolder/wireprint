@@ -10,6 +10,7 @@ pub mod normalize;
 pub mod path;
 pub mod probe;
 pub mod routing;
+pub mod routing_audit;
 pub mod routing_context;
 pub mod tls;
 pub mod tls_probe;
@@ -44,6 +45,11 @@ pub use normalize::{NORMALIZER_VERSION, normalize_response_template};
 pub use path::{PATH_CLASSIFIER_VERSION, detect_path_elements};
 pub use probe::{ProbeConfig, probe_batch};
 pub use routing::{ROUTING_CLASSIFIER_VERSION, detect_routing_elements};
+pub use routing_audit::{
+    AsnAuditClass, AsnRoutingAudit, HostRoutingAudit, ProviderAsnAudit,
+    ROUTING_CONTEXT_AUDIT_VERSION, RoutingAuditSample, RoutingContextAudit, audit_routing_samples,
+    samples_from_observations,
+};
 pub use routing_context::{
     ROUTING_CONTEXT_VERSION, RoutingContextCollector, enrich_observation as enrich_routing_context,
     observation_routing_address,
