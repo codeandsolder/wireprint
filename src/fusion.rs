@@ -8,7 +8,7 @@ use crate::model::{
 pub const ENDPOINT_FUSION_VERSION: &str = "builtin-endpoint-v1";
 
 impl ProviderEvidenceChannel {
-    fn originates_termination(self) -> bool {
+    const fn originates_termination(self) -> bool {
         !matches!(self, Self::TlsMorphology)
     }
 }
@@ -44,9 +44,9 @@ fn add_signal(
 ) {
     let slot = candidates.entry(provider.to_owned()).or_default();
     if channel.originates_termination() {
-        slot.originating.insert(channel);
+        let _ = slot.originating.insert(channel);
     } else {
-        slot.corroborating.insert(channel);
+        let _ = slot.corroborating.insert(channel);
     }
     slot.evidence.extend(evidence);
 }
@@ -57,6 +57,7 @@ fn add_signal(
 /// may originate a termination candidate. TLS morphology is confirmatory-only.
 /// Application-platform and middleware path elements remain participation claims
 /// and are preserved verbatim rather than being promoted into outer providers.
+#[must_use]
 pub fn assess_endpoint(evidence: &EndpointEvidence) -> EndpointAssessment {
     let mut candidates = BTreeMap::<String, CandidateBuilder>::new();
     let mut path_elements = Vec::new();

@@ -86,6 +86,11 @@ fn looks_like_f5_asm_ts_cookie(name: &str) -> bool {
 /// The result is deliberately an unordered set of participation claims. A
 /// downstream marker (for example `x-vercel-id` or `x-azure-ref`) does not
 /// establish that product as the outer TLS termination provider.
+#[expect(
+    clippy::too_many_lines,
+    reason = "response marker recognition is an ordered audit table; splitting it would obscure precedence and deduplication"
+)]
+#[must_use]
 pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
     let mut elements = Vec::new();
     let cookies = cookie_names(headers);

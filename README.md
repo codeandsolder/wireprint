@@ -20,7 +20,7 @@ RequestProfile × TransportProfile × Target
              OutcomeClassifier
 ```
 
-A request profile describes application identity and HTTP headers. A transport profile describes the wreq client emulation. The resulting observation retains raw provenance and a semantic outcome classification.
+A request profile describes application identity and HTTP headers. A transport profile separately describes a runnable transport implementation and/or transport facts observed elsewhere. Observational-only profiles are valid evidence but cannot execute. The resulting observation snapshots both axes, raw provenance and a semantic outcome classification.
 
 Each successful observation also runs the versioned network-path recognizer (`builtin-path-v3`), DNS/routing provenance (`builtin-dns-v1` / `builtin-routing-v1`), live HTTP/2 server-preface classifier (`builtin-h2-preface-v1`) and per-endpoint fusion (`builtin-endpoint-v1`). Those layers keep path participation, concrete endpoint provenance and likely outer termination separate instead of guessing hop order. `builtin-host-v1` can then aggregate saved observations into freshness-aware current/historical provider state without turning retries into votes. See [`docs/path-elements.md`](docs/path-elements.md) and [`docs/evidence-model.md`](docs/evidence-model.md).
 
@@ -39,14 +39,14 @@ Built-in outcome classes currently include:
 
 ## Build
 
-Rust **1.98.1** is pinned in `rust-toolchain.toml`.
+Rust **1.99.1** is pinned in `rust-toolchain.toml`.
 
 ```bash
 cargo build --release
 cargo test
 ```
 
-The transport layer currently uses [`wreq`](https://crates.io/crates/wreq) and [`wreq-util`](https://crates.io/crates/wreq-util).
+The transport layer uses [`wreq`](https://crates.io/crates/wreq) for browser/reference emulations and a separate pinned `hyper` + `hyper-rustls` + `rustls/ring` backend for header-neutral reconstructed transports. `Cargo.lock` is part of the fingerprinting state: transport-relevant transitive versions can change emitted TLS/H2 morphology even when Wireprint source does not.
 
 ## Probe one identity
 
@@ -57,7 +57,7 @@ wireprint probe \
   https://example.com/
 ```
 
-Observations are emitted as JSONL. Add `--vantage NAME` when the collection point has a stable label; every row also records an observation timestamp, actual peer, HTTP version, exact ordered request headers, response headers, bounded raw body prefix, semantic outcome and body-prefix hash.
+Observations are emitted as JSONL. Add `--vantage NAME` when the collection point has a stable label; every row also records an observation timestamp, actual peer, HTTP version, declared ordered request-profile headers, response headers, bounded raw body prefix, semantic outcome and body-prefix hash.
 
 ## Observe HTTP/3 / QUIC
 
@@ -86,6 +86,24 @@ wireprint matrix \
 ```
 
 Each request-profile/transport combination gets a fresh client so transport/session state does not silently bleed across identities. `plain` means the library default without browser emulation; it is a baseline, not an intentionally bad fingerprint. `low-fidelity` is an explicit negative control for early transport-gate screening: it remains standards-valid with normal certificate verification and TLS 1.2/1.3 + H2/H1 compatibility, but deliberately emits a conspicuous non-browser TLS/H2 shape (no GREASE/ECH grease/extension permutation, P-256-only key exchange, small flow-control values, and unusual legal SETTINGS/pseudo-header order). It must not be treated as a realistic client identity or as evidence of a block unless neutral compatibility controls succeed and the semantic outcome differs from a good transport. For mechanism decomposition after a hit, `low-fidelity-tls` applies only the negative-control TLS shape while leaving HTTP/2 at the library default, and `low-fidelity-h2` applies only the negative-control HTTP/2 shape while leaving TLS at the library default. These are diagnostic ablations, not additional client identities. The positive-side mirrors `chrome149-tls` and `chrome149-h2` keep only Chrome 149 TLS or HTTP/2 respectively, making acceptance-side mechanisms decomposable too. Additional standards-valid reference transports (`safari-ios18`, `safari-ios16`, `firefox-android135`, `chromium100-era`, and `okhttp39`) sample distinct current/older mobile stacks. `chromium100-era` is a WebView-era Chromium proxy for transport-shape experiments, not a claim to exactly reproduce Android System WebView. Application identity remains a separate axis and should be paired coherently when a test requires a whole-client fingerprint rather than a transport-only ablation.
+
+Transport profiles can also be loaded declaratively:
+
+```bash
+wireprint matrix \
+  --profiles profiles/ai-retrievers-observed.json \
+  --targets examples.targets.txt \
+  --transport-set transports/builtins.json \
+  --output results.jsonl
+```
+
+A transport set may include observational-only fingerprints with no runnable implementation. Those entries are retained as evidence and skipped by an unfiltered matrix; explicitly selecting one fails rather than synthesizing missing TLS/H2 parameters. See [`docs/transport-profiles.md`](docs/transport-profiles.md).
+
+`transports/openai-gptbot-reconstructed.json` is a measured reconstruction profile. Its header-neutral Hyper/rustls backend was independently measured to reproduce the retained GPTBot/1.4 JA4, JA4_R and HTTP/2 fingerprint exactly. This establishes transport compatibility only; it is not sender authentication.
+
+`transports/openai-chatgpt-user-reconstructed.json` is a separate measured Envoy-compatible transport reconstructed with wreq/BoringSSL. It reproduces the current-spec padded JA4, the saved ChatGPT-User JA3, and the complete HTTP/2 SETTINGS/window/pseudo-header morphology while leaving application headers to the request profile. It is transport evidence, not OpenAI authentication or production Envoy-version attribution.
+
+`transports/anthropic-claudebot-observed.json` deliberately remains observational-only and JA4-only: source-network-corroborated records establish the stable JA4 family, but no independently verified ClaudeBot HTTP/2 fingerprint is currently stored.
 
 ## Replay captured path evidence
 
@@ -124,7 +142,7 @@ The audit uses only single-candidate endpoint assessments as provider references
 
 For frozen or externally normalized research corpora, `--samples` accepts JSONL `RoutingAuditSample` rows instead of full `Observation` rows. This keeps historical-format adapters out of the production model.
 
-The bundled AI-retriever profiles are **synthetic research profiles**, not claims that the transport matches the vendor's production fetcher. Provenance is stored alongside each profile so a later live capture can replace an approximation without rewriting history.
+The bundled AI-retriever **request** profiles are research inputs and do not authenticate a vendor; transport fidelity is represented separately by measured transport profiles when available. Provenance is stored alongside each profile so a later live capture can replace an approximation without rewriting history.
 
 ## Why semantic outcomes matter
 

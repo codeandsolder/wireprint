@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "transports": [
+    {
+      "name": "anthropic-claudebot-1.0-verified-ja4-2026",
+      "provenance": "Observational-only ClaudeBot/1.0 JA4 family. Anthropic official bots.json lists 216.73.216.0/22 as Anthropic bot egress. Independent telemetry supplies three source-corroborated examples inside that prefix: Anubis relayd telemetry for 216.73.216.114 with the full ClaudeBot/1.0 User-Agent and JA4, plus ELLIO passive records for 216.73.217.37 and 216.73.217.73 with the same User-Agent and JA4. The ELLIO records have different JA3 values, so only the stable JA4 is promoted here. No HTTP/2 SETTINGS fingerprint is independently verified; do not borrow GPTBot H2 merely because the JA4 collides.",
+      "observations": [
+        {
+          "scheme": "ja4",
+          "value": "t13d1011h2_61a7ad8aa9b6_3fcd1a44f3e3",
+          "completeness": "exact",
+          "provenance": "Anubis relayd telemetry for 216.73.216.114 and ELLIO passive ClaudeBot/1.0 records for 216.73.217.37 and 216.73.217.73; all three addresses are inside Anthropic-published 216.73.216.0/22 and all report the same exact JA4. ELLIO JA3 differs across its two records, so this profile intentionally pins only the stable JA4 family."
+        }
+      ]
+    }
+  ]
+}

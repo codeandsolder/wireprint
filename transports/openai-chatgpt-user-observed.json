@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "transports": [
+    {
+      "name": "openai-chatgpt-user-tls-peet-snapshot",
+      "provenance": "tls.peet.ws /api/all snapshot returned through the ChatGPT web fetch path and retrieved for this study on 2026-10-11; upstream payload has no capture timestamp. Source IP 20.250.6.137 is inside OpenAI's current 20.250.6.128/28 ChatGPT-User prefix as published in chatgpt-user.json (creationTime 2026-10-07T16:05:32.418450). Observational only; do not merge with GPTBot/OAI-SearchBot transport identity. The saved peet JA4 renderer omitted TLS padding 0015 from JA4_c/JA4_R despite counting 12 extensions; preserve those strings below as legacy collector evidence rather than current-spec JA4.",
+      "observations": [
+        {
+          "scheme": "ja4_peet_legacy",
+          "value": "t13d1712h2_5b57614c22b0_78e6aca7449b",
+          "completeness": "exact",
+          "provenance": "Exact JA4 string returned by the saved peet snapshot. Legacy collector evidence only: its extension count plus JA3/raw reconstruction show TLS padding 0015 was on wire but omitted from the JA4_c calculation."
+        },
+        {
+          "scheme": "ja4_r_peet_legacy",
+          "value": "t13d1712h2_002f,0035,009c,009d,1301,1302,1303,c009,c00a,c013,c014,c02b,c02c,c02f,c030,cca8,cca9_000a,000b,000d,0017,0023,002b,002d,0033,ff01_0403,0804,0401,0503,0805,0501,0806,0601,0201",
+          "completeness": "exact",
+          "provenance": "Exact JA4_R string returned by the saved peet snapshot; legacy collector omitted TLS padding 0015 from this raw list."
+        },
+        {
+          "scheme": "ja3",
+          "value": "f5bd742fa88333052a1deec09f821012",
+          "completeness": "exact",
+          "provenance": "Exact JA3 from the saved ChatGPT-User snapshot; independently reproduced by direct Envoy and stock-wreq controls."
+        },
+        {
+          "scheme": "akamai_http2_client_fingerprint",
+          "value": "2:0;1:4096;8:0;3:1024;4:1048576|25100289|0|a,p,m,s",
+          "completeness": "exact",
+          "provenance": "Normalized from the saved peet snapshot. Its compact string omitted the textual id before :0; the structured SETTINGS frame identifies it as ENABLE_CONNECT_PROTOCOL (id 8)."
+        }
+      ]
+    }
+  ]
+}

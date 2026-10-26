@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::h2::H2ServerPreface;
 use crate::h3::H3ServerFingerprint;
 use crate::tls::TlsServerMorphology;
+use crate::transport::TransportProfile;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfileSet {
@@ -217,9 +218,12 @@ pub struct Observation {
     pub request_role: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub request_provenance: Option<String>,
-    pub request_headers: Vec<Header>,
+    pub request_profile_headers: Vec<Header>,
     pub transport_profile: String,
-    pub platform: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transport: Option<TransportProfile>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub platform: Option<String>,
     pub result: String,
     pub elapsed_ms: u128,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -288,8 +292,7 @@ impl From<&Observation> for EndpointEvidence {
             routing_context: observation
                 .routing_context_snapshot
                 .as_ref()
-                .map(|snapshot| snapshot.contexts.clone())
-                .unwrap_or_default(),
+                .map_or_default(|snapshot| snapshot.contexts.clone()),
         }
     }
 }

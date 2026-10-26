@@ -78,6 +78,11 @@ fn add(elements: &mut Vec<PathElement>, role: PathElementRole, product: &str, ev
 /// steering service participates without proving it terminates the observed TLS
 /// connection. Absence of one of these aliases is not negative evidence because
 /// flattened/alias records can hide the provider-managed name from the client.
+#[expect(
+    clippy::too_many_lines,
+    reason = "routing namespace recognition is an ordered audit table kept contiguous for reviewability"
+)]
+#[must_use]
 pub fn detect_routing_elements(cname_chain: &[String]) -> Vec<PathElement> {
     let mut elements = Vec::new();
 

@@ -39,7 +39,7 @@
     {
       "name": "openai-gptbot",
       "role": "training-crawler-control",
-      "provenance": "public OpenAI UA plus auxiliary headers observed in 2026 requests; transport remains synthetic until independently captured; normalized-header differential profile",
+      "provenance": "public OpenAI UA plus auxiliary headers observed in 2026 requests; GPTBot/1.4 transport independently captured by ELLIO on 2026-09-03 and stored in transports/openai-gptbot-observed.json; normalized-header differential profile",
       "headers": [
         {"name": "user-agent", "value": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; GPTBot/1.4; +https://openai.com/gptbot"},
         {"name": "accept", "value": "*/*"}

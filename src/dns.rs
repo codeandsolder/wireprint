@@ -34,14 +34,14 @@ impl RecordingResolver {
     pub(crate) fn cursor(&self) -> u64 {
         self.state
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .sequence
     }
 
     pub(crate) fn latest(&self, host: &str) -> Option<ConnectionResolution> {
         self.state
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .latest
             .get(&normalize_dns_name(host))
             .cloned()
@@ -59,10 +59,10 @@ impl Resolve for RecordingResolver {
             let observed_unix_ms = unix_ms();
             let mut state = state
                 .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             state.sequence = state.sequence.wrapping_add(1);
             let sequence = state.sequence;
-            state.latest.insert(
+            let _ = state.latest.insert(
                 normalize_dns_name(name.as_str()),
                 ConnectionResolution {
                     sequence,
@@ -135,7 +135,7 @@ impl RoutingDnsSnapshotter {
                 let mut aliases = HashMap::<String, String>::new();
                 for record in lookup.as_lookup().answers() {
                     if let RData::CNAME(cname) = &record.data {
-                        aliases.insert(
+                        let _ = aliases.insert(
                             normalize_dns_name(&record.name.to_string()),
                             normalize_dns_name(&cname.0.to_string()),
                         );
@@ -176,14 +176,12 @@ impl RoutingDnsSnapshotter {
 pub(crate) fn build_dns_provenance(
     host: &str,
     cursor: u64,
-    connection: Option<ConnectionResolution>,
+    connection: Option<&ConnectionResolution>,
     routing: RoutingDnsSnapshot,
 ) -> DnsProvenance {
     let host = normalize_dns_name(host);
-    let mut connection_candidates = connection
-        .as_ref()
-        .map(|resolution| resolution.candidates.clone())
-        .unwrap_or_default();
+    let mut connection_candidates =
+        connection.map_or_default(|resolution| resolution.candidates.clone());
     if connection_candidates.is_empty()
         && let Ok(ip) = host.parse::<IpAddr>()
     {
@@ -194,11 +192,8 @@ pub(crate) fn build_dns_provenance(
         classifier: DNS_CAPTURE_VERSION.into(),
         host,
         connection_candidates,
-        connection_resolution_unix_ms: connection
-            .as_ref()
-            .map(|resolution| resolution.observed_unix_ms),
+        connection_resolution_unix_ms: connection.map(|resolution| resolution.observed_unix_ms),
         connection_resolution_reused: connection
-            .as_ref()
             .is_some_and(|resolution| resolution.sequence <= cursor),
         cname_chain: routing.cname_chain,
         routing_snapshot_ips: routing.ips,

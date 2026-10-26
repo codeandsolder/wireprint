@@ -1,15 +1,19 @@
+use std::collections::HashSet;
+
 use anyhow::{Result, bail};
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 use wreq::{
     http2::{Http2Options, PseudoId, PseudoOrder, SettingId, SettingsOrder},
-    tls::{AlpnProtocol, TlsOptions, TlsVersion},
+    tls::{AlpnProtocol, ExtensionType, KeyShare, TlsOptions, TlsVersion},
 };
 use wreq_util::{Emulation, Platform, Profile};
 
-#[derive(Debug, Clone, Copy, ValueEnum, Serialize, Deserialize)]
+pub const TRANSPORT_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Debug, Clone, Copy, ValueEnum, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
-pub enum TransportProfile {
+pub enum BuiltinTransport {
     Plain,
     /// Intentionally conspicuous but standards-valid TLS/H2 fingerprint for early-rejection screening.
     LowFidelity,
@@ -21,21 +25,22 @@ pub enum TransportProfile {
     Chrome149Tls,
     /// Library-default TLS with Chrome 149 HTTP/2, for positive-side decomposition.
     Chrome149H2,
-    /// Current-ish mobile WebKit transport control (iPhone Safari 18.1.1).
+    /// Current-ish mobile `WebKit` transport control (iPhone Safari 18.1.1).
     SafariIos18,
-    /// Older mobile WebKit transport control (iPhone Safari 16.5).
+    /// Older mobile `WebKit` transport control (iPhone Safari 16.5).
     SafariIos16,
     /// Mobile Gecko transport control (Firefox Android 135).
     FirefoxAndroid135,
-    /// Chrome/Chromium 100-era transport shape; useful as a WebView-era proxy, not an exact WebView claim.
+    /// Chrome/Chromium 100-era transport shape; useful as a WebView-era proxy, not an exact `WebView` claim.
     Chromium100Era,
-    /// Old native Android application stack control (OkHttp 3.9).
+    /// Old native Android application stack control (`OkHttp` 3.9).
     Okhttp39,
     Chrome149,
 }
 
-impl TransportProfile {
-    pub fn name(self) -> &'static str {
+impl BuiltinTransport {
+    #[must_use]
+    pub const fn name(self) -> &'static str {
         match self {
             Self::Plain => "plain",
             Self::LowFidelity => "low-fidelity",
@@ -52,11 +57,58 @@ impl TransportProfile {
         }
     }
 
-    pub fn configure(
+    #[must_use]
+    pub fn into_profile(self, platform: PlatformKind) -> TransportProfile {
+        let explicit_platform = self.requires_explicit_platform().then_some(platform);
+        TransportProfile {
+            name: self.name().into(),
+            provenance: Some(match self {
+                Self::Plain => "wireprint builtin neutral transport control".into(),
+                Self::LowFidelity | Self::LowFidelityTls | Self::LowFidelityH2 => {
+                    "wireprint intentional standards-valid low-fidelity transport control".into()
+                }
+                _ => "wireprint reference transport with automatic application headers disabled; not a claim of vendor identity".into(),
+            }),
+            implementation: Some(TransportImplementation::Builtin {
+                profile: self,
+                platform: explicit_platform,
+            }),
+            observations: Vec::new(),
+        }
+    }
+
+    const fn requires_explicit_platform(self) -> bool {
+        matches!(
+            self,
+            Self::Chrome149 | Self::Chrome149Tls | Self::Chrome149H2
+        )
+    }
+
+    const fn fixed_platform(self) -> Option<PlatformKind> {
+        match self {
+            Self::SafariIos18 | Self::SafariIos16 => Some(PlatformKind::Ios),
+            Self::FirefoxAndroid135 | Self::Chromium100Era | Self::Okhttp39 => {
+                Some(PlatformKind::Android)
+            }
+            _ => None,
+        }
+    }
+
+    fn effective_platform(self, explicit: Option<PlatformKind>) -> Option<PlatformKind> {
+        self.fixed_platform().or(explicit)
+    }
+
+    fn required_platform(self, platform: Option<PlatformKind>) -> Result<PlatformKind> {
+        platform.ok_or_else(|| {
+            anyhow::anyhow!("builtin transport '{}' requires a platform", self.name())
+        })
+    }
+
+    fn configure(
         self,
         mut builder: wreq::ClientBuilder,
-        platform: PlatformKind,
-    ) -> wreq::ClientBuilder {
+        platform: Option<PlatformKind>,
+    ) -> Result<wreq::ClientBuilder> {
         match self {
             Self::Plain => {}
             Self::LowFidelity => {
@@ -72,12 +124,18 @@ impl TransportProfile {
             }
             Self::Chrome149Tls => {
                 builder = builder
-                    .emulation(browser_emulation(Profile::Chrome149, platform.into()))
+                    .emulation(browser_emulation(
+                        Profile::Chrome149,
+                        self.required_platform(platform)?.into(),
+                    ))
                     .http2_options(None);
             }
             Self::Chrome149H2 => {
                 builder = builder
-                    .emulation(browser_emulation(Profile::Chrome149, platform.into()))
+                    .emulation(browser_emulation(
+                        Profile::Chrome149,
+                        self.required_platform(platform)?.into(),
+                    ))
                     .tls_options(None);
             }
             Self::SafariIos18 => {
@@ -103,11 +161,293 @@ impl TransportProfile {
                     builder.emulation(browser_emulation(Profile::OkHttp3_9, Platform::Android));
             }
             Self::Chrome149 => {
-                builder = builder.emulation(browser_emulation(Profile::Chrome149, platform.into()));
+                builder = builder.emulation(browser_emulation(
+                    Profile::Chrome149,
+                    self.required_platform(platform)?.into(),
+                ));
             }
         }
-        builder
+        Ok(builder)
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TransportSet {
+    pub schema_version: u32,
+    pub transports: Vec<TransportProfile>,
+}
+
+impl TransportSet {
+    /// Validate schema version, profile validity, and unique profile names.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for unsupported schema versions, invalid profiles, or duplicate names.
+    pub fn validate(&self) -> Result<()> {
+        if self.schema_version != TRANSPORT_SCHEMA_VERSION {
+            let schema_version = self.schema_version;
+            bail!(
+                "unsupported transport schema version: {schema_version} (expected {TRANSPORT_SCHEMA_VERSION})"
+            );
+        }
+        if self.transports.is_empty() {
+            bail!("transport set is empty");
+        }
+        let mut names = HashSet::with_capacity(self.transports.len());
+        for profile in &self.transports {
+            profile.validate()?;
+            if !names.insert(profile.name.as_str()) {
+                bail!("duplicate transport profile name: {}", profile.name);
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TransportProfile {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub implementation: Option<TransportImplementation>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub observations: Vec<TransportObservation>,
+}
+
+impl TransportProfile {
+    /// Validate this declarative transport profile.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for empty names/observations or incomplete runnable implementations.
+    pub fn validate(&self) -> Result<()> {
+        if self.name.trim().is_empty() {
+            bail!("transport profile name is empty");
+        }
+        if let Some(TransportImplementation::Builtin { profile, platform }) =
+            self.implementation.as_ref()
+            && profile.requires_explicit_platform()
+            && platform.is_none()
+        {
+            bail!(
+                "transport profile '{}' uses builtin '{}' without a required platform",
+                self.name,
+                profile.name()
+            );
+        }
+        for observation in &self.observations {
+            if observation.scheme.trim().is_empty() {
+                bail!(
+                    "transport profile '{}' has an observation with an empty scheme",
+                    self.name
+                );
+            }
+            if observation.value.trim().is_empty() {
+                bail!(
+                    "transport profile '{}' has an empty {} observation",
+                    self.name,
+                    observation.scheme
+                );
+            }
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub const fn runnable(&self) -> bool {
+        self.implementation.is_some()
+    }
+
+    #[must_use]
+    pub fn platform(&self) -> Option<PlatformKind> {
+        match self.implementation.as_ref() {
+            Some(TransportImplementation::Builtin { profile, platform }) => {
+                profile.effective_platform(*platform)
+            }
+            Some(
+                TransportImplementation::HyperRustls { .. }
+                | TransportImplementation::WreqMeasured { .. },
+            )
+            | None => None,
+        }
+    }
+
+    /// Apply this runnable profile to a wreq client builder.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for observational-only profiles, native-backend profiles, or invalid builtin configuration.
+    pub fn configure(&self, builder: wreq::ClientBuilder) -> Result<wreq::ClientBuilder> {
+        match self.implementation.as_ref() {
+            Some(TransportImplementation::Builtin { profile, platform }) => {
+                profile.configure(builder, *platform)
+            }
+            Some(TransportImplementation::WreqMeasured { profile }) => {
+                Ok(profile.configure(builder))
+            }
+            Some(TransportImplementation::HyperRustls { .. }) => bail!(
+                "transport profile '{}' uses the native hyper/rustls backend, not wreq",
+                self.name
+            ),
+            None => bail!(
+                "transport profile '{}' is observational only and has no runnable implementation",
+                self.name
+            ),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TransportImplementation {
+    Builtin {
+        profile: BuiltinTransport,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        platform: Option<PlatformKind>,
+    },
+    HyperRustls {
+        profile: HyperRustlsProfileKind,
+    },
+    WreqMeasured {
+        profile: WreqMeasuredProfileKind,
+    },
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum HyperRustlsProfileKind {
+    #[serde(rename = "reqwest-0.12.28-compatible-rustls-0.23.42")]
+    Reqwest01228CompatibleRustls02342,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum WreqMeasuredProfileKind {
+    #[serde(rename = "envoy-chatgpt-user-compatible-2026")]
+    EnvoyChatgptUserCompatible2026,
+}
+
+impl WreqMeasuredProfileKind {
+    fn configure(self, builder: wreq::ClientBuilder) -> wreq::ClientBuilder {
+        match self {
+            Self::EnvoyChatgptUserCompatible2026 => {
+                let tls = TlsOptions::builder()
+                    .curves_list("X25519:P-256:P-384:P-521")
+                    .key_shares(&[KeyShare::X25519])
+                    .cipher_list(concat!(
+                        "TLS_AES_128_GCM_SHA256:",
+                        "TLS_AES_256_GCM_SHA384:",
+                        "TLS_CHACHA20_POLY1305_SHA256:",
+                        "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256:",
+                        "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256:",
+                        "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256:",
+                        "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256:",
+                        "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA:",
+                        "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA:",
+                        "TLS_RSA_WITH_AES_128_GCM_SHA256:",
+                        "TLS_RSA_WITH_AES_128_CBC_SHA:",
+                        "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384:",
+                        "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384:",
+                        "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA:",
+                        "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA:",
+                        "TLS_RSA_WITH_AES_256_GCM_SHA384:",
+                        "TLS_RSA_WITH_AES_256_CBC_SHA"
+                    ))
+                    .preserve_tls13_cipher_list(true)
+                    .sigalgs_list(concat!(
+                        "ecdsa_secp256r1_sha256:",
+                        "rsa_pss_rsae_sha256:",
+                        "rsa_pkcs1_sha256:",
+                        "ecdsa_secp384r1_sha384:",
+                        "rsa_pss_rsae_sha384:",
+                        "rsa_pkcs1_sha384:",
+                        "rsa_pss_rsae_sha512:",
+                        "rsa_pkcs1_sha512:",
+                        "rsa_pkcs1_sha1"
+                    ))
+                    .alpn_protocols([AlpnProtocol::HTTP2, AlpnProtocol::HTTP1])
+                    .min_tls_version(TlsVersion::TLS_1_1)
+                    .max_tls_version(TlsVersion::TLS_1_3)
+                    .grease_enabled(false)
+                    .permute_extensions(false)
+                    .enable_ocsp_stapling(false)
+                    .enable_signed_cert_timestamps(false)
+                    .enable_ech_grease(false)
+                    .renegotiation(true)
+                    .session_ticket(true)
+                    .extension_permutation(&[
+                        ExtensionType::SERVER_NAME,
+                        ExtensionType::EXTENDED_MASTER_SECRET,
+                        ExtensionType::RENEGOTIATE,
+                        ExtensionType::SUPPORTED_GROUPS,
+                        ExtensionType::EC_POINT_FORMATS,
+                        ExtensionType::SESSION_TICKET,
+                        ExtensionType::APPLICATION_LAYER_PROTOCOL_NEGOTIATION,
+                        ExtensionType::SIGNATURE_ALGORITHMS,
+                        ExtensionType::KEY_SHARE,
+                        ExtensionType::PSK_KEY_EXCHANGE_MODES,
+                        ExtensionType::SUPPORTED_VERSIONS,
+                        ExtensionType::PADDING,
+                        ExtensionType::PRE_SHARED_KEY,
+                    ])
+                    .build();
+
+                let settings_order = SettingsOrder::builder()
+                    .extend([
+                        SettingId::EnablePush,
+                        SettingId::HeaderTableSize,
+                        SettingId::EnableConnectProtocol,
+                        SettingId::MaxConcurrentStreams,
+                        SettingId::InitialWindowSize,
+                    ])
+                    .build();
+                let pseudo_order = PseudoOrder::builder()
+                    .extend([
+                        PseudoId::Authority,
+                        PseudoId::Path,
+                        PseudoId::Method,
+                        PseudoId::Scheme,
+                    ])
+                    .build();
+                let http2 = Http2Options::builder()
+                    .enable_push(false)
+                    .header_table_size(4096)
+                    .enable_connect_protocol(false)
+                    .max_concurrent_streams(1024)
+                    .initial_window_size(1_048_576)
+                    .initial_connection_window_size(25_165_824)
+                    .settings_order(settings_order)
+                    .headers_pseudo_order(pseudo_order)
+                    .build();
+
+                builder
+                    .no_gzip()
+                    .no_brotli()
+                    .no_deflate()
+                    .tls_options(tls)
+                    .http2_options(http2)
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TransportObservation {
+    /// Fingerprint/observation namespace, for example `ja4` or `akamai_http2_client_fingerprint`.
+    pub scheme: String,
+    pub value: String,
+    #[serde(default)]
+    pub completeness: TransportObservationCompleteness,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TransportObservationCompleteness {
+    #[default]
+    Exact,
+    Prefix,
+    Partial,
 }
 
 fn browser_emulation(profile: Profile, platform: Platform) -> Emulation {
@@ -121,8 +461,6 @@ fn browser_emulation(profile: Profile, platform: Platform) -> Emulation {
 
 fn low_fidelity_tls_options() -> TlsOptions {
     TlsOptions::builder()
-        // Keep normal protocol compatibility while making the ClientHello deliberately
-        // unlike a modern browser: no GREASE, no extension permutation, no ECH grease.
         .alpn_protocols([AlpnProtocol::HTTP2, AlpnProtocol::HTTP1])
         .min_tls_version(TlsVersion::TLS_1_2)
         .max_tls_version(TlsVersion::TLS_1_3)
@@ -130,8 +468,6 @@ fn low_fidelity_tls_options() -> TlsOptions {
         .permute_extensions(false)
         .grease_enabled(false)
         .grease_sigalgs_enabled(false)
-        // A P-256-only offer is legal and broadly interoperable, but conspicuously
-        // unlike contemporary browser curve/key-share families.
         .curves_list("P-256")
         .renegotiation(false)
         .build()
@@ -154,7 +490,6 @@ fn low_fidelity_http2_options() -> Http2Options {
         .build();
 
     Http2Options::builder()
-        // Deliberately small/spec-like values rather than a browser-tuned flow-control shape.
         .initial_connection_window_size(65_535)
         .initial_window_size(65_535)
         .header_table_size(4_096)
@@ -167,28 +502,40 @@ fn low_fidelity_http2_options() -> Http2Options {
         .build()
 }
 
-#[derive(Debug, Clone, Copy, ValueEnum, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, ValueEnum, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum PlatformKind {
     Windows,
     Macos,
     Linux,
+    Ios,
+    Android,
 }
 
 impl PlatformKind {
-    pub fn name(self) -> &'static str {
+    #[must_use]
+    pub const fn name(self) -> &'static str {
         match self {
             Self::Windows => "windows",
             Self::Macos => "macos",
             Self::Linux => "linux",
+            Self::Ios => "ios",
+            Self::Android => "android",
         }
     }
 
+    /// Parse a platform name used by the CLI and declarative transport schema.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `value` is not one of the supported platform names.
     pub fn parse_name(value: &str) -> Result<Self> {
         match value {
             "windows" => Ok(Self::Windows),
             "macos" => Ok(Self::Macos),
             "linux" => Ok(Self::Linux),
+            "ios" => Ok(Self::Ios),
+            "android" => Ok(Self::Android),
             _ => bail!("unknown platform: {value}"),
         }
     }
@@ -200,6 +547,8 @@ impl From<PlatformKind> for Platform {
             PlatformKind::Windows => Self::Windows,
             PlatformKind::Macos => Self::MacOS,
             PlatformKind::Linux => Self::Linux,
+            PlatformKind::Ios => Self::IOS,
+            PlatformKind::Android => Self::Android,
         }
     }
 }
@@ -209,25 +558,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn low_fidelity_transport_has_stable_name() {
-        assert_eq!(TransportProfile::LowFidelity.name(), "low-fidelity");
-    }
-
-    #[test]
-    fn low_fidelity_transport_parses_from_cli_name() {
-        assert!(matches!(
-            TransportProfile::from_str("low-fidelity", false),
-            Ok(TransportProfile::LowFidelity)
-        ));
-        assert!(matches!(
-            TransportProfile::from_str("low-fidelity-tls", false),
-            Ok(TransportProfile::LowFidelityTls)
-        ));
-        assert!(matches!(
-            TransportProfile::from_str("low-fidelity-h2", false),
-            Ok(TransportProfile::LowFidelityH2)
-        ));
-        for name in [
+    fn builtin_names_are_stable_and_parseable() {
+        let names = [
+            "plain",
+            "low-fidelity",
+            "low-fidelity-tls",
+            "low-fidelity-h2",
             "chrome149-tls",
             "chrome149-h2",
             "safari-ios18",
@@ -235,27 +571,39 @@ mod tests {
             "firefox-android135",
             "chromium100-era",
             "okhttp39",
-        ] {
-            assert!(
-                TransportProfile::from_str(name, false).is_ok(),
-                "failed to parse {name}"
-            );
+            "chrome149",
+        ];
+        for name in names {
+            let profile = BuiltinTransport::from_str(name, false).expect("parse builtin transport");
+            assert_eq!(profile.name(), name);
         }
     }
 
     #[test]
-    fn low_fidelity_decomposition_profiles_have_stable_names() {
-        assert_eq!(TransportProfile::LowFidelityTls.name(), "low-fidelity-tls");
-        assert_eq!(TransportProfile::LowFidelityH2.name(), "low-fidelity-h2");
-        assert_eq!(TransportProfile::Chrome149Tls.name(), "chrome149-tls");
-        assert_eq!(TransportProfile::Chrome149H2.name(), "chrome149-h2");
-        assert_eq!(TransportProfile::SafariIos18.name(), "safari-ios18");
-        assert_eq!(TransportProfile::SafariIos16.name(), "safari-ios16");
+    fn builtin_platform_semantics_are_explicit() {
         assert_eq!(
-            TransportProfile::FirefoxAndroid135.name(),
-            "firefox-android135"
+            BuiltinTransport::Chrome149
+                .into_profile(PlatformKind::Windows)
+                .platform(),
+            Some(PlatformKind::Windows)
         );
-        assert_eq!(TransportProfile::Chromium100Era.name(), "chromium100-era");
-        assert_eq!(TransportProfile::Okhttp39.name(), "okhttp39");
+        assert_eq!(
+            BuiltinTransport::SafariIos18
+                .into_profile(PlatformKind::Macos)
+                .platform(),
+            Some(PlatformKind::Ios)
+        );
+        assert_eq!(
+            BuiltinTransport::Okhttp39
+                .into_profile(PlatformKind::Macos)
+                .platform(),
+            Some(PlatformKind::Android)
+        );
+        assert_eq!(
+            BuiltinTransport::Plain
+                .into_profile(PlatformKind::Macos)
+                .platform(),
+            None
+        );
     }
 }

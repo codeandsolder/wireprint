@@ -11,4 +11,4 @@ Transport fidelity is intentionally separate. When a live fetcher capture become
 
 ## Schema note
 
-`headers` is an **ordered array** of `{name, value}` objects rather than a JSON map. This is deliberate: ordering can itself be fingerprintable, and duplicate header fields must remain representable. Wireprint sends the entries in profile order and records the same ordered list in every observation.
+`headers` is an **ordered array** of `{name, value}` objects rather than a JSON map. This is deliberate: ordering can itself be fingerprintable, and duplicate header fields must remain representable. Wireprint submits the entries in profile order and records that declared list as `request_profile_headers` in every observation. This is not yet a packet-level claim about the final serialized header order; lower-level encoder instrumentation is required for that.

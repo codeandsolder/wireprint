@@ -329,6 +329,7 @@ pub fn classify_h2_preface(
     }
 }
 
+#[must_use]
 pub fn provider_signals(preface: &H2ServerPreface) -> Vec<ProviderSignal> {
     let Some(exact) = preface.exact_match.as_ref() else {
         return Vec::new();

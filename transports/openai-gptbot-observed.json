@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "transports": [
+    {
+      "name": "openai-gptbot-1.4-ellio-2026-09-03",
+      "provenance": "ELLIO passive fingerprint capture of GPTBot/1.4 observed 2026-09-03T15:31:16.66419691Z at https://fingerprints.ellio.tech/; observational only",
+      "observations": [
+        {
+          "scheme": "ja4",
+          "value": "t13d1011h2_61a7ad8aa9b6_3fcd1a44f3e3",
+          "completeness": "exact",
+          "provenance": "ELLIO passive GPTBot/1.4 capture, 2026-09-03"
+        },
+        {
+          "scheme": "ja4_r",
+          "value": "t13d1011h2_00ff,1301,1302,1303,c02b,c02c,c02f,c030,cca8,cca9_0005,000a,000b,000d,0017,0023,002b,002d,0033_0503,0403,0807,0806,0805,0804,0601,0501,0401",
+          "completeness": "exact",
+          "provenance": "ELLIO passive GPTBot/1.4 capture, 2026-09-03"
+        },
+        {
+          "scheme": "akamai_http2_client_fingerprint",
+          "value": "2:0;4:2097152;5:16384;6:16384|5177345|0|m,s,a,p",
+          "completeness": "exact",
+          "provenance": "ELLIO passive GPTBot/1.4 capture, 2026-09-03"
+        }
+      ]
+    }
+  ]
+}
