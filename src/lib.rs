@@ -1,3 +1,10 @@
+//! Cross-layer HTTP edge fingerprinting and benign request-identity differential tooling.
+//!
+//! Wireprint keeps request identity, client transport, concrete network-path evidence,
+//! response semantics, and freshness-aware endpoint/hostname fusion as separate axes.
+//! The library exposes the classifiers, evidence model, transport profiles, and probe
+//! primitives used by the `wireprint` command-line binary.
+
 pub mod classify;
 pub mod dns;
 pub mod fusion;
