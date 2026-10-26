@@ -1,6 +1,7 @@
 pub mod classify;
 pub mod dns;
 pub mod fusion;
+pub mod h2;
 pub mod model;
 pub mod normalize;
 pub mod path;
@@ -11,6 +12,10 @@ pub mod transport;
 pub use classify::classify_response;
 pub use dns::DNS_CAPTURE_VERSION;
 pub use fusion::{ENDPOINT_FUSION_VERSION, assess_endpoint};
+pub use h2::{
+    H2_PREFACE_CLASSIFIER_VERSION, H2ControlFrame, H2FingerprintMatch, H2FingerprintMatchKind,
+    H2ServerPreface, H2Setting, classify_h2_preface, provider_signals as h2_provider_signals,
+};
 pub use model::{
     DnsProvenance, EndpointAssessment, EndpointEvidence, Header, Observation, Outcome, OutcomeKind,
     PathElement, PathElementRole, ProfileSet, ProviderCandidate, ProviderEvidenceChannel,
