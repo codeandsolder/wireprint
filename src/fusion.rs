@@ -145,6 +145,7 @@ pub fn assess_endpoint(evidence: &EndpointEvidence) -> EndpointAssessment {
         target: evidence.target.clone(),
         observed_unix_ms: evidence.observed_unix_ms,
         vantage: evidence.vantage.clone(),
+        protocol: evidence.protocol.clone(),
         selected_endpoint: evidence.selected_endpoint.clone(),
         actual_peer: evidence.actual_peer.clone(),
         state,
