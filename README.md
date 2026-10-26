@@ -79,12 +79,13 @@ Successful H3 rows use the ordinary `Observation` JSON schema, including DNS/rou
 wireprint matrix \
   --profiles profiles/ai-retrievers-observed.json \
   --targets examples.targets.txt \
+  --transport low-fidelity \
   --transport plain \
   --transport chrome149 \
   --output results.jsonl
 ```
 
-Each request-profile/transport combination gets a fresh client so transport/session state does not silently bleed across identities.
+Each request-profile/transport combination gets a fresh client so transport/session state does not silently bleed across identities. `plain` means the library default without browser emulation; it is a baseline, not an intentionally bad fingerprint. `low-fidelity` is an explicit negative control for early transport-gate screening: it remains standards-valid with normal certificate verification and TLS 1.2/1.3 + H2/H1 compatibility, but deliberately emits a conspicuous non-browser TLS/H2 shape (no GREASE/ECH grease/extension permutation, P-256-only key exchange, small flow-control values, and unusual legal SETTINGS/pseudo-header order). It must not be treated as a realistic client identity or as evidence of a block unless neutral compatibility controls succeed and the semantic outcome differs from a good transport.
 
 ## Replay captured path evidence
 
