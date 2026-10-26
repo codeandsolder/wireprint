@@ -7,7 +7,7 @@ use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
 use wireprint::{
     Header, PlatformKind, ProbeConfig, ProfileSet, RequestProfile, TransportProfile,
-    classify_response, probe_batch,
+    classify_response, detect_path_elements, probe_batch,
 };
 
 #[derive(Debug, Parser)]
@@ -25,6 +25,8 @@ enum Command {
     Matrix(MatrixArgs),
     /// Classify a saved HTTP body using the built-in semantic classifier.
     Classify(ClassifyArgs),
+    /// Classify response headers into unordered network-path participation claims.
+    Path(PathArgs),
 }
 
 #[derive(Debug, Args)]
@@ -78,6 +80,12 @@ struct ClassifyArgs {
     headers: Vec<String>,
 }
 
+#[derive(Debug, Args)]
+struct PathArgs {
+    #[arg(long = "header", value_name = "NAME:VALUE", required = true)]
+    headers: Vec<String>,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -85,6 +93,7 @@ async fn main() -> Result<()> {
         Command::Probe(args) => run_probe(args).await,
         Command::Matrix(args) => run_matrix(args).await,
         Command::Classify(args) => run_classify(args),
+        Command::Path(args) => run_path(args),
     }
 }
 
@@ -161,6 +170,15 @@ fn run_classify(args: ClassifyArgs) -> Result<()> {
     println!(
         "{}",
         serde_json::to_string_pretty(&classify_response(args.status, &headers, &body))?
+    );
+    Ok(())
+}
+
+fn run_path(args: PathArgs) -> Result<()> {
+    let headers = parse_headers(&args.headers)?;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&detect_path_elements(&headers))?
     );
     Ok(())
 }
