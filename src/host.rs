@@ -28,9 +28,9 @@ pub enum HostFreshnessBasis {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum HostProviderSupport {
-    CurrentOriginatingEvidence,
-    CurrentCrossChannelCorroborated,
-    CurrentWithHistoricalCrossChannelCorroboration,
+    OriginatingEvidence,
+    CrossChannelCorroborated,
+    WithHistoricalCrossChannelCorroboration,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -523,11 +523,11 @@ pub fn aggregate_host(
                 .copied()
                 .collect::<BTreeSet<_>>();
             let support = if current_channels.len() >= 2 {
-                HostProviderSupport::CurrentCrossChannelCorroborated
+                HostProviderSupport::CrossChannelCorroborated
             } else if historical_channels.len() >= 2 {
-                HostProviderSupport::CurrentWithHistoricalCrossChannelCorroboration
+                HostProviderSupport::WithHistoricalCrossChannelCorroboration
             } else {
-                HostProviderSupport::CurrentOriginatingEvidence
+                HostProviderSupport::OriginatingEvidence
             };
             Some(HostProviderMembership {
                 provider: provider.clone(),

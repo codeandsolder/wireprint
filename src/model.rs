@@ -292,8 +292,7 @@ impl From<&Observation> for EndpointEvidence {
             routing_context: observation
                 .routing_context_snapshot
                 .as_ref()
-                .map(|snapshot| snapshot.contexts.clone())
-                .unwrap_or_default(),
+                .map_or_default(|snapshot| snapshot.contexts.clone()),
         }
     }
 }

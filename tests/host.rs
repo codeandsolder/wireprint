@@ -188,7 +188,7 @@ fn historical_channel_can_corroborate_current_family_without_becoming_fresh() {
     let membership = &host.current_memberships[0];
     assert_eq!(
         membership.support,
-        HostProviderSupport::CurrentWithHistoricalCrossChannelCorroboration
+        HostProviderSupport::WithHistoricalCrossChannelCorroboration
     );
     assert_eq!(
         membership.current_originating_channels,
@@ -222,7 +222,7 @@ fn fresh_cross_channel_evidence_is_reported_separately() {
     let host = aggregate_host("example.test", &rows, HostAggregationConfig::default());
     assert_eq!(
         host.current_memberships[0].support,
-        HostProviderSupport::CurrentCrossChannelCorroborated
+        HostProviderSupport::CrossChannelCorroborated
     );
 }
 
@@ -355,7 +355,7 @@ fn separate_fresh_tls_observation_can_corroborate_current_provider() {
     let membership = &host.current_memberships[0];
     assert_eq!(
         membership.support,
-        HostProviderSupport::CurrentCrossChannelCorroborated
+        HostProviderSupport::CrossChannelCorroborated
     );
     assert_eq!(
         membership.current_corroborating_channels,
@@ -383,7 +383,7 @@ fn stale_tls_observation_is_historical_corroboration_only() {
     let membership = &host.current_memberships[0];
     assert_eq!(
         membership.support,
-        HostProviderSupport::CurrentWithHistoricalCrossChannelCorroboration
+        HostProviderSupport::WithHistoricalCrossChannelCorroboration
     );
     assert!(membership.current_corroborating_channels.is_empty());
     assert_eq!(

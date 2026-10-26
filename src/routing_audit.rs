@@ -122,8 +122,7 @@ pub fn samples_from_observations(observations: &[Observation]) -> Vec<RoutingAud
             let contexts = observation
                 .routing_context_snapshot
                 .as_ref()
-                .map(|snapshot| snapshot.contexts.clone())
-                .unwrap_or_default();
+                .map_or_default(|snapshot| snapshot.contexts.clone());
             if contexts.is_empty() {
                 return None;
             }

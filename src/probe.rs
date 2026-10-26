@@ -217,8 +217,7 @@ async fn probe_one(context: &WreqProbeContext<'_>, target: &str) -> Observation 
         });
     let provider_signals = h2_server_preface
         .as_ref()
-        .map(h2_provider_signals)
-        .unwrap_or_default();
+        .map_or_default(h2_provider_signals);
     let mut headers = response
         .headers()
         .iter()
@@ -359,9 +358,7 @@ fn dns_for_host(
 }
 
 fn routing_elements_for_dns(dns: Option<&DnsProvenance>) -> Vec<PathElement> {
-    dns.map(routing_names)
-        .map(|names| detect_routing_elements(&names))
-        .unwrap_or_default()
+    dns.map_or_default(|dns| detect_routing_elements(&routing_names(dns)))
 }
 
 fn finalize_observation(mut observation: Observation) -> Observation {

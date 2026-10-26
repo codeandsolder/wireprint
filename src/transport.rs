@@ -185,10 +185,9 @@ impl TransportSet {
     /// Returns an error for unsupported schema versions, invalid profiles, or duplicate names.
     pub fn validate(&self) -> Result<()> {
         if self.schema_version != TRANSPORT_SCHEMA_VERSION {
+            let schema_version = self.schema_version;
             bail!(
-                "unsupported transport schema version: {} (expected {})",
-                self.schema_version,
-                TRANSPORT_SCHEMA_VERSION
+                "unsupported transport schema version: {schema_version} (expected {TRANSPORT_SCHEMA_VERSION})"
             );
         }
         if self.transports.is_empty() {

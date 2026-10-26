@@ -180,9 +180,8 @@ pub(crate) fn build_dns_provenance(
     routing: RoutingDnsSnapshot,
 ) -> DnsProvenance {
     let host = normalize_dns_name(host);
-    let mut connection_candidates = connection
-        .map(|resolution| resolution.candidates.clone())
-        .unwrap_or_default();
+    let mut connection_candidates =
+        connection.map_or_default(|resolution| resolution.candidates.clone());
     if connection_candidates.is_empty()
         && let Ok(ip) = host.parse::<IpAddr>()
     {
