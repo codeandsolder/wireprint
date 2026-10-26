@@ -18,6 +18,9 @@ use crate::model::{
 use crate::normalize::{NORMALIZER_VERSION, normalize_response_template};
 use crate::path::detect_path_elements;
 use crate::routing::detect_routing_elements;
+use crate::routing_context::{
+    RoutingContextCollector, enrich_observation as enrich_routing_context,
+};
 use crate::transport::{PlatformKind, TransportProfile};
 
 #[derive(Debug, Clone)]
@@ -25,6 +28,7 @@ pub struct ProbeConfig {
     pub body_bytes: usize,
     pub delay: Duration,
     pub vantage: Option<String>,
+    pub routing_context_collector: Option<RoutingContextCollector>,
 }
 
 impl Default for ProbeConfig {
@@ -33,6 +37,7 @@ impl Default for ProbeConfig {
             body_bytes: 64 * 1024,
             delay: Duration::from_millis(250),
             vantage: None,
+            routing_context_collector: None,
         }
     }
 }
@@ -69,6 +74,7 @@ pub async fn probe_batch(
                 target,
                 config.body_bytes,
                 config.vantage.clone(),
+                config.routing_context_collector.as_ref(),
             )
             .await,
         );
@@ -87,6 +93,7 @@ async fn probe_one(
     target: &str,
     body_bytes: usize,
     vantage: Option<String>,
+    routing_context_collector: Option<&RoutingContextCollector>,
 ) -> Observation {
     let started = Instant::now();
     let observed_unix_ms = SystemTime::now()
@@ -145,6 +152,7 @@ async fn probe_one(
                 path_elements: Vec::new(),
                 routing_elements,
                 provider_signals: Vec::new(),
+                routing_context_snapshot: None,
                 h2_server_preface: None,
                 h3_server_fingerprint: None,
                 tls_server_morphology: None,
@@ -255,7 +263,7 @@ async fn probe_one(
         (None, None, None)
     };
 
-    let observation = Observation {
+    let mut observation = Observation {
         target: target.into(),
         observed_unix_ms,
         vantage,
@@ -283,6 +291,7 @@ async fn probe_one(
         path_elements,
         routing_elements,
         provider_signals,
+        routing_context_snapshot: None,
         h2_server_preface,
         h3_server_fingerprint: None,
         tls_server_morphology: None,
@@ -296,6 +305,9 @@ async fn probe_one(
         outcome: Some(outcome),
         error: body_error,
     };
+    if let Some(collector) = routing_context_collector {
+        enrich_routing_context(&mut observation, collector).await;
+    }
     finalize_observation(observation)
 }
 

@@ -1,5 +1,6 @@
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -7,9 +8,10 @@ use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
 use wireprint::{
     EndpointEvidence, H3AddressFamily, H3ProbeConfig, Header, HostAggregationConfig, Observation,
-    PlatformKind, ProbeConfig, ProfileSet, RequestProfile, TlsAddressFamily, TlsProbeConfig,
-    TransportProfile, aggregate_observations, assess_endpoint, classify_response,
-    detect_path_elements, detect_routing_elements, probe_batch, probe_h3, probe_tls,
+    PlatformKind, ProbeConfig, ProfileSet, RequestProfile, RoutingContextCollector,
+    TlsAddressFamily, TlsProbeConfig, TransportProfile, aggregate_observations, assess_endpoint,
+    classify_response, detect_path_elements, detect_routing_elements, probe_batch, probe_h3,
+    probe_tls,
 };
 
 #[derive(Debug, Parser)]
@@ -37,6 +39,8 @@ enum Command {
     H3(H3Args),
     /// Observe raw TLS 1.3 server handshake morphology.
     Tls(TlsArgs),
+    /// Look up non-scoring BGP prefix / origin-AS routing context for IPs.
+    RoutingContext(RoutingContextArgs),
     /// Aggregate JSONL probe observations into freshness-aware hostname state.
     AggregateHost(AggregateHostArgs),
 }
@@ -59,6 +63,9 @@ struct ProbeArgs {
     delay_ms: u64,
     #[arg(long)]
     vantage: Option<String>,
+    /// Enrich the selected/peer IP with Team Cymru BGP routing context.
+    #[arg(long)]
+    routing_context: bool,
 }
 
 #[derive(Debug, Args)]
@@ -81,6 +88,9 @@ struct MatrixArgs {
     profile_delay_ms: u64,
     #[arg(long)]
     vantage: Option<String>,
+    /// Enrich the selected/peer IP with Team Cymru BGP routing context.
+    #[arg(long)]
+    routing_context: bool,
 }
 
 #[derive(Debug, Args)]
@@ -95,6 +105,9 @@ struct H3Args {
     family: H3AddressFamily,
     #[arg(long)]
     vantage: Option<String>,
+    /// Enrich the selected/peer IP with Team Cymru BGP routing context.
+    #[arg(long)]
+    routing_context: bool,
 }
 
 #[derive(Debug, Args)]
@@ -115,6 +128,15 @@ struct TlsArgs {
     profile_label: Option<String>,
     #[arg(long)]
     vantage: Option<String>,
+    /// Enrich the selected/peer IP with Team Cymru BGP routing context.
+    #[arg(long)]
+    routing_context: bool,
+}
+
+#[derive(Debug, Args)]
+struct RoutingContextArgs {
+    #[arg(required = true)]
+    addresses: Vec<IpAddr>,
 }
 
 #[derive(Debug, Args)]
@@ -155,6 +177,7 @@ async fn main() -> Result<()> {
         Command::AssessEndpoint(args) => run_assess_endpoint(args),
         Command::H3(args) => run_h3(args).await,
         Command::Tls(args) => run_tls(args).await,
+        Command::RoutingContext(args) => run_routing_context(args).await,
         Command::AggregateHost(args) => run_aggregate_host(args),
     }
 }
@@ -170,6 +193,7 @@ async fn run_probe(args: ProbeArgs) -> Result<()> {
         body_bytes: args.body_bytes,
         delay: Duration::from_millis(args.delay_ms),
         vantage: args.vantage,
+        routing_context_collector: args.routing_context.then(RoutingContextCollector::new),
     };
     for observation in
         probe_batch(&profile, args.transport, args.platform, &args.urls, &config).await?
@@ -190,6 +214,7 @@ async fn run_h3(args: H3Args) -> Result<()> {
         timeout: Duration::from_secs_f64(args.timeout_secs),
         family: args.family,
         vantage: args.vantage,
+        routing_context_collector: args.routing_context.then(RoutingContextCollector::new),
     };
     for url in &args.urls {
         for _ in 0..args.repeat {
@@ -223,6 +248,7 @@ async fn run_tls(args: TlsArgs) -> Result<()> {
         vantage: args.vantage,
         groups: args.groups,
         profile_label: args.profile_label,
+        routing_context_collector: args.routing_context.then(RoutingContextCollector::new),
     };
     for url in &args.urls {
         for _ in 0..args.repeat {
@@ -238,6 +264,17 @@ async fn run_tls(args: TlsArgs) -> Result<()> {
                 ),
             }
         }
+    }
+    Ok(())
+}
+
+async fn run_routing_context(args: RoutingContextArgs) -> Result<()> {
+    let collector = RoutingContextCollector::new();
+    for address in args.addresses {
+        println!(
+            "{}",
+            serde_json::to_string(&collector.collect(address).await)?
+        );
     }
     Ok(())
 }
@@ -269,6 +306,7 @@ async fn run_matrix(args: MatrixArgs) -> Result<()> {
         body_bytes: args.body_bytes,
         delay: Duration::from_millis(args.delay_ms),
         vantage: args.vantage.clone(),
+        routing_context_collector: args.routing_context.then(RoutingContextCollector::new),
     };
 
     for (transport_index, transport) in args.transports.iter().copied().enumerate() {

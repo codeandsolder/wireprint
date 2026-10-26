@@ -14,6 +14,9 @@ use crate::dns::{DNS_CAPTURE_VERSION, RoutingDnsSnapshotter, routing_names};
 use crate::fusion::assess_endpoint;
 use crate::model::{DnsProvenance, EndpointEvidence, Observation};
 use crate::routing::detect_routing_elements;
+use crate::routing_context::{
+    RoutingContextCollector, enrich_observation as enrich_routing_context,
+};
 use crate::tls::{TlsMessageCapture, TlsServerMorphology, provider_signals};
 
 #[derive(Debug, Clone, Copy, ValueEnum, Serialize, Deserialize, PartialEq, Eq)]
@@ -32,6 +35,7 @@ pub struct TlsProbeConfig {
     pub vantage: Option<String>,
     pub groups: Option<String>,
     pub profile_label: Option<String>,
+    pub routing_context_collector: Option<RoutingContextCollector>,
 }
 
 impl Default for TlsProbeConfig {
@@ -43,6 +47,7 @@ impl Default for TlsProbeConfig {
             vantage: None,
             groups: None,
             profile_label: None,
+            routing_context_collector: None,
         }
     }
 }
@@ -117,6 +122,7 @@ pub async fn probe_tls(target: &str, config: &TlsProbeConfig) -> Result<Observat
         path_elements: Vec::new(),
         routing_elements,
         provider_signals,
+        routing_context_snapshot: None,
         h2_server_preface: None,
         h3_server_fingerprint: None,
         tls_server_morphology: Some(result.morphology),
@@ -130,6 +136,9 @@ pub async fn probe_tls(target: &str, config: &TlsProbeConfig) -> Result<Observat
         outcome: None,
         error: None,
     };
+    if let Some(collector) = config.routing_context_collector.as_ref() {
+        enrich_routing_context(&mut observation, collector).await;
+    }
     observation.endpoint_assessment = Some(assess_endpoint(&EndpointEvidence::from(&observation)));
     Ok(observation)
 }

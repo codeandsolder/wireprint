@@ -1,6 +1,6 @@
 use wireprint::{
     EndpointEvidence, PathElement, PathElementRole, ProviderEvidenceChannel, ProviderSignal,
-    ProviderSupport, TerminationState, assess_endpoint, detect_path_elements,
+    ProviderSupport, RoutingContext, TerminationState, assess_endpoint, detect_path_elements,
     detect_routing_elements,
 };
 
@@ -171,4 +171,44 @@ fn h2_h3_and_tls_are_kept_as_independent_channel_classes() {
         candidate.corroborating_channels,
         vec![ProviderEvidenceChannel::TlsMorphology]
     );
+}
+
+#[test]
+fn routing_context_is_preserved_but_cannot_originate_a_provider() {
+    let context = RoutingContext {
+        prefix: Some("104.16.112.0/20".into()),
+        asn: Some(13_335),
+        as_name: Some("CLOUDFLARENET - Cloudflare, Inc.".into()),
+        evidence: vec!["team-cymru-origin-asn:AS13335".into()],
+    };
+    let assessment = assess_endpoint(&EndpointEvidence {
+        routing_context: vec![context.clone()],
+        ..EndpointEvidence::default()
+    });
+
+    assert_eq!(assessment.state, TerminationState::Unresolved);
+    assert!(assessment.candidates.is_empty());
+    assert_eq!(assessment.routing_context, vec![context]);
+}
+
+#[test]
+fn routing_context_does_not_inflate_existing_provider_support() {
+    let assessment = assess_endpoint(&EndpointEvidence {
+        provider_signals: vec![signal("cloudflare", ProviderEvidenceChannel::H2Transport)],
+        routing_context: vec![RoutingContext {
+            prefix: Some("104.16.112.0/20".into()),
+            asn: Some(13_335),
+            as_name: Some("CLOUDFLARENET - Cloudflare, Inc.".into()),
+            evidence: vec!["team-cymru-origin-asn:AS13335".into()],
+        }],
+        ..EndpointEvidence::default()
+    });
+
+    assert_eq!(assessment.state, TerminationState::SingleCandidate);
+    assert_eq!(assessment.candidates.len(), 1);
+    assert_eq!(
+        assessment.candidates[0].support,
+        ProviderSupport::OriginatingEvidence
+    );
+    assert!(assessment.candidates[0].corroborating_channels.is_empty());
 }

@@ -10,6 +10,7 @@ pub mod normalize;
 pub mod path;
 pub mod probe;
 pub mod routing;
+pub mod routing_context;
 pub mod tls;
 pub mod tls_probe;
 pub mod transport;
@@ -36,12 +37,17 @@ pub use host::{
 pub use model::{
     DnsProvenance, EndpointAssessment, EndpointEvidence, Header, Observation, Outcome, OutcomeKind,
     PathElement, PathElementRole, ProfileSet, ProviderCandidate, ProviderEvidenceChannel,
-    ProviderSignal, ProviderSupport, RequestProfile, RoutingContext, TerminationState,
+    ProviderSignal, ProviderSupport, RequestProfile, RoutingContext, RoutingContextSnapshot,
+    TerminationState,
 };
 pub use normalize::{NORMALIZER_VERSION, normalize_response_template};
 pub use path::{PATH_CLASSIFIER_VERSION, detect_path_elements};
 pub use probe::{ProbeConfig, probe_batch};
 pub use routing::{ROUTING_CLASSIFIER_VERSION, detect_routing_elements};
+pub use routing_context::{
+    ROUTING_CONTEXT_VERSION, RoutingContextCollector, enrich_observation as enrich_routing_context,
+    observation_routing_address,
+};
 pub use tls::{
     TLS_MORPHOLOGY_VERSION, TlsExtensionShape, TlsHandshakeMessageShape, TlsMessageCapture,
     TlsMorphologyMatch, TlsServerMorphology, TlsSessionTicketShape,
