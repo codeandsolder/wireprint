@@ -1,0 +1,748 @@
+{
+  "family_rules": [
+    {
+      "confidence": "empirical-multi-config-current-corpus",
+      "implementation_family": "Cloudflare H3 edge family",
+      "name": "cloudflare-h3-settings-family",
+      "notes": "cloudflare.com and Wayfair currently share these invariant H3/QUIC fields while flow-control and max UDP payload values differ.",
+      "settings": [
+        [
+          6,
+          131072
+        ],
+        [
+          "GREASE",
+          "GREASE"
+        ]
+      ],
+      "transport_constraints": {
+        "ack_delay_exponent": 3,
+        "disable_active_migration": true,
+        "initial_max_streams_bidi": 100,
+        "initial_max_streams_uni": 3,
+        "max_ack_delay": 25
+      }
+    },
+    {
+      "confidence": "empirical-multi-service-current-corpus",
+      "implementation_family": "Google Front End / Google edge H3 family",
+      "name": "google-gfe-h3-settings-family",
+      "notes": "Allows max_idle_timeout variation seen between native Google services (240000) and a Google-fronted application path (300000).",
+      "settings": [
+        [
+          1,
+          65536
+        ],
+        [
+          6,
+          65536
+        ],
+        [
+          7,
+          100
+        ],
+        [
+          8,
+          1
+        ],
+        [
+          51,
+          1
+        ],
+        [
+          "GREASE",
+          "GREASE"
+        ]
+      ],
+      "transport_constraints": {
+        "disable_active_migration": false,
+        "initial_max_data": 196608,
+        "initial_max_stream_data_bidi_local": 131072,
+        "initial_max_stream_data_bidi_remote": 131072,
+        "initial_max_stream_data_uni": 131072,
+        "initial_max_streams_bidi": 100,
+        "initial_max_streams_uni": 103,
+        "max_datagram_frame_size": 65536,
+        "max_udp_payload_size": 1472
+      }
+    },
+    {
+      "confidence": "source-derived-structural-rule",
+      "derived_rule": "nginx-h3-source-relationship",
+      "implementation_family": "nginx / nginx-derived HTTP/3 frontend",
+      "name": "nginx-h3-source-relationship",
+      "notes": "Matches ordered SETTINGS [1=4096, 7=N] plus nginx QUIC flow-control invariant: initial_max_streams_bidi=N, initial_max_streams_uni=3, equal initial stream-data windows B, and initial_max_data=(N+3)*B. N and B are configuration values. Current OpenResty and Sucuri controls both satisfy this exactly."
+    }
+  ],
+  "fingerprints": [
+    {
+      "alpn": "h3",
+      "confidence": "high-multi-service-current-corpus",
+      "examples": [
+        "www.google.com"
+      ],
+      "implementation_family": "Google Front End / native Google H3",
+      "name": "google-gfe-h3-current",
+      "notes": "Normalized GREASE setting retained only as a positional marker. Exact stable composite observed across ten native Google services; ssp.wknd.ai shares SETTINGS/most transport values but uses max_idle_timeout=300000 rather than 240000.",
+      "quic_version": 1,
+      "settings": [
+        [
+          1,
+          65536
+        ],
+        [
+          6,
+          65536
+        ],
+        [
+          7,
+          100
+        ],
+        [
+          8,
+          1
+        ],
+        [
+          51,
+          1
+        ],
+        [
+          "GREASE",
+          "GREASE"
+        ]
+      ],
+      "transport_parameter_id_set": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        15,
+        17,
+        32,
+        "GREASE"
+      ],
+      "transport_parameter_order_behavior": "randomized",
+      "transport_parameter_order_confidence": "source-backed: QUICHE test SerializationOrderIsRandom; 5/5 observed orders distinct",
+      "transport_parameters": {
+        "disable_active_migration": false,
+        "initial_max_data": 196608,
+        "initial_max_stream_data_bidi_local": 131072,
+        "initial_max_stream_data_bidi_remote": 131072,
+        "initial_max_stream_data_uni": 131072,
+        "initial_max_streams_bidi": 100,
+        "initial_max_streams_uni": 103,
+        "max_datagram_frame_size": 65536,
+        "max_idle_timeout": 240000,
+        "max_udp_payload_size": 1472
+      },
+      "transport_structure": {
+        "initial_source_connection_id_length": 8,
+        "min_ack_delay": null,
+        "stateless_reset_token_present": true,
+        "version_information": {
+          "available_versions": [
+            1,
+            4278190109
+          ],
+          "chosen_version": 1,
+          "reserved_version_count": 1
+        }
+      },
+      "transport_structure_observations": 5
+    },
+    {
+      "alpn": "h3",
+      "confidence": "high-multi-deployment-current-corpus",
+      "examples": [
+        "www.fastly.com"
+      ],
+      "implementation_family": "Fastly H3 edge",
+      "name": "fastly-h3-current",
+      "notes": "Settings 51=1 and legacy draft H3_DATAGRAM 630/0x276=1 are both advertised. Private 18550/0x4876=0 is also present in Fastly HTTP/2; semantics remain unknown. Exact composite observed across Fastly, CNN, Giphy, GitHub assets, Guardian, Yelp, Pinterest telemetry and Stripe paths.",
+      "quic_version": 1,
+      "settings": [
+        [
+          51,
+          1
+        ],
+        [
+          630,
+          1
+        ],
+        [
+          1,
+          16384
+        ],
+        [
+          7,
+          200
+        ],
+        [
+          8,
+          1
+        ],
+        [
+          18550,
+          0
+        ]
+      ],
+      "transport_parameter_order": [
+        3,
+        5,
+        6,
+        7,
+        4,
+        1,
+        0,
+        15,
+        2,
+        8,
+        9,
+        10,
+        4278509083,
+        14,
+        32
+      ],
+      "transport_parameter_order_behavior": "deterministic",
+      "transport_parameters": {
+        "ack_delay_exponent": 10,
+        "active_connection_id_limit": 4,
+        "disable_active_migration": false,
+        "initial_max_data": 16777216,
+        "initial_max_stream_data_bidi_local": 1048576,
+        "initial_max_stream_data_bidi_remote": 1056784,
+        "initial_max_stream_data_uni": 1056784,
+        "initial_max_streams_bidi": 200,
+        "initial_max_streams_uni": 10,
+        "max_datagram_frame_size": 1500,
+        "max_idle_timeout": 30000,
+        "max_udp_payload_size": 1472
+      },
+      "transport_structure": {
+        "initial_source_connection_id_length": 17,
+        "min_ack_delay": 25000,
+        "stateless_reset_token_present": true,
+        "version_information": null
+      },
+      "transport_structure_observations": 5
+    },
+    {
+      "alpn": "h3",
+      "confidence": "source-backed-cloudfront-s2n-quic-current-config",
+      "examples": [
+        "d1.awsstatic.com",
+        "www.amazon.com",
+        "m.stripe.network"
+      ],
+      "implementation_family": "Amazon CloudFront HTTP/3 over s2n-quic transport",
+      "name": "aws-cloudfront-h3-current",
+      "notes": "AWS explicitly documents CloudFront HTTP/3 as built on s2n-quic. Current s2n-quic encodes transport parameters in struct declaration order; after RFC-default/unused fields are omitted, that source order is exactly the observed deterministic CloudFront sequence 1,4,5,6,7,8,9,14,0,15. CloudFront values (idle=300000; connection=10 MiB; each stream=5 MiB; bidi=128; uni=5; active CID limit=3) are valid s2n-quic Limits configuration values and should be treated as CloudFront configuration, not generic library defaults. Empty HTTP/3 SETTINGS is an application-layer CloudFront trait, separate from the source-backed QUIC implementation attribution.",
+      "quic_version": 1,
+      "settings": [],
+      "transport_implementation": "s2n-quic",
+      "transport_parameter_order": [
+        1,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        14,
+        0,
+        15
+      ],
+      "transport_parameter_order_behavior": "deterministic",
+      "transport_parameters": {
+        "active_connection_id_limit": 3,
+        "disable_active_migration": false,
+        "initial_max_data": 10485760,
+        "initial_max_stream_data_bidi_local": 5242880,
+        "initial_max_stream_data_bidi_remote": 5242880,
+        "initial_max_stream_data_uni": 5242880,
+        "initial_max_streams_bidi": 128,
+        "initial_max_streams_uni": 5,
+        "max_idle_timeout": 300000
+      },
+      "transport_structure": {
+        "initial_source_connection_id_length": 20,
+        "min_ack_delay": null,
+        "stateless_reset_token_present": false,
+        "version_information": null
+      },
+      "transport_structure_observations": 4
+    },
+    {
+      "alpn": "h3",
+      "confidence": "high-current-corpus",
+      "examples": [
+        "www.akamai.com"
+      ],
+      "implementation_family": "Akamai H3 edge family",
+      "name": "akamai-h3-current",
+      "notes": "Exact normalized composite observed on Akamai and Bing. GREASE setting value/id are randomized and normalized.",
+      "quic_version": 1,
+      "settings": [
+        [
+          1,
+          65536
+        ],
+        [
+          6,
+          32768
+        ],
+        [
+          7,
+          100
+        ],
+        [
+          "GREASE",
+          "GREASE"
+        ]
+      ],
+      "transport_parameter_id_set": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        12,
+        15,
+        17,
+        4278509083,
+        "GREASE"
+      ],
+      "transport_parameter_order_behavior": "randomized",
+      "transport_parameter_order_confidence": "empirical: akamai.com 4/4 distinct and Bing 4/4 distinct; implementation provenance unresolved",
+      "transport_parameters": {
+        "disable_active_migration": true,
+        "initial_max_data": 196608,
+        "initial_max_stream_data_bidi_local": 131072,
+        "initial_max_stream_data_bidi_remote": 131072,
+        "initial_max_stream_data_uni": 131072,
+        "initial_max_streams_bidi": 100,
+        "initial_max_streams_uni": 3,
+        "max_idle_timeout": 60000,
+        "max_udp_payload_size": 1472
+      },
+      "transport_structure": {
+        "initial_source_connection_id_length": 8,
+        "min_ack_delay": 5000,
+        "stateless_reset_token_present": true,
+        "version_information": {
+          "available_versions": [
+            1
+          ],
+          "chosen_version": 1,
+          "reserved_version_count": 1
+        }
+      },
+      "transport_structure_observations": 8
+    },
+    {
+      "alpn": "h3",
+      "confidence": "high-single-provider-control",
+      "examples": [
+        "www.cloudflare.com"
+      ],
+      "implementation_family": "Cloudflare H3 edge configuration",
+      "name": "cloudflare-h3-marketing-config",
+      "notes": "Shares H3 SETTINGS shape with Wayfair but differs in QUIC transport limits; keep exact configuration distinct from broader Cloudflare family.",
+      "quic_version": 1,
+      "settings": [
+        [
+          6,
+          131072
+        ],
+        [
+          "GREASE",
+          "GREASE"
+        ]
+      ],
+      "transport_parameter_order": [
+        0,
+        1,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        15
+      ],
+      "transport_parameter_order_behavior": "deterministic",
+      "transport_parameters": {
+        "ack_delay_exponent": 3,
+        "disable_active_migration": true,
+        "initial_max_data": 10000000,
+        "initial_max_stream_data_bidi_local": 1000000,
+        "initial_max_stream_data_bidi_remote": 1000000,
+        "initial_max_stream_data_uni": 1000000,
+        "initial_max_streams_bidi": 100,
+        "initial_max_streams_uni": 3,
+        "max_ack_delay": 25,
+        "max_idle_timeout": 180000,
+        "max_udp_payload_size": 1350
+      },
+      "transport_structure": {
+        "initial_source_connection_id_length": 20,
+        "min_ack_delay": null,
+        "stateless_reset_token_present": false,
+        "version_information": null
+      },
+      "transport_structure_observations": 5
+    },
+    {
+      "alpn": "h3",
+      "confidence": "high-single-customer-config",
+      "examples": [
+        "www.wayfair.com"
+      ],
+      "implementation_family": "Cloudflare H3 edge configuration",
+      "name": "cloudflare-h3-wayfair-config",
+      "notes": "Shares H3 SETTINGS shape with cloudflare.com but differs in UDP payload/window transport parameters.",
+      "quic_version": 1,
+      "settings": [
+        [
+          6,
+          131072
+        ],
+        [
+          "GREASE",
+          "GREASE"
+        ]
+      ],
+      "transport_parameter_order": [
+        0,
+        1,
+        3,
+        4,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        15
+      ],
+      "transport_parameter_order_behavior": "deterministic",
+      "transport_parameters": {
+        "ack_delay_exponent": 3,
+        "disable_active_migration": true,
+        "initial_max_data": 10485760,
+        "initial_max_stream_data_bidi_remote": 1048576,
+        "initial_max_stream_data_uni": 1048576,
+        "initial_max_streams_bidi": 100,
+        "initial_max_streams_uni": 3,
+        "max_ack_delay": 25,
+        "max_idle_timeout": 180000,
+        "max_udp_payload_size": 65527
+      },
+      "transport_structure": {
+        "initial_source_connection_id_length": 20,
+        "min_ack_delay": null,
+        "stateless_reset_token_present": false,
+        "version_information": null
+      },
+      "transport_structure_observations": 4
+    },
+    {
+      "alpn": "h3",
+      "confidence": "source-derived-exact-current-config",
+      "examples": [
+        "www.haproxy.com",
+        "www.haproxy.org"
+      ],
+      "implementation_family": "HAProxy HTTP/3 / QUIC frontend",
+      "name": "haproxy-h3-official-current",
+      "notes": "Current HAProxy source sends H3 SETTINGS in exact order QPACK_MAX_TABLE_CAPACITY(1)=0, QPACK_BLOCKED_STREAMS(7)=4096, MAX_FIELD_SECTION_SIZE(6)=QUIC_VARINT_MAX. Its QUIC flow-control source also explains the live values with tune.bufsize=32768: stream_rx_bufsz=32768-4=32764; default bidi concurrency=100 gives initial_max_data=100*32764=3276400; default frontend stream-data ratio=90% gives bidi-remote=2948760. UDP=2048 and active-CID-limit=8 are deployment/configuration values, not current source defaults.",
+      "quic_version": 1,
+      "settings": [
+        [
+          1,
+          0
+        ],
+        [
+          7,
+          4096
+        ],
+        [
+          6,
+          4611686018427387903
+        ]
+      ],
+      "transport_parameter_order": [
+        0,
+        2,
+        15,
+        1,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        12,
+        14,
+        17
+      ],
+      "transport_parameter_order_behavior": "deterministic",
+      "transport_parameters": {
+        "active_connection_id_limit": 8,
+        "disable_active_migration": true,
+        "initial_max_data": 3276400,
+        "initial_max_stream_data_bidi_local": 32764,
+        "initial_max_stream_data_bidi_remote": 2948760,
+        "initial_max_stream_data_uni": 32764,
+        "initial_max_streams_bidi": 100,
+        "initial_max_streams_uni": 3,
+        "max_idle_timeout": 30000,
+        "max_udp_payload_size": 2048
+      },
+      "transport_structure": {
+        "initial_source_connection_id_length": 8,
+        "min_ack_delay": null,
+        "stateless_reset_token_present": true,
+        "version_information": {
+          "available_versions": [
+            1,
+            1798521807,
+            4278190109
+          ],
+          "chosen_version": 1,
+          "reserved_version_count": 0
+        }
+      },
+      "transport_structure_observations": 5
+    },
+    {
+      "alpn": "h3",
+      "confidence": "source-derived-nginx-default-shape",
+      "examples": [
+        "openresty.org"
+      ],
+      "implementation_family": "nginx / OpenResty HTTP/3 default configuration family",
+      "name": "openresty-h3-current",
+      "provider_family": "openresty-edge",
+      "provider_confidence": "two-host-independent-label-holdout-no-observed-collision",
+      "provider_notes": "Promoted only at this exact H3 configuration: openresty.org and www.openresty.com independently identify OpenResty Edge via ordinary HTTP and reproduce the same raw H3 composite; the broader nginx/OpenResty source relationship remains implementation-only and also covers non-OpenResty deployments such as Sucuri with different configuration.",
+      "notes": "Current nginx source sends SETTINGS 1=4096 then 7=max_concurrent_streams; default max concurrent streams is 128. QUIC defaults use a 65536 stream buffer, 3 uni streams, and initial_max_data=(bidi+uni)*stream_buffer_size, exactly yielding (128+3)*65536=8585216 observed here. Idle timeout/CID limit remain deployment-specific.",
+      "quic_version": 1,
+      "settings": [
+        [
+          1,
+          4096
+        ],
+        [
+          7,
+          128
+        ]
+      ],
+      "transport_parameter_order": [
+        4,
+        9,
+        8,
+        5,
+        6,
+        7,
+        1,
+        3,
+        14,
+        11,
+        10,
+        0,
+        15,
+        2
+      ],
+      "transport_parameter_order_behavior": "deterministic",
+      "transport_parameters": {
+        "ack_delay_exponent": 3,
+        "active_connection_id_limit": 2,
+        "disable_active_migration": false,
+        "initial_max_data": 8585216,
+        "initial_max_stream_data_bidi_local": 65536,
+        "initial_max_stream_data_bidi_remote": 65536,
+        "initial_max_stream_data_uni": 65536,
+        "initial_max_streams_bidi": 128,
+        "initial_max_streams_uni": 3,
+        "max_ack_delay": 25,
+        "max_idle_timeout": 75000,
+        "max_udp_payload_size": 65527
+      },
+      "transport_structure": {
+        "initial_source_connection_id_length": 20,
+        "min_ack_delay": null,
+        "stateless_reset_token_present": true,
+        "version_information": null
+      },
+      "transport_structure_observations": 5
+    },
+    {
+      "alpn": "h3",
+      "confidence": "source-derived-nginx-configured-shape",
+      "examples": [
+        "sucuri.net"
+      ],
+      "implementation_family": "nginx HTTP/3 configured family on Sucuri CloudProxy",
+      "name": "sucuri-h3-current",
+      "notes": "This is the same source-derived nginx H3/QUIC relationship with configured max_concurrent_streams=512 and stream_buffer_size=262144: SETTINGS 1=4096;7=512 and initial_max_data=(512+3)*262144=135004160, with all three initial stream-data windows=262144. Provider attribution still comes from independent Sucuri evidence.",
+      "quic_version": 1,
+      "settings": [
+        [
+          1,
+          4096
+        ],
+        [
+          7,
+          512
+        ]
+      ],
+      "transport_parameter_order": [
+        4,
+        9,
+        8,
+        5,
+        6,
+        7,
+        1,
+        3,
+        14,
+        11,
+        10,
+        0,
+        15,
+        2
+      ],
+      "transport_parameter_order_behavior": "deterministic",
+      "transport_parameters": {
+        "ack_delay_exponent": 3,
+        "active_connection_id_limit": 4,
+        "disable_active_migration": false,
+        "initial_max_data": 135004160,
+        "initial_max_stream_data_bidi_local": 262144,
+        "initial_max_stream_data_bidi_remote": 262144,
+        "initial_max_stream_data_uni": 262144,
+        "initial_max_streams_bidi": 512,
+        "initial_max_streams_uni": 3,
+        "max_ack_delay": 25,
+        "max_idle_timeout": 65000,
+        "max_udp_payload_size": 65527
+      },
+      "transport_structure": {
+        "initial_source_connection_id_length": 20,
+        "min_ack_delay": null,
+        "stateless_reset_token_present": true,
+        "version_information": null
+      },
+      "transport_structure_observations": 4
+    },
+    {
+      "alpn": "h3",
+      "confidence": "vendor-control-site",
+      "examples": [
+        "nghttp2.org"
+      ],
+      "implementation_family": "nghttp2/nghttpx H3 implementation/configuration",
+      "name": "nghttp2-h3-current",
+      "notes": "nghttp2.org control; live deployment-specific exact signature. Normalized QUIC structure repeated 4/4 on the live control. CID length 17 remains deployment/implementation evidence only; current ngtcp2 example-server source uses an 18-byte SCID, so do not infer a generic ngtcp2 default from this value.",
+      "quic_version": 1,
+      "settings": [
+        [
+          6,
+          4611686018427387903
+        ],
+        [
+          1,
+          4096
+        ],
+        [
+          7,
+          0
+        ],
+        [
+          8,
+          1
+        ]
+      ],
+      "transport_parameters": {
+        "disable_active_migration": false,
+        "initial_max_data": 1048576,
+        "initial_max_stream_data_bidi_remote": 262144,
+        "initial_max_stream_data_uni": 262144,
+        "initial_max_streams_bidi": 100,
+        "initial_max_streams_uni": 3,
+        "max_idle_timeout": 30000
+      },
+      "transport_structure": {
+        "initial_source_connection_id_length": 17,
+        "min_ack_delay": null,
+        "stateless_reset_token_present": true,
+        "version_information": {
+          "available_versions": [
+            1
+          ],
+          "chosen_version": 1,
+          "reserved_version_count": 0
+        }
+      },
+      "transport_structure_observations": 4
+    },
+    {
+      "alpn": "h3",
+      "confidence": "vendor-control-site",
+      "examples": [
+        "caddyserver.com"
+      ],
+      "implementation_family": "Caddy / quic-go H3 implementation/configuration",
+      "name": "caddy-h3-current",
+      "notes": "Caddy control; current exact signature in this corpus. Current quic-go source uses DefaultConnectionIDLength=4 for multiplexed connections when no other length is configured; the live Caddy control matches that CID length.",
+      "quic_version": 1,
+      "settings": [
+        [
+          8,
+          1
+        ]
+      ],
+      "transport_parameters": {
+        "active_connection_id_limit": 4,
+        "disable_active_migration": false,
+        "initial_max_data": 786432,
+        "initial_max_stream_data_bidi_local": 524288,
+        "initial_max_stream_data_bidi_remote": 524288,
+        "initial_max_stream_data_uni": 524288,
+        "initial_max_streams_bidi": 100,
+        "initial_max_streams_uni": 100,
+        "max_ack_delay": 26,
+        "max_idle_timeout": 30000,
+        "max_udp_payload_size": 1452
+      },
+      "transport_structure": {
+        "initial_source_connection_id_length": 4,
+        "min_ack_delay": null,
+        "stateless_reset_token_present": true,
+        "version_information": null
+      },
+      "transport_structure_observations": 4
+    }
+  ],
+  "generated_date": "2026-10-09",
+  "schema_version": 1,
+  "scope": "Normalized HTTP/3 ordered SETTINGS plus stable QUIC transport parameters. GREASE ids/values collapse to a positional GREASE marker; per-connection CID/reset-token material is excluded."
+}

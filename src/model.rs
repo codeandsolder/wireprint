@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::h2::H2ServerPreface;
+use crate::h3::H3ServerFingerprint;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfileSet {
@@ -227,6 +228,8 @@ pub struct Observation {
     pub provider_signals: Vec<ProviderSignal>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub h2_server_preface: Option<H2ServerPreface>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub h3_server_fingerprint: Option<H3ServerFingerprint>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub endpoint_assessment: Option<EndpointAssessment>,
     #[serde(skip_serializing_if = "Option::is_none")]
