@@ -6,8 +6,9 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
 use wireprint::{
-    Header, PlatformKind, ProbeConfig, ProfileSet, RequestProfile, TransportProfile,
-    classify_response, detect_path_elements, probe_batch,
+    EndpointEvidence, Header, PlatformKind, ProbeConfig, ProfileSet, RequestProfile,
+    TransportProfile, assess_endpoint, classify_response, detect_path_elements,
+    detect_routing_elements, probe_batch,
 };
 
 #[derive(Debug, Parser)]
@@ -27,6 +28,10 @@ enum Command {
     Classify(ClassifyArgs),
     /// Classify response headers into unordered network-path participation claims.
     Path(PathArgs),
+    /// Classify provider-managed CNAMEs into routing/path participation claims.
+    Route(RouteArgs),
+    /// Fuse one endpoint/vantage evidence document into termination candidates.
+    AssessEndpoint(AssessEndpointArgs),
 }
 
 #[derive(Debug, Args)]
@@ -86,6 +91,17 @@ struct PathArgs {
     headers: Vec<String>,
 }
 
+#[derive(Debug, Args)]
+struct RouteArgs {
+    #[arg(long = "cname", value_name = "HOSTNAME", required = true)]
+    cnames: Vec<String>,
+}
+
+#[derive(Debug, Args)]
+struct AssessEndpointArgs {
+    input: PathBuf,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -94,6 +110,8 @@ async fn main() -> Result<()> {
         Command::Matrix(args) => run_matrix(args).await,
         Command::Classify(args) => run_classify(args),
         Command::Path(args) => run_path(args),
+        Command::Route(args) => run_route(args),
+        Command::AssessEndpoint(args) => run_assess_endpoint(args),
     }
 }
 
@@ -179,6 +197,26 @@ fn run_path(args: PathArgs) -> Result<()> {
     println!(
         "{}",
         serde_json::to_string_pretty(&detect_path_elements(&headers))?
+    );
+    Ok(())
+}
+
+fn run_route(args: RouteArgs) -> Result<()> {
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&detect_routing_elements(&args.cnames))?
+    );
+    Ok(())
+}
+
+fn run_assess_endpoint(args: AssessEndpointArgs) -> Result<()> {
+    let evidence: EndpointEvidence = serde_json::from_reader(BufReader::new(
+        File::open(&args.input).with_context(|| format!("open {}", args.input.display()))?,
+    ))
+    .with_context(|| format!("parse {}", args.input.display()))?;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&assess_endpoint(&evidence))?
     );
     Ok(())
 }

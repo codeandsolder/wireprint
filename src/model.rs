@@ -69,7 +69,123 @@ pub struct PathElement {
     pub evidence: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderEvidenceChannel {
+    ResponseMetadata,
+    RoutingCname,
+    H2Transport,
+    H3Transport,
+    TlsMorphology,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProviderSignal {
+    pub provider: String,
+    pub channel: ProviderEvidenceChannel,
+    pub classifier: String,
+    #[serde(default)]
+    pub evidence: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RoutingContext {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prefix: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub asn: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub holder: Option<String>,
+    #[serde(default)]
+    pub evidence: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct EndpointEvidence {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_unix_ms: Option<u128>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vantage: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selected_endpoint: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actual_peer: Option<String>,
+    #[serde(default)]
+    pub response_elements: Vec<PathElement>,
+    #[serde(default)]
+    pub routing_elements: Vec<PathElement>,
+    #[serde(default)]
+    pub provider_signals: Vec<ProviderSignal>,
+    #[serde(default)]
+    pub routing_context: Vec<RoutingContext>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderSupport {
+    OriginatingEvidence,
+    CrossChannelCorroborated,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TerminationState {
+    Unresolved,
+    SingleCandidate,
+    MultipleCandidates,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProviderCandidate {
+    pub provider: String,
+    pub support: ProviderSupport,
+    pub originating_channels: Vec<ProviderEvidenceChannel>,
+    pub corroborating_channels: Vec<ProviderEvidenceChannel>,
+    pub evidence: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EndpointAssessment {
+    pub classifier: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_unix_ms: Option<u128>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vantage: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selected_endpoint: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actual_peer: Option<String>,
+    pub state: TerminationState,
+    pub candidates: Vec<ProviderCandidate>,
+    pub path_elements: Vec<PathElement>,
+    pub unanchored_corroborating_signals: Vec<ProviderSignal>,
+    pub routing_context: Vec<RoutingContext>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DnsProvenance {
+    pub classifier: String,
+    pub host: String,
+    #[serde(default)]
+    pub connection_candidates: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connection_resolution_unix_ms: Option<u128>,
+    pub connection_resolution_reused: bool,
+    #[serde(default)]
+    pub cname_chain: Vec<String>,
+    #[serde(default)]
+    pub routing_snapshot_ips: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub routing_snapshot_unix_ms: Option<u128>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub routing_snapshot_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Observation {
     pub target: String,
     pub observed_unix_ms: u128,
@@ -93,8 +209,18 @@ pub struct Observation {
     pub final_uri: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remote: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selected_endpoint: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dns: Option<DnsProvenance>,
     pub response_headers: Vec<Header>,
     pub path_elements: Vec<PathElement>,
+    #[serde(default)]
+    pub routing_elements: Vec<PathElement>,
+    #[serde(default)]
+    pub provider_signals: Vec<ProviderSignal>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub endpoint_assessment: Option<EndpointAssessment>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub body_captured_bytes: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -111,4 +237,20 @@ pub struct Observation {
     pub outcome: Option<Outcome>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+}
+
+impl From<&Observation> for EndpointEvidence {
+    fn from(observation: &Observation) -> Self {
+        Self {
+            target: Some(observation.target.clone()),
+            observed_unix_ms: Some(observation.observed_unix_ms),
+            vantage: observation.vantage.clone(),
+            selected_endpoint: observation.selected_endpoint.clone(),
+            actual_peer: observation.remote.clone(),
+            response_elements: observation.path_elements.clone(),
+            routing_elements: observation.routing_elements.clone(),
+            provider_signals: observation.provider_signals.clone(),
+            routing_context: Vec::new(),
+        }
+    }
 }
