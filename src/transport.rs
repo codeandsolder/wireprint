@@ -13,6 +13,24 @@ pub enum TransportProfile {
     Plain,
     /// Intentionally conspicuous but standards-valid TLS/H2 fingerprint for early-rejection screening.
     LowFidelity,
+    /// Low-fidelity TLS with ordinary/default HTTP/2, for mechanism decomposition.
+    LowFidelityTls,
+    /// Ordinary/default TLS with low-fidelity HTTP/2, for mechanism decomposition.
+    LowFidelityH2,
+    /// Chrome 149 TLS with library-default HTTP/2, for positive-side decomposition.
+    Chrome149Tls,
+    /// Library-default TLS with Chrome 149 HTTP/2, for positive-side decomposition.
+    Chrome149H2,
+    /// Current-ish mobile WebKit transport control (iPhone Safari 18.1.1).
+    SafariIos18,
+    /// Older mobile WebKit transport control (iPhone Safari 16.5).
+    SafariIos16,
+    /// Mobile Gecko transport control (Firefox Android 135).
+    FirefoxAndroid135,
+    /// Chrome/Chromium 100-era transport shape; useful as a WebView-era proxy, not an exact WebView claim.
+    Chromium100Era,
+    /// Old native Android application stack control (OkHttp 3.9).
+    Okhttp39,
     Chrome149,
 }
 
@@ -21,6 +39,15 @@ impl TransportProfile {
         match self {
             Self::Plain => "plain",
             Self::LowFidelity => "low-fidelity",
+            Self::LowFidelityTls => "low-fidelity-tls",
+            Self::LowFidelityH2 => "low-fidelity-h2",
+            Self::Chrome149Tls => "chrome149-tls",
+            Self::Chrome149H2 => "chrome149-h2",
+            Self::SafariIos18 => "safari-ios18",
+            Self::SafariIos16 => "safari-ios16",
+            Self::FirefoxAndroid135 => "firefox-android135",
+            Self::Chromium100Era => "chromium100-era",
+            Self::Okhttp39 => "okhttp39",
             Self::Chrome149 => "chrome149",
         }
     }
@@ -37,19 +64,59 @@ impl TransportProfile {
                     .tls_options(low_fidelity_tls_options())
                     .http2_options(low_fidelity_http2_options());
             }
+            Self::LowFidelityTls => {
+                builder = builder.tls_options(low_fidelity_tls_options());
+            }
+            Self::LowFidelityH2 => {
+                builder = builder.http2_options(low_fidelity_http2_options());
+            }
+            Self::Chrome149Tls => {
+                builder = builder
+                    .emulation(browser_emulation(Profile::Chrome149, platform.into()))
+                    .http2_options(None);
+            }
+            Self::Chrome149H2 => {
+                builder = builder
+                    .emulation(browser_emulation(Profile::Chrome149, platform.into()))
+                    .tls_options(None);
+            }
+            Self::SafariIos18 => {
+                builder =
+                    builder.emulation(browser_emulation(Profile::SafariIos18_1_1, Platform::IOS));
+            }
+            Self::SafariIos16 => {
+                builder =
+                    builder.emulation(browser_emulation(Profile::SafariIos16_5, Platform::IOS));
+            }
+            Self::FirefoxAndroid135 => {
+                builder = builder.emulation(browser_emulation(
+                    Profile::FirefoxAndroid135,
+                    Platform::Android,
+                ));
+            }
+            Self::Chromium100Era => {
+                builder =
+                    builder.emulation(browser_emulation(Profile::Chrome100, Platform::Android));
+            }
+            Self::Okhttp39 => {
+                builder =
+                    builder.emulation(browser_emulation(Profile::OkHttp3_9, Platform::Android));
+            }
             Self::Chrome149 => {
-                builder = builder.emulation(
-                    Emulation::builder()
-                        .profile(Profile::Chrome149)
-                        .platform(platform.into())
-                        .headers(false)
-                        .http2(true)
-                        .build(),
-                );
+                builder = builder.emulation(browser_emulation(Profile::Chrome149, platform.into()));
             }
         }
         builder
     }
+}
+
+fn browser_emulation(profile: Profile, platform: Platform) -> Emulation {
+    Emulation::builder()
+        .profile(profile)
+        .platform(platform)
+        .headers(false)
+        .http2(true)
+        .build()
 }
 
 fn low_fidelity_tls_options() -> TlsOptions {
@@ -152,5 +219,43 @@ mod tests {
             TransportProfile::from_str("low-fidelity", false),
             Ok(TransportProfile::LowFidelity)
         ));
+        assert!(matches!(
+            TransportProfile::from_str("low-fidelity-tls", false),
+            Ok(TransportProfile::LowFidelityTls)
+        ));
+        assert!(matches!(
+            TransportProfile::from_str("low-fidelity-h2", false),
+            Ok(TransportProfile::LowFidelityH2)
+        ));
+        for name in [
+            "chrome149-tls",
+            "chrome149-h2",
+            "safari-ios18",
+            "safari-ios16",
+            "firefox-android135",
+            "chromium100-era",
+            "okhttp39",
+        ] {
+            assert!(
+                TransportProfile::from_str(name, false).is_ok(),
+                "failed to parse {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn low_fidelity_decomposition_profiles_have_stable_names() {
+        assert_eq!(TransportProfile::LowFidelityTls.name(), "low-fidelity-tls");
+        assert_eq!(TransportProfile::LowFidelityH2.name(), "low-fidelity-h2");
+        assert_eq!(TransportProfile::Chrome149Tls.name(), "chrome149-tls");
+        assert_eq!(TransportProfile::Chrome149H2.name(), "chrome149-h2");
+        assert_eq!(TransportProfile::SafariIos18.name(), "safari-ios18");
+        assert_eq!(TransportProfile::SafariIos16.name(), "safari-ios16");
+        assert_eq!(
+            TransportProfile::FirefoxAndroid135.name(),
+            "firefox-android135"
+        );
+        assert_eq!(TransportProfile::Chromium100Era.name(), "chromium100-era");
+        assert_eq!(TransportProfile::Okhttp39.name(), "okhttp39");
     }
 }
