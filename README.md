@@ -111,6 +111,18 @@ wireprint aggregate-host results.jsonl \
 
 The default current-provider window is six hours, anchored to the latest timed provider-bearing endpoint assessment. Support is deduplicated by provider/channel/protocol/vantage/endpoint/time bucket; repeated requests in one bucket remain one independent support group. Current multi-provider/path-split state is preserved instead of ranked to a winner, while stale providers remain visible only in the historical set.
 
+## Audit routing-context specificity
+
+Audit whether observed endpoint ASNs are provider-specific in a corpus without turning ASN ownership into provider evidence:
+
+```bash
+wireprint audit-routing-context results.jsonl --min-labeled-hosts 2
+```
+
+The audit uses only single-candidate endpoint assessments as provider references and counts distinct hostnames rather than requests. It reports ASN→provider collisions, unlabeled/broad-network use, provider→ASN spread, prefixes, vantages and concrete endpoints. `pure_in_sample` means exactly that: the ASN was pure in the supplied sample with enough distinct labeled hosts. It is not an instruction to add an ASN→provider mapping.
+
+For frozen or externally normalized research corpora, `--samples` accepts JSONL `RoutingAuditSample` rows instead of full `Observation` rows. This keeps historical-format adapters out of the production model.
+
 The bundled AI-retriever profiles are **synthetic research profiles**, not claims that the transport matches the vendor's production fetcher. Provenance is stored alongside each profile so a later live capture can replace an approximation without rewriting history.
 
 ## Why semantic outcomes matter

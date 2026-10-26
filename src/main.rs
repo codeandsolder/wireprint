@@ -8,10 +8,10 @@ use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
 use wireprint::{
     EndpointEvidence, H3AddressFamily, H3ProbeConfig, Header, HostAggregationConfig, Observation,
-    PlatformKind, ProbeConfig, ProfileSet, RequestProfile, RoutingContextCollector,
-    TlsAddressFamily, TlsProbeConfig, TransportProfile, aggregate_observations, assess_endpoint,
-    classify_response, detect_path_elements, detect_routing_elements, probe_batch, probe_h3,
-    probe_tls,
+    PlatformKind, ProbeConfig, ProfileSet, RequestProfile, RoutingAuditSample,
+    RoutingContextCollector, TlsAddressFamily, TlsProbeConfig, TransportProfile,
+    aggregate_observations, assess_endpoint, audit_routing_samples, classify_response,
+    detect_path_elements, detect_routing_elements, probe_batch, probe_h3, probe_tls,
 };
 
 #[derive(Debug, Parser)]
@@ -41,6 +41,8 @@ enum Command {
     Tls(TlsArgs),
     /// Look up non-scoring BGP prefix / origin-AS routing context for IPs.
     RoutingContext(RoutingContextArgs),
+    /// Audit ASN/provider specificity and route diversity from observations or normalized samples.
+    AuditRoutingContext(AuditRoutingContextArgs),
     /// Aggregate JSONL probe observations into freshness-aware hostname state.
     AggregateHost(AggregateHostArgs),
 }
@@ -140,6 +142,17 @@ struct RoutingContextArgs {
 }
 
 #[derive(Debug, Args)]
+struct AuditRoutingContextArgs {
+    input: PathBuf,
+    /// Input is normalized RoutingAuditSample JSONL rather than Observation JSONL.
+    #[arg(long)]
+    samples: bool,
+    /// Minimum distinct labeled hosts before an ASN can be called pure-in-sample.
+    #[arg(long, default_value_t = 2)]
+    min_labeled_hosts: usize,
+}
+
+#[derive(Debug, Args)]
 struct ClassifyArgs {
     body: PathBuf,
     #[arg(long)]
@@ -178,6 +191,7 @@ async fn main() -> Result<()> {
         Command::H3(args) => run_h3(args).await,
         Command::Tls(args) => run_tls(args).await,
         Command::RoutingContext(args) => run_routing_context(args).await,
+        Command::AuditRoutingContext(args) => run_audit_routing_context(args),
         Command::AggregateHost(args) => run_aggregate_host(args),
     }
 }
@@ -276,6 +290,23 @@ async fn run_routing_context(args: RoutingContextArgs) -> Result<()> {
             serde_json::to_string(&collector.collect(address).await)?
         );
     }
+    Ok(())
+}
+
+fn run_audit_routing_context(args: AuditRoutingContextArgs) -> Result<()> {
+    if args.min_labeled_hosts == 0 {
+        bail!("--min-labeled-hosts must be at least 1");
+    }
+    let samples = if args.samples {
+        read_jsonl::<RoutingAuditSample>(&args.input, "routing audit sample")?
+    } else {
+        let observations = read_observations(&args.input)?;
+        wireprint::samples_from_observations(&observations)
+    };
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&audit_routing_samples(&samples, args.min_labeled_hosts))?
+    );
     Ok(())
 }
 
@@ -421,23 +452,27 @@ fn run_aggregate_host(args: AggregateHostArgs) -> Result<()> {
 }
 
 fn read_observations(path: &Path) -> Result<Vec<Observation>> {
+    read_jsonl(path, "wireprint observation")
+}
+
+fn read_jsonl<T>(path: &Path, kind: &str) -> Result<Vec<T>>
+where
+    T: serde::de::DeserializeOwned,
+{
     let reader =
         BufReader::new(File::open(path).with_context(|| format!("open {}", path.display()))?);
-    let mut observations = Vec::new();
+    let mut values = Vec::new();
     for (index, line) in reader.lines().enumerate() {
         let line = line?;
         let value = line.trim();
         if value.is_empty() || value.starts_with('#') {
             continue;
         }
-        let observation = serde_json::from_str(value).with_context(|| {
-            format!(
-                "parse {} line {} as wireprint observation",
-                path.display(),
-                index + 1
-            )
-        })?;
-        observations.push(observation);
+        values.push(
+            serde_json::from_str(value).with_context(|| {
+                format!("parse {} line {} as {kind}", path.display(), index + 1)
+            })?,
+        );
     }
-    Ok(observations)
+    Ok(values)
 }
