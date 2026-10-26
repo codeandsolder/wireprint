@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "transports": [
+    {
+      "name": "openai-gptbot-1.4-reconstructed-2026-09",
+      "provenance": "Runnable reconstruction of the GPTBot/1.4 transport observed by ELLIO on 2026-09-03. Implementation uses header-neutral hyper 1.12.0 + hyper-rustls 0.27.10 + rustls 0.23.42/ring, measured on 2026-10-11 to reproduce the same stable JA4, JA4_R and H2 fingerprints as reqwest 0.12.28 + rustls 0.23.42. This is transport compatibility, not sender authentication.",
+      "implementation": {
+        "kind": "hyper_rustls",
+        "profile": "reqwest-0.12.28-compatible-rustls-0.23.42"
+      },
+      "observations": [
+        {
+          "scheme": "ja4",
+          "value": "t13d1011h2_61a7ad8aa9b6_3fcd1a44f3e3",
+          "completeness": "exact",
+          "provenance": "ELLIO passive GPTBot/1.4 capture 2026-09-03; independently reproduced by controlled reqwest/rustls and header-neutral hyper-rustls on 2026-10-11"
+        },
+        {
+          "scheme": "ja4_r",
+          "value": "t13d1011h2_00ff,1301,1302,1303,c02b,c02c,c02f,c030,cca8,cca9_0005,000a,000b,000d,0017,0023,002b,002d,0033_0503,0403,0807,0806,0805,0804,0601,0501,0401",
+          "completeness": "exact",
+          "provenance": "ELLIO passive GPTBot/1.4 capture 2026-09-03; independently reproduced on 2026-10-11"
+        },
+        {
+          "scheme": "akamai_http2_client_fingerprint",
+          "value": "2:0;4:2097152;5:16384;6:16384|5177345|0|m,s,a,p",
+          "completeness": "exact",
+          "provenance": "ELLIO passive GPTBot/1.4 capture 2026-09-03; independently reproduced on 2026-10-11"
+        }
+      ]
+    }
+  ]
+}

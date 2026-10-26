@@ -1,9 +1,14 @@
 use std::fmt::Write as _;
+use std::io;
+use std::pin::Pin;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
-use futures_util::StreamExt;
+use async_compression::tokio::bufread::{BrotliDecoder, GzipDecoder, ZlibDecoder};
+use futures_util::TryStreamExt;
 use sha2::{Digest, Sha256};
+use tokio::io::{AsyncRead, AsyncReadExt, BufReader};
+use tokio_util::io::StreamReader;
 
 use crate::classify_response;
 use crate::dns::{
@@ -21,7 +26,7 @@ use crate::routing::detect_routing_elements;
 use crate::routing_context::{
     RoutingContextCollector, enrich_observation as enrich_routing_context,
 };
-use crate::transport::{PlatformKind, TransportProfile};
+use crate::transport::{TransportImplementation, TransportProfile};
 
 #[derive(Debug, Clone)]
 pub struct ProbeConfig {
@@ -44,11 +49,17 @@ impl Default for ProbeConfig {
 
 pub async fn probe_batch(
     profile: &RequestProfile,
-    transport: TransportProfile,
-    platform: PlatformKind,
+    transport: &TransportProfile,
     targets: &[String],
     config: &ProbeConfig,
 ) -> Result<Vec<Observation>> {
+    if matches!(
+        transport.implementation.as_ref(),
+        Some(TransportImplementation::HyperRustls { .. })
+    ) {
+        return crate::hyper_probe::probe_batch_hyper_rustls(profile, transport, targets, config)
+            .await;
+    }
     let connection_resolver = RecordingResolver::default();
     let routing_resolver = RoutingDnsSnapshotter::new();
     let builder = wreq::Client::builder()
@@ -56,7 +67,7 @@ pub async fn probe_batch(
         .timeout(Duration::from_secs(20))
         .connect_timeout(Duration::from_secs(8))
         .dns_resolver(connection_resolver.clone());
-    let client = transport.configure(builder, platform).build()?;
+    let client = transport.configure(builder)?.build()?;
     let mut observations = Vec::with_capacity(targets.len());
 
     for (index, target) in targets.iter().enumerate() {
@@ -70,7 +81,6 @@ pub async fn probe_batch(
                 &routing_resolver,
                 profile,
                 transport,
-                platform,
                 target,
                 config.body_bytes,
                 config.vantage.clone(),
@@ -88,8 +98,7 @@ async fn probe_one(
     connection_resolver: &RecordingResolver,
     routing_resolver: &RoutingDnsSnapshotter,
     profile: &RequestProfile,
-    transport: TransportProfile,
-    platform: PlatformKind,
+    transport: &TransportProfile,
     target: &str,
     body_bytes: usize,
     vantage: Option<String>,
@@ -136,9 +145,10 @@ async fn probe_one(
                 request_profile: profile.name.clone(),
                 request_role: profile.role.clone(),
                 request_provenance: profile.provenance.clone(),
-                request_headers: profile.headers.clone(),
-                transport_profile: transport.name().into(),
-                platform: platform.name().into(),
+                request_profile_headers: profile.headers.clone(),
+                transport_profile: transport.name.clone(),
+                transport: Some(transport.clone()),
+                platform: transport.platform().map(|value| value.name().into()),
                 result: "error".into(),
                 elapsed_ms: started.elapsed().as_millis(),
                 status: None,
@@ -199,7 +209,7 @@ async fn probe_one(
         .as_ref()
         .map(h2_provider_signals)
         .unwrap_or_default();
-    let headers = response
+    let mut headers = response
         .headers()
         .iter()
         .map(|(key, value)| Header {
@@ -207,6 +217,10 @@ async fn probe_one(
             value: String::from_utf8_lossy(value.as_bytes()).into_owned(),
         })
         .collect::<Vec<_>>();
+    let encoding = headers
+        .iter()
+        .find(|field| field.name.eq_ignore_ascii_case("content-encoding"))
+        .map(|field| field.value.to_ascii_lowercase());
 
     let routing = match (&target_host, &final_host, target_routing) {
         (Some(target_host), Some(final_host), Some(snapshot)) if target_host == final_host => {
@@ -222,24 +236,36 @@ async fn probe_one(
     let selected_endpoint = selected_endpoint(remote_addr, dns.as_ref());
     let routing_elements = routing_elements_for_dns(dns.as_ref());
 
+    let stream = response
+        .bytes_stream()
+        .map_err(|error| io::Error::other(error.to_string()));
+    let reader = BufReader::new(StreamReader::new(stream));
+    let mut reader: Pin<Box<dyn AsyncRead + Send>> = match encoding.as_deref() {
+        Some("gzip") => Box::pin(GzipDecoder::new(reader)),
+        Some("br") => Box::pin(BrotliDecoder::new(reader)),
+        Some("deflate") => Box::pin(ZlibDecoder::new(reader)),
+        _ => Box::pin(reader),
+    };
+    let decoded = matches!(encoding.as_deref(), Some("gzip" | "br" | "deflate"));
+    if decoded {
+        headers.retain(|field| field.name != "content-encoding" && field.name != "content-length");
+    }
+
     let mut body = Vec::with_capacity(body_bytes.min(64 * 1024));
-    let mut truncated = content_length.is_some_and(|length| length > body_bytes as u64);
-    let mut stream = response.bytes_stream();
     let mut body_error = None;
-    while let Some(item) = stream.next().await {
-        match item {
-            Ok(chunk) => {
+    let mut truncated = !decoded && content_length.is_some_and(|length| length > body_bytes as u64);
+    let mut chunk = [0_u8; 8192];
+    while body.len() <= body_bytes {
+        match reader.read(&mut chunk).await {
+            Ok(0) => break,
+            Ok(read) => {
                 let remaining = body_bytes.saturating_sub(body.len());
-                if remaining == 0 {
-                    truncated = true;
-                    break;
-                }
-                if chunk.len() > remaining {
+                if read > remaining {
                     body.extend_from_slice(&chunk[..remaining]);
                     truncated = true;
                     break;
                 }
-                body.extend_from_slice(&chunk);
+                body.extend_from_slice(&chunk[..read]);
             }
             Err(error) => {
                 body_error = Some(error.to_string());
@@ -270,9 +296,10 @@ async fn probe_one(
         request_profile: profile.name.clone(),
         request_role: profile.role.clone(),
         request_provenance: profile.provenance.clone(),
-        request_headers: profile.headers.clone(),
-        transport_profile: transport.name().into(),
-        platform: platform.name().into(),
+        request_profile_headers: profile.headers.clone(),
+        transport_profile: transport.name.clone(),
+        transport: Some(transport.clone()),
+        platform: transport.platform().map(|value| value.name().into()),
         result: if body_error.is_some() {
             "partial_response"
         } else {

@@ -269,7 +269,7 @@ fn success_observation(parts: H3ObservationParts<'_>) -> Observation {
         request_profile: "h3-observer".into(),
         request_role: Some("transport-observer".into()),
         request_provenance: Some("wireprint-h3".into()),
-        request_headers: vec![
+        request_profile_headers: vec![
             Header {
                 name: "user-agent".into(),
                 value: H3_USER_AGENT.into(),
@@ -280,7 +280,8 @@ fn success_observation(parts: H3ObservationParts<'_>) -> Observation {
             },
         ],
         transport_profile: "quiche-h3".into(),
-        platform: std::env::consts::OS.into(),
+        transport: None,
+        platform: Some(std::env::consts::OS.into()),
         result: "response".into(),
         elapsed_ms: parts.elapsed.as_millis(),
         status: parts.status,

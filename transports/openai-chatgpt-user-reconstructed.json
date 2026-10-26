@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "transports": [
+    {
+      "name": "envoy-chatgpt-user-compatible-2026",
+      "provenance": "Runnable reconstruction of the Envoy-compatible outbound transport independently observed with ChatGPT-User in 2026. Stock wreq 0.16.1/BoringSSL was measured on 2026-10-16 to reproduce the current-spec padded JA4, the saved ChatGPT-User JA3/raw TLS feature set, and the HTTP/2 preface exactly. Direct Envoy 1.39.1 is a reproduction control, not a production-version attribution. Transport compatibility does not authenticate OpenAI and may be shared by other application identities such as OAI-SearchBot.",
+      "implementation": {
+        "kind": "wreq_measured",
+        "profile": "envoy-chatgpt-user-compatible-2026"
+      },
+      "observations": [
+        {
+          "scheme": "ja4",
+          "value": "t13d1712h2_5b57614c22b0_ef7df7f74e48",
+          "completeness": "exact",
+          "provenance": "Current JA4 algorithm applied to the padded full ClientHello; independently reproduced by Envoy 1.39.1 and stock wreq 0.16.1. The older saved peet snapshot reported 78e6aca7449b while its JA4 extension count and JA3 prove padding 0015 was present on wire."
+        },
+        {
+          "scheme": "ja4_r",
+          "value": "t13d1712h2_002f,0035,009c,009d,1301,1302,1303,c009,c00a,c013,c014,c02b,c02c,c02f,c030,cca8,cca9_000a,000b,000d,0015,0017,0023,002b,002d,0033,ff01_0403,0804,0401,0503,0805,0501,0806,0601,0201",
+          "completeness": "exact",
+          "provenance": "Current-spec raw JA4 for the reproduced full handshake, including TLS padding extension 0015."
+        },
+        {
+          "scheme": "ja3",
+          "value": "f5bd742fa88333052a1deec09f821012",
+          "completeness": "exact",
+          "provenance": "Exact hash from the saved ChatGPT-User snapshot and both direct Envoy and wreq reproduction controls."
+        },
+        {
+          "scheme": "akamai_http2_client_fingerprint",
+          "value": "2:0;1:4096;8:0;3:1024;4:1048576|25100289|0|a,p,m,s",
+          "completeness": "exact",
+          "provenance": "Exact normalized HTTP/2 preface. The older peet rendering omitted the textual setting id before :0; structured capture identifies it as SETTINGS_ENABLE_CONNECT_PROTOCOL (id 8)."
+        }
+      ]
+    }
+  ]
+}

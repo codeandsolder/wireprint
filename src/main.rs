@@ -7,11 +7,12 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
 use wireprint::{
-    EndpointEvidence, H3AddressFamily, H3ProbeConfig, Header, HostAggregationConfig, Observation,
-    PlatformKind, ProbeConfig, ProfileSet, RequestProfile, RoutingAuditSample,
-    RoutingContextCollector, TlsAddressFamily, TlsProbeConfig, TransportProfile,
-    aggregate_observations, assess_endpoint, audit_routing_samples, classify_response,
-    detect_path_elements, detect_routing_elements, probe_batch, probe_h3, probe_tls,
+    BuiltinTransport, EndpointEvidence, H3AddressFamily, H3ProbeConfig, Header,
+    HostAggregationConfig, Observation, PlatformKind, ProbeConfig, ProfileSet, RequestProfile,
+    RoutingAuditSample, RoutingContextCollector, TlsAddressFamily, TlsProbeConfig,
+    TransportProfile, TransportSet, aggregate_observations, assess_endpoint, audit_routing_samples,
+    classify_response, detect_path_elements, detect_routing_elements, probe_batch, probe_h3,
+    probe_tls,
 };
 
 #[derive(Debug, Parser)]
@@ -51,8 +52,16 @@ enum Command {
 struct ProbeArgs {
     #[arg(required = true)]
     urls: Vec<String>,
-    #[arg(long, value_enum, default_value_t = TransportProfile::Plain)]
-    transport: TransportProfile,
+    /// Convenient built-in transport alias. Defaults to plain when no transport set is supplied.
+    #[arg(long, value_enum, conflicts_with = "transport_set")]
+    transport: Option<BuiltinTransport>,
+    /// Declarative transport-set JSON file.
+    #[arg(long, conflicts_with = "transport")]
+    transport_set: Option<PathBuf>,
+    /// Select one named profile from --transport-set. Required when it has multiple runnable profiles.
+    #[arg(long, requires = "transport_set")]
+    transport_name: Option<String>,
+    /// Platform used by built-ins whose wire image varies by platform.
     #[arg(long, value_enum, default_value_t = PlatformKind::Macos)]
     platform: PlatformKind,
     #[arg(long = "header", value_name = "NAME:VALUE")]
@@ -76,8 +85,16 @@ struct MatrixArgs {
     profiles: PathBuf,
     #[arg(long)]
     targets: PathBuf,
-    #[arg(long = "transport", value_enum, default_values_t = [TransportProfile::Plain])]
-    transports: Vec<TransportProfile>,
+    /// Convenient built-in transport aliases. Defaults to plain when no transport set is supplied.
+    #[arg(long = "transport", value_enum, conflicts_with = "transport_set")]
+    transports: Vec<BuiltinTransport>,
+    /// Declarative transport-set JSON file.
+    #[arg(long, conflicts_with = "transports")]
+    transport_set: Option<PathBuf>,
+    /// Select one or more named profiles from --transport-set. Without this, all runnable profiles run.
+    #[arg(long = "transport-name", requires = "transport_set")]
+    transport_names: Vec<String>,
+    /// Platform used by built-ins whose wire image varies by platform.
     #[arg(long, value_enum, default_value_t = PlatformKind::Macos)]
     platform: PlatformKind,
     #[arg(long)]
@@ -197,6 +214,7 @@ async fn main() -> Result<()> {
 }
 
 async fn run_probe(args: ProbeArgs) -> Result<()> {
+    let transport = resolve_probe_transport(&args)?;
     let profile = RequestProfile {
         name: args.profile_name,
         role: None,
@@ -209,9 +227,7 @@ async fn run_probe(args: ProbeArgs) -> Result<()> {
         vantage: args.vantage,
         routing_context_collector: args.routing_context.then(RoutingContextCollector::new),
     };
-    for observation in
-        probe_batch(&profile, args.transport, args.platform, &args.urls, &config).await?
-    {
+    for observation in probe_batch(&profile, &transport, &args.urls, &config).await? {
         println!("{}", serde_json::to_string(&observation)?);
     }
     Ok(())
@@ -322,6 +338,7 @@ async fn run_matrix(args: MatrixArgs) -> Result<()> {
     if targets.is_empty() {
         bail!("target set is empty");
     }
+    let transports = resolve_matrix_transports(&args)?;
 
     if let Some(parent) = args.output.parent() {
         std::fs::create_dir_all(parent)?;
@@ -340,14 +357,12 @@ async fn run_matrix(args: MatrixArgs) -> Result<()> {
         routing_context_collector: args.routing_context.then(RoutingContextCollector::new),
     };
 
-    for (transport_index, transport) in args.transports.iter().copied().enumerate() {
+    for (transport_index, transport) in transports.iter().enumerate() {
         for (profile_index, profile) in profile_set.profiles.iter().enumerate() {
             if transport_index > 0 || profile_index > 0 {
                 tokio::time::sleep(Duration::from_millis(args.profile_delay_ms)).await;
             }
-            for observation in
-                probe_batch(profile, transport, args.platform, &targets, &config).await?
-            {
+            for observation in probe_batch(profile, transport, &targets, &config).await? {
                 serde_json::to_writer(&mut writer, &observation)?;
                 writer.write_all(b"\n")?;
             }
@@ -355,6 +370,87 @@ async fn run_matrix(args: MatrixArgs) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn resolve_probe_transport(args: &ProbeArgs) -> Result<TransportProfile> {
+    let Some(path) = args.transport_set.as_ref() else {
+        return Ok(args
+            .transport
+            .unwrap_or(BuiltinTransport::Plain)
+            .into_profile(args.platform));
+    };
+    let set = read_transport_set(path)?;
+    if let Some(name) = args.transport_name.as_deref() {
+        return select_named_transport(&set, name);
+    }
+    let mut runnable = set
+        .transports
+        .into_iter()
+        .filter(TransportProfile::runnable)
+        .collect::<Vec<_>>();
+    match runnable.len() {
+        0 => bail!("transport set has no runnable profiles"),
+        1 => Ok(runnable.remove(0)),
+        count => {
+            bail!("transport set has {count} runnable profiles; choose one with --transport-name")
+        }
+    }
+}
+
+fn resolve_matrix_transports(args: &MatrixArgs) -> Result<Vec<TransportProfile>> {
+    let Some(path) = args.transport_set.as_ref() else {
+        let builtins = if args.transports.is_empty() {
+            vec![BuiltinTransport::Plain]
+        } else {
+            args.transports.clone()
+        };
+        return Ok(builtins
+            .into_iter()
+            .map(|transport| transport.into_profile(args.platform))
+            .collect());
+    };
+
+    let set = read_transport_set(path)?;
+    if args.transport_names.is_empty() {
+        let runnable = set
+            .transports
+            .into_iter()
+            .filter(TransportProfile::runnable)
+            .collect::<Vec<_>>();
+        if runnable.is_empty() {
+            bail!("transport set has no runnable profiles");
+        }
+        return Ok(runnable);
+    }
+
+    args.transport_names
+        .iter()
+        .map(|name| select_named_transport(&set, name))
+        .collect()
+}
+
+fn select_named_transport(set: &TransportSet, name: &str) -> Result<TransportProfile> {
+    let profile = set
+        .transports
+        .iter()
+        .find(|profile| profile.name == name)
+        .with_context(|| format!("transport profile not found: {name}"))?
+        .clone();
+    if !profile.runnable() {
+        bail!(
+            "transport profile '{name}' is observational only and has no runnable implementation"
+        );
+    }
+    Ok(profile)
+}
+
+fn read_transport_set(path: &Path) -> Result<TransportSet> {
+    let set: TransportSet = serde_json::from_reader(BufReader::new(
+        File::open(path).with_context(|| format!("open {}", path.display()))?,
+    ))
+    .with_context(|| format!("parse {}", path.display()))?;
+    set.validate()?;
+    Ok(set)
 }
 
 fn run_classify(args: ClassifyArgs) -> Result<()> {

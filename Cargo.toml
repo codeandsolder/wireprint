@@ -8,6 +8,14 @@ repository = "https://github.com/codeandsolder/wireprint"
 
 [dependencies]
 anyhow = "1"
+async-compression = { version = "0.4", features = ["tokio", "gzip", "brotli", "zlib"] }
+bytes = "1"
+http-body-util = "0.1"
+hyper = { version = "=1.12.0", features = ["client", "http1", "http2"] }
+hyper-rustls = { version = "=0.27.10", default-features = false, features = ["http1", "http2", "webpki-roots", "ring"] }
+hyper-util = { version = "=0.1.21", features = ["client", "client-legacy", "http1", "http2", "tokio"] }
+rustls = { version = "=0.23.42", default-features = false, features = ["ring", "std", "tls12"] }
+tokio-util = { version = "0.7", features = ["io"] }
 boring = "5.3"
 boring-sys = "5.3"
 foreign-types-shared = "0.3"
@@ -19,7 +27,7 @@ regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"
-tokio = { version = "1.52", features = ["macros", "net", "rt-multi-thread", "time"] }
+tokio = { version = "1.52", features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }
 url = "2.5"
 wreq = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "953ea576f699c8664ecbff30805e746368c5cb5b", features = ["gzip", "brotli", "deflate", "stream", "prefix-symbols"] }
 wreq-util = { version = "0.2.0", features = ["tokio-rt"] }

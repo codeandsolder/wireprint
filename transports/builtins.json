@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "transports": [
+    {
+      "name": "plain",
+      "provenance": "wireprint bundled reference transport; application headers remain independent",
+      "implementation": {
+        "kind": "builtin",
+        "profile": "plain"
+      }
+    },
+    {
+      "name": "low-fidelity",
+      "provenance": "wireprint bundled reference transport; application headers remain independent",
+      "implementation": {
+        "kind": "builtin",
+        "profile": "low-fidelity"
+      }
+    },
+    {
+      "name": "low-fidelity-tls",
+      "provenance": "wireprint bundled reference transport; application headers remain independent",
+      "implementation": {
+        "kind": "builtin",
+        "profile": "low-fidelity-tls"
+      }
+    },
+    {
+      "name": "low-fidelity-h2",
+      "provenance": "wireprint bundled reference transport; application headers remain independent",
+      "implementation": {
+        "kind": "builtin",
+        "profile": "low-fidelity-h2"
+      }
+    },
+    {
+      "name": "chrome149-tls",
+      "provenance": "wireprint bundled reference transport; application headers remain independent",
+      "implementation": {
+        "kind": "builtin",
+        "profile": "chrome149-tls",
+        "platform": "macos"
+      }
+    },
+    {
+      "name": "chrome149-h2",
+      "provenance": "wireprint bundled reference transport; application headers remain independent",
+      "implementation": {
+        "kind": "builtin",
+        "profile": "chrome149-h2",
+        "platform": "macos"
+      }
+    },
+    {
+      "name": "safari-ios18",
+      "provenance": "wireprint bundled reference transport; application headers remain independent",
+      "implementation": {
+        "kind": "builtin",
+        "profile": "safari-ios18"
+      }
+    },
+    {
+      "name": "safari-ios16",
+      "provenance": "wireprint bundled reference transport; application headers remain independent",
+      "implementation": {
+        "kind": "builtin",
+        "profile": "safari-ios16"
+      }
+    },
+    {
+      "name": "firefox-android135",
+      "provenance": "wireprint bundled reference transport; application headers remain independent",
+      "implementation": {
+        "kind": "builtin",
+        "profile": "firefox-android135"
+      }
+    },
+    {
+      "name": "chromium100-era",
+      "provenance": "wireprint bundled reference transport; application headers remain independent",
+      "implementation": {
+        "kind": "builtin",
+        "profile": "chromium100-era"
+      }
+    },
+    {
+      "name": "okhttp39",
+      "provenance": "wireprint bundled reference transport; application headers remain independent",
+      "implementation": {
+        "kind": "builtin",
+        "profile": "okhttp39"
+      }
+    },
+    {
+      "name": "chrome149",
+      "provenance": "wireprint bundled reference transport; application headers remain independent",
+      "implementation": {
+        "kind": "builtin",
+        "profile": "chrome149",
+        "platform": "macos"
+      }
+    }
+  ]
+}

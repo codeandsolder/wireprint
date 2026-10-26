@@ -5,6 +5,7 @@ pub mod h2;
 pub mod h3;
 pub mod h3_probe;
 pub mod host;
+mod hyper_probe;
 pub mod model;
 pub mod normalize;
 pub mod path;
@@ -60,4 +61,8 @@ pub use tls::{
     provider_signals as tls_provider_signals,
 };
 pub use tls_probe::{TlsAddressFamily, TlsProbeConfig, probe_tls};
-pub use transport::{PlatformKind, TransportProfile};
+pub use transport::{
+    BuiltinTransport, HyperRustlsProfileKind, PlatformKind, TRANSPORT_SCHEMA_VERSION,
+    TransportImplementation, TransportObservation, TransportObservationCompleteness,
+    TransportProfile, TransportSet, WreqMeasuredProfileKind,
+};
