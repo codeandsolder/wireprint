@@ -7,9 +7,9 @@ use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
 use wireprint::{
     EndpointEvidence, H3AddressFamily, H3ProbeConfig, Header, HostAggregationConfig, Observation,
-    PlatformKind, ProbeConfig, ProfileSet, RequestProfile, TransportProfile,
-    aggregate_observations, assess_endpoint, classify_response, detect_path_elements,
-    detect_routing_elements, probe_batch, probe_h3,
+    PlatformKind, ProbeConfig, ProfileSet, RequestProfile, TlsAddressFamily, TlsProbeConfig,
+    TransportProfile, aggregate_observations, assess_endpoint, classify_response,
+    detect_path_elements, detect_routing_elements, probe_batch, probe_h3, probe_tls,
 };
 
 #[derive(Debug, Parser)]
@@ -35,6 +35,8 @@ enum Command {
     AssessEndpoint(AssessEndpointArgs),
     /// Observe HTTP/3 and raw peer QUIC transport parameters.
     H3(H3Args),
+    /// Observe raw TLS 1.3 server handshake morphology.
+    Tls(TlsArgs),
     /// Aggregate JSONL probe observations into freshness-aware hostname state.
     AggregateHost(AggregateHostArgs),
 }
@@ -96,6 +98,26 @@ struct H3Args {
 }
 
 #[derive(Debug, Args)]
+struct TlsArgs {
+    #[arg(required = true)]
+    urls: Vec<String>,
+    #[arg(long, default_value_t = 1)]
+    repeat: usize,
+    #[arg(long, default_value_t = 5.0)]
+    handshake_timeout_secs: f64,
+    #[arg(long, default_value_t = 2500)]
+    post_handshake_ms: u64,
+    #[arg(long, value_enum, default_value_t = TlsAddressFamily::Auto)]
+    family: TlsAddressFamily,
+    #[arg(long)]
+    groups: Option<String>,
+    #[arg(long)]
+    profile_label: Option<String>,
+    #[arg(long)]
+    vantage: Option<String>,
+}
+
+#[derive(Debug, Args)]
 struct ClassifyArgs {
     body: PathBuf,
     #[arg(long)]
@@ -132,6 +154,7 @@ async fn main() -> Result<()> {
         Command::Route(args) => run_route(args),
         Command::AssessEndpoint(args) => run_assess_endpoint(args),
         Command::H3(args) => run_h3(args).await,
+        Command::Tls(args) => run_tls(args).await,
         Command::AggregateHost(args) => run_aggregate_host(args),
     }
 }
@@ -171,6 +194,39 @@ async fn run_h3(args: H3Args) -> Result<()> {
     for url in &args.urls {
         for _ in 0..args.repeat {
             match probe_h3(url, &config).await {
+                Ok(observation) => println!("{}", serde_json::to_string(&observation)?),
+                Err(error) => println!(
+                    "{}",
+                    serde_json::json!({
+                        "target": url,
+                        "result": "error",
+                        "error": format!("{error:#}"),
+                    })
+                ),
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn run_tls(args: TlsArgs) -> Result<()> {
+    if args.repeat == 0 {
+        bail!("--repeat must be at least 1");
+    }
+    if !args.handshake_timeout_secs.is_finite() || args.handshake_timeout_secs <= 0.0 {
+        bail!("--handshake-timeout-secs must be a positive finite number");
+    }
+    let config = TlsProbeConfig {
+        handshake_timeout: Duration::from_secs_f64(args.handshake_timeout_secs),
+        post_handshake_window: Duration::from_millis(args.post_handshake_ms),
+        family: args.family,
+        vantage: args.vantage,
+        groups: args.groups,
+        profile_label: args.profile_label,
+    };
+    for url in &args.urls {
+        for _ in 0..args.repeat {
+            match probe_tls(url, &config).await {
                 Ok(observation) => println!("{}", serde_json::to_string(&observation)?),
                 Err(error) => println!(
                     "{}",

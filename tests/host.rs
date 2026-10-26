@@ -1,7 +1,7 @@
 use wireprint::{
     EndpointAssessment, HostAggregationConfig, HostFreshnessBasis, HostProviderState,
-    HostProviderSupport, ProviderCandidate, ProviderEvidenceChannel, ProviderSupport,
-    TerminationState, aggregate_host,
+    HostProviderSupport, ProviderCandidate, ProviderEvidenceChannel, ProviderSignal,
+    ProviderSupport, TerminationState, aggregate_host,
 };
 
 const HOUR: u128 = 60 * 60 * 1000;
@@ -48,6 +48,18 @@ fn assessment(
         unanchored_corroborating_signals: Vec::new(),
         routing_context: Vec::new(),
     }
+}
+
+fn tls_only_assessment(at: Option<u128>, provider: &str) -> EndpointAssessment {
+    let mut row = assessment(at, Some("tls"), Some("203.0.113.99"), Vec::new());
+    row.protocol = Some("TLS/1.3".into());
+    row.unanchored_corroborating_signals = vec![ProviderSignal {
+        provider: provider.into(),
+        channel: ProviderEvidenceChannel::TlsMorphology,
+        classifier: "test-tls".into(),
+        evidence: vec![format!("tls:{provider}")],
+    }];
+    row
 }
 
 #[test]
@@ -310,5 +322,97 @@ fn protocol_is_part_of_independent_support_identity() {
     assert_eq!(
         host.current_memberships[0].current_protocols,
         vec!["HTTP/1.1", "HTTP/2.0"]
+    );
+}
+
+#[test]
+fn tls_only_signal_cannot_originate_hostname_membership() {
+    let rows = vec![tls_only_assessment(Some(10 * HOUR), "cloudflare")];
+    let host = aggregate_host("example.test", &rows, HostAggregationConfig::default());
+    assert_eq!(host.state, HostProviderState::Unresolved);
+    assert!(host.current_provider_set.is_empty());
+    assert!(host.historical_provider_set.is_empty());
+    assert!(host.current_support_groups.is_empty());
+    assert!(host.historical_support_groups.is_empty());
+}
+
+#[test]
+fn separate_fresh_tls_observation_can_corroborate_current_provider() {
+    let rows = vec![
+        assessment(
+            Some(10 * HOUR),
+            Some("http"),
+            Some("203.0.113.10"),
+            vec![candidate(
+                "cloudflare",
+                &[ProviderEvidenceChannel::ResponseMetadata],
+                &[],
+            )],
+        ),
+        tls_only_assessment(Some(10 * HOUR + 1_000), "cloudflare"),
+    ];
+    let host = aggregate_host("example.test", &rows, HostAggregationConfig::default());
+    let membership = &host.current_memberships[0];
+    assert_eq!(
+        membership.support,
+        HostProviderSupport::CurrentCrossChannelCorroborated
+    );
+    assert_eq!(
+        membership.current_corroborating_channels,
+        vec![ProviderEvidenceChannel::TlsMorphology]
+    );
+    assert_eq!(membership.current_independent_group_count, 2);
+}
+
+#[test]
+fn stale_tls_observation_is_historical_corroboration_only() {
+    let rows = vec![
+        tls_only_assessment(Some(HOUR), "cloudflare"),
+        assessment(
+            Some(20 * HOUR),
+            Some("http"),
+            Some("203.0.113.10"),
+            vec![candidate(
+                "cloudflare",
+                &[ProviderEvidenceChannel::ResponseMetadata],
+                &[],
+            )],
+        ),
+    ];
+    let host = aggregate_host("example.test", &rows, HostAggregationConfig::default());
+    let membership = &host.current_memberships[0];
+    assert_eq!(
+        membership.support,
+        HostProviderSupport::CurrentWithHistoricalCrossChannelCorroboration
+    );
+    assert!(membership.current_corroborating_channels.is_empty());
+    assert_eq!(
+        membership.historical_corroborating_channels,
+        vec![ProviderEvidenceChannel::TlsMorphology]
+    );
+}
+
+#[test]
+fn tls_shape_for_other_provider_cannot_create_conflict() {
+    let rows = vec![
+        assessment(
+            Some(10 * HOUR),
+            Some("http"),
+            Some("203.0.113.10"),
+            vec![candidate(
+                "cloudflare",
+                &[ProviderEvidenceChannel::ResponseMetadata],
+                &[],
+            )],
+        ),
+        tls_only_assessment(Some(10 * HOUR + 1_000), "akamai"),
+    ];
+    let host = aggregate_host("example.test", &rows, HostAggregationConfig::default());
+    assert_eq!(host.current_provider_set, vec!["cloudflare"]);
+    assert_eq!(host.historical_provider_set, vec!["cloudflare"]);
+    assert!(
+        host.current_memberships[0]
+            .current_corroborating_channels
+            .is_empty()
     );
 }
