@@ -161,7 +161,7 @@ struct RoutingContextArgs {
 #[derive(Debug, Args)]
 struct AuditRoutingContextArgs {
     input: PathBuf,
-    /// Input is normalized RoutingAuditSample JSONL rather than Observation JSONL.
+    /// Input is normalized `RoutingAuditSample` JSONL rather than `Observation` JSONL.
     #[arg(long)]
     samples: bool,
     /// Minimum distinct labeled hosts before an ASN can be called pure-in-sample.
@@ -201,15 +201,15 @@ async fn main() -> Result<()> {
     match cli.command {
         Command::Probe(args) => run_probe(args).await,
         Command::Matrix(args) => run_matrix(args).await,
-        Command::Classify(args) => run_classify(args),
-        Command::Path(args) => run_path(args),
-        Command::Route(args) => run_route(args),
-        Command::AssessEndpoint(args) => run_assess_endpoint(args),
+        Command::Classify(args) => run_classify(&args),
+        Command::Path(args) => run_path(&args),
+        Command::Route(args) => run_route(&args),
+        Command::AssessEndpoint(args) => run_assess_endpoint(&args),
         Command::H3(args) => run_h3(args).await,
         Command::Tls(args) => run_tls(args).await,
         Command::RoutingContext(args) => run_routing_context(args).await,
-        Command::AuditRoutingContext(args) => run_audit_routing_context(args),
-        Command::AggregateHost(args) => run_aggregate_host(args),
+        Command::AuditRoutingContext(args) => run_audit_routing_context(&args),
+        Command::AggregateHost(args) => run_aggregate_host(&args),
     }
 }
 
@@ -309,7 +309,7 @@ async fn run_routing_context(args: RoutingContextArgs) -> Result<()> {
     Ok(())
 }
 
-fn run_audit_routing_context(args: AuditRoutingContextArgs) -> Result<()> {
+fn run_audit_routing_context(args: &AuditRoutingContextArgs) -> Result<()> {
     if args.min_labeled_hosts == 0 {
         bail!("--min-labeled-hosts must be at least 1");
     }
@@ -453,7 +453,7 @@ fn read_transport_set(path: &Path) -> Result<TransportSet> {
     Ok(set)
 }
 
-fn run_classify(args: ClassifyArgs) -> Result<()> {
+fn run_classify(args: &ClassifyArgs) -> Result<()> {
     let body =
         std::fs::read(&args.body).with_context(|| format!("read {}", args.body.display()))?;
     let headers = parse_headers(&args.headers)?;
@@ -464,7 +464,7 @@ fn run_classify(args: ClassifyArgs) -> Result<()> {
     Ok(())
 }
 
-fn run_path(args: PathArgs) -> Result<()> {
+fn run_path(args: &PathArgs) -> Result<()> {
     let headers = parse_headers(&args.headers)?;
     println!(
         "{}",
@@ -473,7 +473,7 @@ fn run_path(args: PathArgs) -> Result<()> {
     Ok(())
 }
 
-fn run_route(args: RouteArgs) -> Result<()> {
+fn run_route(args: &RouteArgs) -> Result<()> {
     println!(
         "{}",
         serde_json::to_string_pretty(&detect_routing_elements(&args.cnames))?
@@ -481,7 +481,7 @@ fn run_route(args: RouteArgs) -> Result<()> {
     Ok(())
 }
 
-fn run_assess_endpoint(args: AssessEndpointArgs) -> Result<()> {
+fn run_assess_endpoint(args: &AssessEndpointArgs) -> Result<()> {
     let evidence: EndpointEvidence = serde_json::from_reader(BufReader::new(
         File::open(&args.input).with_context(|| format!("open {}", args.input.display()))?,
     ))
@@ -534,7 +534,7 @@ struct AggregateHostArgs {
     support_bucket_minutes: u64,
 }
 
-fn run_aggregate_host(args: AggregateHostArgs) -> Result<()> {
+fn run_aggregate_host(args: &AggregateHostArgs) -> Result<()> {
     let observations = read_observations(&args.input)?;
     let config = HostAggregationConfig {
         freshness_window_ms: u128::from(args.freshness_hours) * 60 * 60 * 1000,

@@ -192,7 +192,7 @@ fn bucket_start(value: Option<u128>, bucket_ms: u128) -> Option<u128> {
     Some(value / bucket_ms * bucket_ms)
 }
 
-fn has_provider_candidates(assessment: &EndpointAssessment) -> bool {
+const fn has_provider_candidates(assessment: &EndpointAssessment) -> bool {
     !assessment.candidates.is_empty()
 }
 
@@ -201,12 +201,14 @@ fn is_time_current(
     latest_provider_observed_unix_ms: Option<u128>,
     freshness_window_ms: u128,
 ) -> bool {
-    match latest_provider_observed_unix_ms {
-        Some(latest) => assessment.observed_unix_ms.is_some_and(|observed| {
-            observed <= latest && observed >= latest.saturating_sub(freshness_window_ms)
-        }),
-        None => assessment.observed_unix_ms.is_none(),
-    }
+    latest_provider_observed_unix_ms.map_or_else(
+        || assessment.observed_unix_ms.is_none(),
+        |latest| {
+            assessment.observed_unix_ms.is_some_and(|observed| {
+                observed <= latest && observed >= latest.saturating_sub(freshness_window_ms)
+            })
+        },
+    )
 }
 
 fn is_corroborating_current(
@@ -214,12 +216,14 @@ fn is_corroborating_current(
     latest_provider_observed_unix_ms: Option<u128>,
     freshness_window_ms: u128,
 ) -> bool {
-    match latest_provider_observed_unix_ms {
-        Some(latest) => assessment
-            .observed_unix_ms
-            .is_some_and(|observed| observed >= latest.saturating_sub(freshness_window_ms)),
-        None => assessment.observed_unix_ms.is_none(),
-    }
+    latest_provider_observed_unix_ms.map_or_else(
+        || assessment.observed_unix_ms.is_none(),
+        |latest| {
+            assessment
+                .observed_unix_ms
+                .is_some_and(|observed| observed >= latest.saturating_sub(freshness_window_ms))
+        },
+    )
 }
 
 fn is_current(
@@ -359,6 +363,10 @@ fn collect_route_groups<'a>(
         .collect()
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "hostname fusion is one ordered state transition over current, historical, and corroborating evidence"
+)]
 pub fn aggregate_host(
     host: impl Into<String>,
     assessments: &[EndpointAssessment],
@@ -445,17 +453,17 @@ pub fn aggregate_host(
             );
             if current_assessment {
                 if let Some(protocol) = &assessment.protocol {
-                    slot.current_protocols.insert(protocol.clone());
+                    let _ = slot.current_protocols.insert(protocol.clone());
                 }
                 slot.current_originating_channels
                     .extend(candidate.originating_channels.iter().copied());
                 slot.current_corroborating_channels
                     .extend(candidate.corroborating_channels.iter().copied());
                 if let Some(vantage) = &assessment.vantage {
-                    slot.current_vantages.insert(vantage.clone());
+                    let _ = slot.current_vantages.insert(vantage.clone());
                 }
                 if let Some(endpoint) = &endpoint {
-                    slot.current_endpoints.insert(endpoint.clone());
+                    let _ = slot.current_endpoints.insert(endpoint.clone());
                 }
             }
         }
@@ -475,7 +483,8 @@ pub fn aggregate_host(
                 continue;
             }
             let slot = memberships.entry(signal.provider.clone()).or_default();
-            slot.historical_corroborating_channels
+            let _ = slot
+                .historical_corroborating_channels
                 .insert(signal.channel);
             update_time_range(
                 &mut slot.first_observed_unix_ms,
@@ -483,15 +492,15 @@ pub fn aggregate_host(
                 assessment.observed_unix_ms,
             );
             if current_assessment && current_provider_set.contains(&signal.provider) {
-                slot.current_corroborating_channels.insert(signal.channel);
+                let _ = slot.current_corroborating_channels.insert(signal.channel);
                 if let Some(protocol) = &assessment.protocol {
-                    slot.current_protocols.insert(protocol.clone());
+                    let _ = slot.current_protocols.insert(protocol.clone());
                 }
                 if let Some(vantage) = &assessment.vantage {
-                    slot.current_vantages.insert(vantage.clone());
+                    let _ = slot.current_vantages.insert(vantage.clone());
                 }
                 if let Some(endpoint) = &assessment_endpoint {
-                    slot.current_endpoints.insert(endpoint.clone());
+                    let _ = slot.current_endpoints.insert(endpoint.clone());
                 }
             }
         }
@@ -597,6 +606,7 @@ fn observation_host(observation: &Observation) -> Option<String> {
         })
 }
 
+#[must_use]
 pub fn aggregate_observations(
     observations: &[Observation],
     config: HostAggregationConfig,

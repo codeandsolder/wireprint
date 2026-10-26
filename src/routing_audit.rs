@@ -86,6 +86,35 @@ pub struct RoutingContextAudit {
     pub hosts: Vec<HostRoutingAudit>,
 }
 
+#[derive(Default)]
+struct AsnBuild {
+    names: BTreeSet<String>,
+    hosts: BTreeSet<String>,
+    labeled_hosts: BTreeSet<String>,
+    unlabeled_hosts: BTreeSet<String>,
+    provider_hosts: BTreeMap<String, BTreeSet<String>>,
+    host_providers: BTreeMap<String, BTreeSet<String>>,
+    prefixes: BTreeSet<String>,
+    vantages: BTreeSet<String>,
+    endpoints: BTreeSet<String>,
+}
+
+#[derive(Default)]
+struct ProviderBuild {
+    hosts: BTreeSet<String>,
+    asn_hosts: BTreeMap<u32, BTreeSet<String>>,
+}
+
+#[derive(Default)]
+struct HostBuild {
+    providers: BTreeSet<String>,
+    asns: BTreeSet<u32>,
+    prefixes: BTreeSet<String>,
+    vantages: BTreeSet<String>,
+    endpoints: BTreeSet<String>,
+}
+
+#[must_use]
 pub fn samples_from_observations(observations: &[Observation]) -> Vec<RoutingAuditSample> {
     observations
         .iter()
@@ -133,39 +162,16 @@ pub fn samples_from_observations(observations: &[Observation]) -> Vec<RoutingAud
         .collect()
 }
 
+#[must_use]
+#[expect(
+    clippy::too_many_lines,
+    reason = "the audit is a single corpus accounting pass whose host/ASN/provider invariants are easiest to verify together"
+)]
 pub fn audit_routing_samples(
     samples: &[RoutingAuditSample],
     min_labeled_hosts: usize,
 ) -> RoutingContextAudit {
     let min_labeled_hosts = min_labeled_hosts.max(1);
-
-    #[derive(Default)]
-    struct AsnBuild {
-        names: BTreeSet<String>,
-        hosts: BTreeSet<String>,
-        labeled_hosts: BTreeSet<String>,
-        unlabeled_hosts: BTreeSet<String>,
-        provider_hosts: BTreeMap<String, BTreeSet<String>>,
-        host_providers: BTreeMap<String, BTreeSet<String>>,
-        prefixes: BTreeSet<String>,
-        vantages: BTreeSet<String>,
-        endpoints: BTreeSet<String>,
-    }
-
-    #[derive(Default)]
-    struct ProviderBuild {
-        hosts: BTreeSet<String>,
-        asn_hosts: BTreeMap<u32, BTreeSet<String>>,
-    }
-
-    #[derive(Default)]
-    struct HostBuild {
-        providers: BTreeSet<String>,
-        asns: BTreeSet<u32>,
-        prefixes: BTreeSet<String>,
-        vantages: BTreeSet<String>,
-        endpoints: BTreeSet<String>,
-    }
 
     let mut by_asn = BTreeMap::<u32, AsnBuild>::new();
     let mut by_provider = BTreeMap::<String, ProviderBuild>::new();
@@ -174,13 +180,13 @@ pub fn audit_routing_samples(
     for sample in samples {
         let host_slot = by_host.entry(sample.host.clone()).or_default();
         if let Some(provider) = &sample.provider {
-            host_slot.providers.insert(provider.clone());
+            let _ = host_slot.providers.insert(provider.clone());
         }
         if let Some(vantage) = &sample.vantage {
-            host_slot.vantages.insert(vantage.clone());
+            let _ = host_slot.vantages.insert(vantage.clone());
         }
         if let Some(endpoint) = &sample.endpoint {
-            host_slot.endpoints.insert(endpoint.clone());
+            let _ = host_slot.endpoints.insert(endpoint.clone());
         }
 
         let mut sample_asns = BTreeSet::new();
@@ -188,44 +194,46 @@ pub fn audit_routing_samples(
             let Some(asn) = context.asn else {
                 continue;
             };
-            sample_asns.insert(asn);
+            let _ = sample_asns.insert(asn);
             let slot = by_asn.entry(asn).or_default();
-            slot.hosts.insert(sample.host.clone());
+            let _ = slot.hosts.insert(sample.host.clone());
             if let Some(name) = &context.as_name {
-                slot.names.insert(name.clone());
+                let _ = slot.names.insert(name.clone());
             }
             if let Some(prefix) = &context.prefix {
-                slot.prefixes.insert(prefix.clone());
-                host_slot.prefixes.insert(prefix.clone());
+                let _ = slot.prefixes.insert(prefix.clone());
+                let _ = host_slot.prefixes.insert(prefix.clone());
             }
             if let Some(vantage) = &sample.vantage {
-                slot.vantages.insert(vantage.clone());
+                let _ = slot.vantages.insert(vantage.clone());
             }
             if let Some(endpoint) = &sample.endpoint {
-                slot.endpoints.insert(endpoint.clone());
+                let _ = slot.endpoints.insert(endpoint.clone());
             }
-            host_slot.asns.insert(asn);
+            let _ = host_slot.asns.insert(asn);
 
             if let Some(provider) = &sample.provider {
-                slot.labeled_hosts.insert(sample.host.clone());
-                slot.provider_hosts
+                let _ = slot.labeled_hosts.insert(sample.host.clone());
+                let _ = slot
+                    .provider_hosts
                     .entry(provider.clone())
                     .or_default()
                     .insert(sample.host.clone());
-                slot.host_providers
+                let _ = slot
+                    .host_providers
                     .entry(sample.host.clone())
                     .or_default()
                     .insert(provider.clone());
             } else {
-                slot.unlabeled_hosts.insert(sample.host.clone());
+                let _ = slot.unlabeled_hosts.insert(sample.host.clone());
             }
         }
 
         if let Some(provider) = &sample.provider {
             let provider_slot = by_provider.entry(provider.clone()).or_default();
-            provider_slot.hosts.insert(sample.host.clone());
+            let _ = provider_slot.hosts.insert(sample.host.clone());
             for asn in sample_asns {
-                provider_slot
+                let _ = provider_slot
                     .asn_hosts
                     .entry(asn)
                     .or_default()
@@ -274,6 +282,10 @@ pub fn audit_routing_samples(
         };
         *class_counts.entry(class).or_insert(0) += 1;
 
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "host counts would need to exceed f64 integer precision before this diagnostic ratio loses information"
+        )]
         let top_provider_purity = top
             .as_ref()
             .map(|(_, count)| *count as f64 / slot.labeled_hosts.len() as f64);
@@ -340,7 +352,7 @@ pub fn audit_routing_samples(
 fn hostname(value: &str) -> Option<String> {
     Url::parse(value)
         .ok()
-        .and_then(|url| url.host_str().map(|host| host.to_ascii_lowercase()))
+        .and_then(|url| url.host_str().map(str::to_ascii_lowercase))
 }
 
 #[cfg(test)]

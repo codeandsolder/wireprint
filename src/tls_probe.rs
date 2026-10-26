@@ -52,6 +52,11 @@ impl Default for TlsProbeConfig {
     }
 }
 
+/// Observe one TLS 1.3 server handshake and preserve bounded morphology evidence.
+///
+/// # Errors
+///
+/// Returns an error for invalid targets, DNS/connectivity failures, certificate/handshake errors, or observer setup failures.
 pub async fn probe_tls(target: &str, config: &TlsProbeConfig) -> Result<Observation> {
     let observed_unix_ms = unix_ms();
     let started = Instant::now();
@@ -218,10 +223,10 @@ fn profile_name(config: &TlsProbeConfig) -> String {
     if let Some(label) = &config.profile_label {
         return label.clone();
     }
-    match &config.groups {
-        Some(groups) => format!("boringssl-h2-tls13-v1:groups={groups}"),
-        None => "boringssl-h2-tls13-v1".into(),
-    }
+    config.groups.as_ref().map_or_else(
+        || "boringssl-h2-tls13-v1".into(),
+        |groups| format!("boringssl-h2-tls13-v1:groups={groups}"),
+    )
 }
 
 async fn resolve_candidates(

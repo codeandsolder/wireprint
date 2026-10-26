@@ -37,8 +37,10 @@ impl Default for RoutingContextCollector {
 }
 
 impl RoutingContextCollector {
+    #[must_use]
     pub fn new() -> Self {
-        let built = TokioResolver::builder_tokio().and_then(|builder| builder.build());
+        let built =
+            TokioResolver::builder_tokio().and_then(hickory_resolver::ResolverBuilder::build);
         let (resolver, init_error) = match built {
             Ok(resolver) => (Some(Arc::new(resolver)), None),
             Err(error) => (None, Some(Arc::from(error.to_string()))),
@@ -73,9 +75,10 @@ impl RoutingContextCollector {
                 error: Some(format!("{error:#}")),
             },
         };
-        self.cache
+        let _ = self
+            .cache
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert(address, snapshot.clone());
         snapshot
     }
@@ -83,7 +86,7 @@ impl RoutingContextCollector {
     fn cached(&self, address: IpAddr) -> Option<RoutingContextSnapshot> {
         self.cache
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .get(&address)
             .cloned()
     }
@@ -122,7 +125,7 @@ impl RoutingContextCollector {
         // context per (prefix, ASN) pair rather than choosing a winner.
         let mut unique = BTreeMap::<(String, u32), OriginRecord>::new();
         for origin in origins {
-            unique
+            let _ = unique
                 .entry((origin.prefix.clone(), origin.asn))
                 .or_insert(origin);
         }
@@ -174,13 +177,13 @@ impl RoutingContextCollector {
     }
 
     async fn as_name(&self, asn: u32) -> Result<Option<String>> {
-        if let Some(cached) = self
+        let cached = self
             .as_name_cache
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .get(&asn)
-            .cloned()
-        {
+            .cloned();
+        if let Some(cached) = cached {
             return Ok(cached);
         }
 
@@ -209,9 +212,10 @@ impl RoutingContextCollector {
                 }
             }
         }
-        self.as_name_cache
+        let _ = self
+            .as_name_cache
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert(asn, name.clone());
         Ok(name)
     }
@@ -496,7 +500,7 @@ mod tests {
             }],
             error: None,
         };
-        collector
+        let _ = collector
             .cache
             .lock()
             .unwrap()

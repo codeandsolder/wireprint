@@ -47,6 +47,11 @@ impl Default for ProbeConfig {
     }
 }
 
+/// Probe a batch of targets with one request and transport profile.
+///
+/// # Errors
+///
+/// Returns an error when the selected transport cannot be configured or its client cannot be built.
 pub async fn probe_batch(
     profile: &RequestProfile,
     transport: &TransportProfile,
@@ -68,42 +73,47 @@ pub async fn probe_batch(
         .connect_timeout(Duration::from_secs(8))
         .dns_resolver(connection_resolver.clone());
     let client = transport.configure(builder)?.build()?;
+    let context = WreqProbeContext {
+        client: &client,
+        connection_resolver: &connection_resolver,
+        routing_resolver: &routing_resolver,
+        profile,
+        transport,
+        config,
+    };
     let mut observations = Vec::with_capacity(targets.len());
 
     for (index, target) in targets.iter().enumerate() {
         if index > 0 && !config.delay.is_zero() {
             tokio::time::sleep(config.delay).await;
         }
-        observations.push(
-            probe_one(
-                &client,
-                &connection_resolver,
-                &routing_resolver,
-                profile,
-                transport,
-                target,
-                config.body_bytes,
-                config.vantage.clone(),
-                config.routing_context_collector.as_ref(),
-            )
-            .await,
-        );
+        observations.push(probe_one(&context, target).await);
     }
     Ok(observations)
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn probe_one(
-    client: &wreq::Client,
-    connection_resolver: &RecordingResolver,
-    routing_resolver: &RoutingDnsSnapshotter,
-    profile: &RequestProfile,
-    transport: &TransportProfile,
-    target: &str,
-    body_bytes: usize,
-    vantage: Option<String>,
-    routing_context_collector: Option<&RoutingContextCollector>,
-) -> Observation {
+struct WreqProbeContext<'a> {
+    client: &'a wreq::Client,
+    connection_resolver: &'a RecordingResolver,
+    routing_resolver: &'a RoutingDnsSnapshotter,
+    profile: &'a RequestProfile,
+    transport: &'a TransportProfile,
+    config: &'a ProbeConfig,
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "the request/response evidence state machine is easier to audit when its ordering remains contiguous"
+)]
+async fn probe_one(context: &WreqProbeContext<'_>, target: &str) -> Observation {
+    let client = context.client;
+    let connection_resolver = context.connection_resolver;
+    let routing_resolver = context.routing_resolver;
+    let profile = context.profile;
+    let transport = context.transport;
+    let body_bytes = context.config.body_bytes;
+    let vantage = context.config.vantage.clone();
+    let routing_context_collector = context.config.routing_context_collector.as_ref();
     let started = Instant::now();
     let observed_unix_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -183,7 +193,7 @@ async fn probe_one(
     let status = response.status().as_u16();
     let http_version = format!("{:?}", response.version());
     let final_uri = response.uri().to_string();
-    let final_host = host_from_url(&final_uri).or(target_host.clone());
+    let final_host = host_from_url(&final_uri).or_else(|| target_host.clone());
     let remote_addr = response.remote_addr();
     let remote = remote_addr.map(|value| value.to_string());
     let content_length = response.content_length();
@@ -344,7 +354,8 @@ fn dns_for_host(
     cursor: u64,
     routing: RoutingDnsSnapshot,
 ) -> DnsProvenance {
-    build_dns_provenance(host, cursor, connection_resolver.latest(host), routing)
+    let connection = connection_resolver.latest(host);
+    build_dns_provenance(host, cursor, connection.as_ref(), routing)
 }
 
 fn routing_elements_for_dns(dns: Option<&DnsProvenance>) -> Vec<PathElement> {
@@ -373,14 +384,14 @@ fn is_textual_response(headers: &[Header], body: &[u8]) -> bool {
         .iter()
         .find(|header| header.name.eq_ignore_ascii_case("content-type"))
         .map(|header| header.value.to_ascii_lowercase());
-    match content_type {
-        Some(value) => {
+    content_type.map_or_else(
+        || std::str::from_utf8(body).is_ok(),
+        |value| {
             value.starts_with("text/")
                 || value.contains("json")
                 || value.contains("javascript")
                 || value.contains("xml")
                 || value.contains("x-www-form-urlencoded")
-        }
-        None => std::str::from_utf8(body).is_ok(),
-    }
+        },
+    )
 }

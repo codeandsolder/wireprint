@@ -39,7 +39,7 @@ Built-in outcome classes currently include:
 
 ## Build
 
-Rust **1.98.1** is pinned in `rust-toolchain.toml`.
+Rust **1.99.1** is pinned in `rust-toolchain.toml`.
 
 ```bash
 cargo build --release

@@ -54,6 +54,11 @@ impl Default for H3ProbeConfig {
     }
 }
 
+/// Observe one HTTP/3 endpoint and preserve peer QUIC/H3 wire evidence.
+///
+/// # Errors
+///
+/// Returns an error for invalid targets, DNS/connectivity failures, QUIC/H3 protocol errors, or probe timeout.
 pub async fn probe_h3(target: &str, config: &H3ProbeConfig) -> Result<Observation> {
     let observed_unix_ms = unix_ms();
     let started = Instant::now();
@@ -117,11 +122,11 @@ pub async fn probe_h3(target: &str, config: &H3ProbeConfig) -> Result<Observatio
     let mut conn = quiche::connect(Some(&host), &scid, local, peer, &mut quic_config)?;
     let h3_config = quiche::h3::Config::new()?;
     let mut h3 = None;
-    let mut request_sent = false;
+    let mut request_stream_id = None;
     let mut response_headers = None;
     let mut status = None;
     let mut actual_peer = None;
-    let mut incoming = [0u8; MAX_DATAGRAM_SIZE];
+    let mut incoming = vec![0u8; MAX_DATAGRAM_SIZE].into_boxed_slice();
     let mut outgoing = [0u8; MAX_SEND_DATAGRAM_SIZE];
 
     flush_quic(&socket, &mut conn, &mut outgoing).await?;
@@ -139,7 +144,7 @@ pub async fn probe_h3(target: &str, config: &H3ProbeConfig) -> Result<Observatio
         }
 
         if let Some(h3_conn) = h3.as_mut() {
-            if !request_sent {
+            if request_stream_id.is_none() {
                 let request = [
                     quiche::h3::Header::new(b":method", b"GET"),
                     quiche::h3::Header::new(b":scheme", b"https"),
@@ -148,14 +153,16 @@ pub async fn probe_h3(target: &str, config: &H3ProbeConfig) -> Result<Observatio
                     quiche::h3::Header::new(b"user-agent", H3_USER_AGENT.as_bytes()),
                     quiche::h3::Header::new(b"accept", b"*/*"),
                 ];
-                h3_conn.send_request(&mut conn, &request, true)?;
-                request_sent = true;
+                request_stream_id = Some(h3_conn.send_request(&mut conn, &request, true)?);
                 flush_quic(&socket, &mut conn, &mut outgoing).await?;
             }
 
             loop {
                 match h3_conn.poll(&mut conn) {
-                    Ok((_stream, quiche::h3::Event::Headers { list, .. })) => {
+                    Ok((stream, quiche::h3::Event::Headers { list, .. })) => {
+                        if Some(stream) != request_stream_id {
+                            continue;
+                        }
                         let headers = h3_headers(&list);
                         if let Some(value) = headers
                             .iter()
@@ -188,7 +195,7 @@ pub async fn probe_h3(target: &str, config: &H3ProbeConfig) -> Result<Observatio
                 .context("peer H3 SETTINGS were not observed")?;
             let raw_transport_parameters = raw_peer_transport_parameters
                 .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .clone();
             if raw_transport_parameters.is_empty() {
                 bail!("peer QUIC transport parameters were not captured");
@@ -314,15 +321,24 @@ fn success_observation(parts: H3ObservationParts<'_>) -> Observation {
 fn quic_config(raw_peer_transport_parameters: Arc<Mutex<Vec<u8>>>) -> Result<quiche::Config> {
     let mut tls = SslContextBuilder::new(SslMethod::tls())?;
     tls.set_default_verify_paths()?;
-    tls.set_info_callback(move |ssl, _mode, _value| unsafe {
-        let mut ptr = std::ptr::null();
-        let mut len = 0usize;
-        boring_sys::SSL_get_peer_quic_transport_params(ssl.as_ptr(), &mut ptr, &mut len);
-        if len > 0 && !ptr.is_null() {
-            let raw = slice::from_raw_parts(ptr, len).to_vec();
-            *raw_peer_transport_parameters
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner()) = raw;
+    tls.set_info_callback(move |ssl, _mode, _value| {
+        // SAFETY: BoringSSL owns the returned transport-parameter buffer for the
+        // live SSL object. We validate the pointer/length pair and copy it during
+        // this synchronous callback before the SSL object can mutate or drop it.
+        unsafe {
+            let mut ptr = std::ptr::null();
+            let mut len = 0usize;
+            boring_sys::SSL_get_peer_quic_transport_params(
+                ssl.as_ptr(),
+                &raw mut ptr,
+                &raw mut len,
+            );
+            if len > 0 && !ptr.is_null() {
+                let raw = slice::from_raw_parts(ptr, len).to_vec();
+                *raw_peer_transport_parameters
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = raw;
+            }
         }
     });
 
@@ -350,7 +366,10 @@ async fn flush_quic(
     loop {
         match conn.send(outgoing) {
             Ok((written, info)) => {
-                socket.send_to(&outgoing[..written], info.to).await?;
+                let sent = socket.send_to(&outgoing[..written], info.to).await?;
+                if sent != written {
+                    bail!("short QUIC datagram write: sent {sent} of {written} bytes");
+                }
             }
             Err(quiche::Error::Done) => return Ok(()),
             Err(error) => return Err(error).context("generate QUIC datagram"),

@@ -147,14 +147,19 @@ struct CatalogFamilyRule {
     transport_constraints: Value,
 }
 
-fn catalog() -> &'static Catalog {
-    static CATALOG: OnceLock<Catalog> = OnceLock::new();
-    CATALOG.get_or_init(|| {
-        serde_json::from_str(include_str!("../data/h3-quic-catalog-v1.json"))
-            .expect("embedded H3/QUIC catalog must parse")
-    })
+fn catalog() -> Result<&'static Catalog> {
+    static CATALOG: OnceLock<Result<Catalog, serde_json::Error>> = OnceLock::new();
+    CATALOG
+        .get_or_init(|| serde_json::from_str(include_str!("../data/h3-quic-catalog-v1.json")))
+        .as_ref()
+        .map_err(|error| anyhow::anyhow!("embedded H3/QUIC catalog is invalid: {error}"))
 }
 
+/// Parse the raw peer QUIC transport-parameter extension while preserving wire order.
+///
+/// # Errors
+///
+/// Returns an error for malformed QUIC varints, truncated parameter bodies, or length overflow.
 pub fn parse_quic_transport_parameter_wire(data: &[u8]) -> Result<Vec<QuicTransportParameterWire>> {
     let mut offset = 0usize;
     let mut parameters = Vec::new();
@@ -179,6 +184,11 @@ pub fn parse_quic_transport_parameter_wire(data: &[u8]) -> Result<Vec<QuicTransp
     Ok(parameters)
 }
 
+/// Classify one HTTP/3 + QUIC server transport observation.
+///
+/// # Errors
+///
+/// Returns an error when the peer transport parameters are malformed or the embedded catalog is invalid.
 pub fn classify_h3_quic(
     quic_version: u32,
     alpn: impl Into<String>,
@@ -190,8 +200,9 @@ pub fn classify_h3_quic(
     let stable = stable_transport_parameters(&wire)?;
     let structure = transport_structure(&wire)?;
     let normalized_settings = normalize_settings(&settings);
+    let catalog = catalog()?;
 
-    let exact_match = catalog()
+    let exact_match = catalog
         .fingerprints
         .iter()
         .find(|entry| {
@@ -209,7 +220,7 @@ pub fn classify_h3_quic(
             implementation_family: entry.implementation_family.clone(),
         });
 
-    let middle_tier_matches = catalog()
+    let middle_tier_matches = catalog
         .fingerprints
         .iter()
         .filter(|entry| {
@@ -228,7 +239,7 @@ pub fn classify_h3_quic(
         })
         .collect();
 
-    let family_matches = catalog()
+    let family_matches = catalog
         .family_rules
         .iter()
         .filter(|rule| family_rule_matches(rule, &normalized_settings, &stable))
@@ -264,6 +275,7 @@ pub fn classify_h3_quic(
     })
 }
 
+#[must_use]
 pub fn provider_signals(fingerprint: &H3ServerFingerprint) -> Vec<ProviderSignal> {
     let Some(exact) = fingerprint.exact_match.as_ref() else {
         return Vec::new();
@@ -286,11 +298,13 @@ pub fn provider_signals(fingerprint: &H3ServerFingerprint) -> Vec<ProviderSignal
     }]
 }
 
-pub fn is_h3_grease_setting(id: u64) -> bool {
+#[must_use]
+pub const fn is_h3_grease_setting(id: u64) -> bool {
     id >= 0x21 && (id - 0x21).is_multiple_of(0x1f)
 }
 
-pub fn is_quic_transport_parameter_grease(id: u64) -> bool {
+#[must_use]
+pub const fn is_quic_transport_parameter_grease(id: u64) -> bool {
     id >= 27 && (id - 27).is_multiple_of(31)
 }
 
@@ -404,7 +418,7 @@ fn parse_version_information(raw_hex: &str) -> Result<Option<QuicVersionInformat
         if is_reserved_quic_version(version) {
             reserved_version_count += 1;
         } else {
-            available_versions.insert(version);
+            let _ = available_versions.insert(version);
         }
     }
     Ok(Some(QuicVersionInformation {
@@ -414,7 +428,7 @@ fn parse_version_information(raw_hex: &str) -> Result<Option<QuicVersionInformat
     }))
 }
 
-fn is_reserved_quic_version(version: u32) -> bool {
+const fn is_reserved_quic_version(version: u32) -> bool {
     version & 0x0f0f_0f0f == 0x0a0a_0a0a
 }
 
@@ -613,8 +627,8 @@ fn settings_signature(settings: &[H3Setting]) -> String {
 }
 
 fn hex(bytes: &[u8]) -> String {
-    let mut out = String::with_capacity(bytes.len() * 2);
     const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
         out.push(char::from(HEX[usize::from(byte >> 4)]));
         out.push(char::from(HEX[usize::from(byte & 0x0f)]));
@@ -632,7 +646,7 @@ fn decode_hex(value: &str) -> Result<Vec<u8>> {
         .0
         .iter()
         .map(|pair| {
-            let text = std::str::from_utf8(pair).expect("ASCII hex pair");
+            let text = std::str::from_utf8(pair).context("hex byte is not ASCII")?;
             u8::from_str_radix(text, 16).with_context(|| format!("invalid hex byte {text}"))
         })
         .collect()

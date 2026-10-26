@@ -7,6 +7,7 @@ fn header_values<'a>(headers: &'a [Header], name: &str) -> impl Iterator<Item = 
         .map(|header| header.value.as_str())
 }
 
+#[must_use]
 pub fn classify_response(status: u16, headers: &[Header], body: &[u8]) -> Outcome {
     let body = String::from_utf8_lossy(body);
     let lower = body.to_ascii_lowercase();

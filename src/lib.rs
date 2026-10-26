@@ -56,9 +56,8 @@ pub use routing_context::{
     observation_routing_address,
 };
 pub use tls::{
-    TLS_MORPHOLOGY_VERSION, TlsExtensionShape, TlsHandshakeMessageShape, TlsMessageCapture,
-    TlsMorphologyMatch, TlsServerMorphology, TlsSessionTicketShape,
-    provider_signals as tls_provider_signals,
+    TLS_MORPHOLOGY_VERSION, TlsExtensionShape, TlsHandshakeMessageShape, TlsMorphologyMatch,
+    TlsServerMorphology, TlsSessionTicketShape, provider_signals as tls_provider_signals,
 };
 pub use tls_probe::{TlsAddressFamily, TlsProbeConfig, probe_tls};
 pub use transport::{

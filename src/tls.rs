@@ -119,7 +119,8 @@ struct CaptureState {
     events: Vec<CapturedTlsEvent>,
 }
 
-pub struct TlsMessageCapture {
+#[derive(Debug)]
+pub(crate) struct TlsMessageCapture {
     state: Box<CaptureState>,
 }
 
@@ -132,13 +133,16 @@ impl Default for TlsMessageCapture {
 }
 
 impl TlsMessageCapture {
-    /// Install a per-connection BoringSSL message callback.
+    /// Install a per-connection `BoringSSL` message callback.
     ///
-    /// BoringSSL invokes this synchronously with complete, already-decrypted
+    /// `BoringSSL` invokes this synchronously with complete, already-decrypted
     /// handshake messages and compatibility CCS bodies. The capture object must
     /// outlive the SSL object on which it is installed.
-    pub fn install(&mut self, ssl: &mut SslRef) {
-        let arg = (&mut *self.state) as *mut CaptureState as *mut c_void;
+    pub(crate) fn install(&mut self, ssl: &mut SslRef) {
+        let arg = (&raw mut *self.state).cast::<c_void>();
+        // SAFETY: `arg` points into the stable allocation owned by `self.state`.
+        // The only call site keeps this capture alive until after the SSL stream
+        // is dropped, and BoringSSL invokes the callback synchronously.
         unsafe {
             boring_sys::SSL_set_msg_callback(ssl.as_ptr(), Some(raw_message_callback));
             boring_sys::SSL_set_msg_callback_arg(ssl.as_ptr(), arg);
@@ -166,9 +170,13 @@ unsafe extern "C" fn raw_message_callback(
     if is_write != 0 || arg.is_null() {
         return;
     }
-    let state = unsafe { &mut *(arg as *mut CaptureState) };
+    // SAFETY: `install` supplies a non-null pointer to a live `CaptureState`,
+    // and the capture outlives every callback invocation for this SSL object.
+    let state = unsafe { &mut *arg.cast::<CaptureState>() };
     match content_type {
         TLS_HANDSHAKE if !buf.is_null() && len >= 4 => {
+            // SAFETY: BoringSSL guarantees `buf` addresses `len` bytes for the
+            // duration of this synchronous callback; the bytes are copied now.
             let bytes = unsafe { slice::from_raw_parts(buf.cast::<u8>(), len) };
             state
                 .events
@@ -195,6 +203,10 @@ struct ParsedEncryptedExtensions {
     alpn: Option<String>,
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "TLS callback events are reduced in one ordered parser so handshake morphology cannot be reordered across helpers"
+)]
 fn parse_capture(
     events: &[CapturedTlsEvent],
     client_profile: String,
@@ -251,9 +263,8 @@ fn parse_capture(
                         compressed_certificate_length = Some(body_length);
                     }
                     HS_NEW_SESSION_TICKET => {
-                        tickets.push(parse_new_session_ticket(body_length, body)?)
+                        tickets.push(parse_new_session_ticket(body_length, body)?);
                     }
-                    HS_CERTIFICATE_VERIFY | HS_FINISHED => {}
                     _ => {}
                 }
             }
@@ -328,13 +339,13 @@ fn handshake_body(message: &[u8]) -> Result<(u8, u32, &[u8])> {
 
 fn parse_server_hello(length: u32, body: &[u8]) -> Result<ParsedServerHello> {
     let mut cursor = Cursor::new(body);
-    cursor.take(2, "ServerHello legacy_version")?;
+    let _ = cursor.take(2, "ServerHello legacy_version")?;
     let random = cursor.take(32, "ServerHello random")?;
     let is_hrr = random == HRR_RANDOM;
     let session_id_len = usize::from(cursor.u8("ServerHello session id length")?);
-    cursor.take(session_id_len, "ServerHello session id")?;
+    let _ = cursor.take(session_id_len, "ServerHello session id")?;
     let cipher_suite = cursor.u16("ServerHello cipher suite")?;
-    cursor.take(1, "ServerHello compression")?;
+    let _ = cursor.take(1, "ServerHello compression")?;
     let (extensions, values) =
         parse_extension_vector_with_values(&mut cursor, "ServerHello extensions")?;
     cursor.finish("ServerHello")?;
@@ -372,11 +383,11 @@ fn parse_encrypted_extensions(length: u32, body: &[u8]) -> Result<ParsedEncrypte
 fn parse_new_session_ticket(length: u32, body: &[u8]) -> Result<TlsSessionTicketShape> {
     let mut cursor = Cursor::new(body);
     let lifetime_hint = cursor.u32("NewSessionTicket lifetime")?;
-    cursor.take(4, "NewSessionTicket age_add")?;
+    let _ = cursor.take(4, "NewSessionTicket age_add")?;
     let nonce_length = cursor.u8("NewSessionTicket nonce length")?;
-    cursor.take(usize::from(nonce_length), "NewSessionTicket nonce")?;
+    let _ = cursor.take(usize::from(nonce_length), "NewSessionTicket nonce")?;
     let ticket_length = usize::from(cursor.u16("NewSessionTicket ticket length")?);
-    cursor.take(ticket_length, "NewSessionTicket ticket")?;
+    let _ = cursor.take(ticket_length, "NewSessionTicket ticket")?;
     let extensions = parse_extension_vector(&mut cursor, "NewSessionTicket extensions")?;
     cursor.finish("NewSessionTicket")?;
     Ok(TlsSessionTicketShape {
@@ -392,7 +403,7 @@ fn parse_new_session_ticket(length: u32, body: &[u8]) -> Result<TlsSessionTicket
 fn parse_certificate(body: &[u8]) -> Result<(u32, Vec<u32>)> {
     let mut cursor = Cursor::new(body);
     let context_len = usize::from(cursor.u8("Certificate request context length")?);
-    cursor.take(context_len, "Certificate request context")?;
+    let _ = cursor.take(context_len, "Certificate request context")?;
     let list_len = cursor.u24("Certificate list length")?;
     let list = cursor.take(
         usize::try_from(list_len).context("Certificate list length overflow")?,
@@ -403,12 +414,12 @@ fn parse_certificate(body: &[u8]) -> Result<(u32, Vec<u32>)> {
     let mut lengths = Vec::new();
     while list_cursor.remaining() > 0 {
         let cert_len = list_cursor.u24("Certificate ASN.1 length")?;
-        list_cursor.take(
+        let _ = list_cursor.take(
             usize::try_from(cert_len).context("Certificate length overflow")?,
             "Certificate ASN.1 body",
         )?;
         let ext_len = usize::from(list_cursor.u16("Certificate entry extension length")?);
-        list_cursor.take(ext_len, "Certificate entry extensions")?;
+        let _ = list_cursor.take(ext_len, "Certificate entry extensions")?;
         lengths.push(cert_len);
     }
     Ok((list_len, lengths))
@@ -458,7 +469,7 @@ fn parse_alpn(value: &[u8]) -> Result<Option<String>> {
         bail!("ALPN selected protocol is truncated");
     }
     Ok(Some(
-        String::from_utf8_lossy(&list[1..1 + name_len]).into_owned(),
+        String::from_utf8_lossy(&list[1..=name_len]).into_owned(),
     ))
 }
 
@@ -511,7 +522,7 @@ fn classify_morphology(morphology: &TlsServerMorphology) -> Option<TlsMorphology
             morphology.serverhello_extension_ids.as_slice(),
             morphology.encrypted_extension_ids.as_slice()
         ),
-        ([43, 51], [0, 16]) | ([51, 43], [0, 16])
+        ([43, 51] | [51, 43], [0, 16])
     ) {
         Some("openssl-boringssl-family-shape")
     } else {
@@ -610,6 +621,7 @@ fn matches_fastly_default_profile(morphology: &TlsServerMorphology) -> bool {
         })
 }
 
+#[must_use]
 pub fn provider_signals(morphology: &TlsServerMorphology) -> Vec<ProviderSignal> {
     let Some(matched) = &morphology.family_match else {
         return Vec::new();
@@ -640,11 +652,13 @@ fn grease_count(extensions: &[TlsExtensionShape]) -> usize {
         .count()
 }
 
-pub fn is_grease_u16(value: u16) -> bool {
-    (value & 0x0f0f) == 0x0a0a && (value >> 8) as u8 == value as u8
+#[must_use]
+pub const fn is_grease_u16(value: u16) -> bool {
+    let [high, low] = value.to_be_bytes();
+    (value & 0x0f0f) == 0x0a0a && high == low
 }
 
-fn cipher_name(id: u16) -> &'static str {
+const fn cipher_name(id: u16) -> &'static str {
     match id {
         0x1301 => "TLS_AES_128_GCM_SHA256",
         0x1302 => "TLS_AES_256_GCM_SHA384",
@@ -654,6 +668,8 @@ fn cipher_name(id: u16) -> &'static str {
 }
 
 fn group_name(id: u16) -> String {
+    // SAFETY: BoringSSL returns either null or a pointer to an internal,
+    // NUL-terminated static group-name string; we copy it before returning.
     unsafe {
         let ptr = boring_sys::SSL_get_group_name(id);
         if !ptr.is_null() {
@@ -663,7 +679,7 @@ fn group_name(id: u16) -> String {
     format!("unknown({id})")
 }
 
-fn handshake_name(message_type: u8) -> &'static str {
+const fn handshake_name(message_type: u8) -> &'static str {
     match message_type {
         HS_SERVER_HELLO => "ServerHello",
         HS_NEW_SESSION_TICKET => "NewSessionTicket",
@@ -682,11 +698,11 @@ struct Cursor<'a> {
 }
 
 impl<'a> Cursor<'a> {
-    fn new(data: &'a [u8]) -> Self {
+    const fn new(data: &'a [u8]) -> Self {
         Self { data, offset: 0 }
     }
 
-    fn remaining(&self) -> usize {
+    const fn remaining(&self) -> usize {
         self.data.len().saturating_sub(self.offset)
     }
 

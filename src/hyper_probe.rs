@@ -29,9 +29,7 @@ use crate::model::{EndpointEvidence, Header, Observation, RequestProfile};
 use crate::normalize::{NORMALIZER_VERSION, normalize_response_template};
 use crate::path::detect_path_elements;
 use crate::probe::ProbeConfig;
-use crate::routing_context::{
-    RoutingContextCollector, enrich_observation as enrich_routing_context,
-};
+use crate::routing_context::enrich_observation as enrich_routing_context;
 use crate::transport::{HyperRustlsProfileKind, TransportImplementation, TransportProfile};
 
 type NativeClient = Client<HttpsConnector<HttpConnector>, Empty<Bytes>>;
@@ -64,37 +62,39 @@ pub async fn probe_batch_hyper_rustls(
         .enable_http2()
         .build();
     let client: NativeClient = Client::builder(TokioExecutor::new()).build(https);
+    let context = NativeProbeContext {
+        client: &client,
+        profile,
+        transport,
+        config,
+    };
     let mut observations = Vec::with_capacity(targets.len());
 
     for (index, target) in targets.iter().enumerate() {
         if index > 0 && !config.delay.is_zero() {
             tokio::time::sleep(config.delay).await;
         }
-        observations.push(
-            probe_one(
-                &client,
-                profile,
-                transport,
-                target,
-                config.body_bytes,
-                config.vantage.clone(),
-                config.routing_context_collector.as_ref(),
-            )
-            .await,
-        );
+        observations.push(probe_one(&context, target).await);
     }
     Ok(observations)
 }
 
-async fn probe_one(
-    client: &NativeClient,
-    profile: &RequestProfile,
-    transport: &TransportProfile,
-    target: &str,
-    body_bytes: usize,
-    vantage: Option<String>,
-    routing_context_collector: Option<&RoutingContextCollector>,
-) -> Observation {
+struct NativeProbeContext<'a> {
+    client: &'a NativeClient,
+    profile: &'a RequestProfile,
+    transport: &'a TransportProfile,
+    config: &'a ProbeConfig,
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "redirect handling and request failure provenance form one small native-client state machine"
+)]
+async fn probe_one(context: &NativeProbeContext<'_>, target: &str) -> Observation {
+    let client = context.client;
+    let profile = context.profile;
+    let transport = context.transport;
+    let vantage = context.config.vantage.clone();
     let started = Instant::now();
     let observed_unix_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -187,15 +187,11 @@ async fn probe_one(
 
     finalize_response(
         response,
-        profile,
-        transport,
+        context,
         target,
         current,
-        body_bytes,
         observed_unix_ms,
         started,
-        vantage,
-        routing_context_collector,
     )
     .await
 }
@@ -211,7 +207,7 @@ fn is_redirect(status: StatusCode) -> bool {
     )
 }
 
-fn is_sensitive_redirect_header(name: &str) -> bool {
+const fn is_sensitive_redirect_header(name: &str) -> bool {
     name.eq_ignore_ascii_case("authorization")
         || name.eq_ignore_ascii_case("cookie")
         || name.eq_ignore_ascii_case("proxy-authorization")
@@ -223,19 +219,23 @@ fn same_origin(left: &Url, right: &Url) -> bool {
         && left.port_or_known_default() == right.port_or_known_default()
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "response capture, decoding, classification, and evidence fusion are intentionally emitted as one observation transaction"
+)]
 async fn finalize_response(
     response: hyper::Response<hyper::body::Incoming>,
-    profile: &RequestProfile,
-    transport: &TransportProfile,
+    context: &NativeProbeContext<'_>,
     target: &str,
     final_url: Url,
-    body_bytes: usize,
     observed_unix_ms: u128,
     started: Instant,
-    vantage: Option<String>,
-    routing_context_collector: Option<&RoutingContextCollector>,
 ) -> Observation {
+    let profile = context.profile;
+    let transport = context.transport;
+    let body_bytes = context.config.body_bytes;
+    let vantage = context.config.vantage.clone();
+    let routing_context_collector = context.config.routing_context_collector.as_ref();
     let status = response.status().as_u16();
     let http_version = format!("{:?}", response.version());
     let remote_addr = response
@@ -424,16 +424,16 @@ fn is_textual_response(headers: &[Header], body: &[u8]) -> bool {
         .iter()
         .find(|field| field.name.eq_ignore_ascii_case("content-type"))
         .map(|field| field.value.to_ascii_lowercase());
-    match content_type {
-        Some(value) => {
+    content_type.map_or_else(
+        || std::str::from_utf8(body).is_ok(),
+        |value| {
             value.starts_with("text/")
                 || value.contains("json")
                 || value.contains("javascript")
                 || value.contains("xml")
                 || value.contains("x-www-form-urlencoded")
-        }
-        None => std::str::from_utf8(body).is_ok(),
-    }
+        },
+    )
 }
 
 #[cfg(test)]

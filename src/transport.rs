@@ -25,21 +25,22 @@ pub enum BuiltinTransport {
     Chrome149Tls,
     /// Library-default TLS with Chrome 149 HTTP/2, for positive-side decomposition.
     Chrome149H2,
-    /// Current-ish mobile WebKit transport control (iPhone Safari 18.1.1).
+    /// Current-ish mobile `WebKit` transport control (iPhone Safari 18.1.1).
     SafariIos18,
-    /// Older mobile WebKit transport control (iPhone Safari 16.5).
+    /// Older mobile `WebKit` transport control (iPhone Safari 16.5).
     SafariIos16,
     /// Mobile Gecko transport control (Firefox Android 135).
     FirefoxAndroid135,
-    /// Chrome/Chromium 100-era transport shape; useful as a WebView-era proxy, not an exact WebView claim.
+    /// Chrome/Chromium 100-era transport shape; useful as a WebView-era proxy, not an exact `WebView` claim.
     Chromium100Era,
-    /// Old native Android application stack control (OkHttp 3.9).
+    /// Old native Android application stack control (`OkHttp` 3.9).
     Okhttp39,
     Chrome149,
 }
 
 impl BuiltinTransport {
-    pub fn name(self) -> &'static str {
+    #[must_use]
+    pub const fn name(self) -> &'static str {
         match self {
             Self::Plain => "plain",
             Self::LowFidelity => "low-fidelity",
@@ -56,6 +57,7 @@ impl BuiltinTransport {
         }
     }
 
+    #[must_use]
     pub fn into_profile(self, platform: PlatformKind) -> TransportProfile {
         let explicit_platform = self.requires_explicit_platform().then_some(platform);
         TransportProfile {
@@ -75,14 +77,14 @@ impl BuiltinTransport {
         }
     }
 
-    fn requires_explicit_platform(self) -> bool {
+    const fn requires_explicit_platform(self) -> bool {
         matches!(
             self,
             Self::Chrome149 | Self::Chrome149Tls | Self::Chrome149H2
         )
     }
 
-    fn fixed_platform(self) -> Option<PlatformKind> {
+    const fn fixed_platform(self) -> Option<PlatformKind> {
         match self {
             Self::SafariIos18 | Self::SafariIos16 => Some(PlatformKind::Ios),
             Self::FirefoxAndroid135 | Self::Chromium100Era | Self::Okhttp39 => {
@@ -96,14 +98,17 @@ impl BuiltinTransport {
         self.fixed_platform().or(explicit)
     }
 
+    fn required_platform(self, platform: Option<PlatformKind>) -> Result<PlatformKind> {
+        platform.ok_or_else(|| {
+            anyhow::anyhow!("builtin transport '{}' requires a platform", self.name())
+        })
+    }
+
     fn configure(
         self,
         mut builder: wreq::ClientBuilder,
         platform: Option<PlatformKind>,
     ) -> Result<wreq::ClientBuilder> {
-        if self.requires_explicit_platform() && platform.is_none() {
-            bail!("builtin transport '{}' requires a platform", self.name());
-        }
         match self {
             Self::Plain => {}
             Self::LowFidelity => {
@@ -121,7 +126,7 @@ impl BuiltinTransport {
                 builder = builder
                     .emulation(browser_emulation(
                         Profile::Chrome149,
-                        platform.expect("validated platform").into(),
+                        self.required_platform(platform)?.into(),
                     ))
                     .http2_options(None);
             }
@@ -129,7 +134,7 @@ impl BuiltinTransport {
                 builder = builder
                     .emulation(browser_emulation(
                         Profile::Chrome149,
-                        platform.expect("validated platform").into(),
+                        self.required_platform(platform)?.into(),
                     ))
                     .tls_options(None);
             }
@@ -158,7 +163,7 @@ impl BuiltinTransport {
             Self::Chrome149 => {
                 builder = builder.emulation(browser_emulation(
                     Profile::Chrome149,
-                    platform.expect("validated platform").into(),
+                    self.required_platform(platform)?.into(),
                 ));
             }
         }
@@ -173,6 +178,11 @@ pub struct TransportSet {
 }
 
 impl TransportSet {
+    /// Validate schema version, profile validity, and unique profile names.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for unsupported schema versions, invalid profiles, or duplicate names.
     pub fn validate(&self) -> Result<()> {
         if self.schema_version != TRANSPORT_SCHEMA_VERSION {
             bail!(
@@ -207,20 +217,25 @@ pub struct TransportProfile {
 }
 
 impl TransportProfile {
+    /// Validate this declarative transport profile.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for empty names/observations or incomplete runnable implementations.
     pub fn validate(&self) -> Result<()> {
         if self.name.trim().is_empty() {
             bail!("transport profile name is empty");
         }
         if let Some(TransportImplementation::Builtin { profile, platform }) =
             self.implementation.as_ref()
+            && profile.requires_explicit_platform()
+            && platform.is_none()
         {
-            if profile.requires_explicit_platform() && platform.is_none() {
-                bail!(
-                    "transport profile '{}' uses builtin '{}' without a required platform",
-                    self.name,
-                    profile.name()
-                );
-            }
+            bail!(
+                "transport profile '{}' uses builtin '{}' without a required platform",
+                self.name,
+                profile.name()
+            );
         }
         for observation in &self.observations {
             if observation.scheme.trim().is_empty() {
@@ -240,21 +255,30 @@ impl TransportProfile {
         Ok(())
     }
 
-    pub fn runnable(&self) -> bool {
+    #[must_use]
+    pub const fn runnable(&self) -> bool {
         self.implementation.is_some()
     }
 
+    #[must_use]
     pub fn platform(&self) -> Option<PlatformKind> {
         match self.implementation.as_ref() {
             Some(TransportImplementation::Builtin { profile, platform }) => {
                 profile.effective_platform(*platform)
             }
-            Some(TransportImplementation::HyperRustls { .. })
-            | Some(TransportImplementation::WreqMeasured { .. })
+            Some(
+                TransportImplementation::HyperRustls { .. }
+                | TransportImplementation::WreqMeasured { .. },
+            )
             | None => None,
         }
     }
 
+    /// Apply this runnable profile to a wreq client builder.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for observational-only profiles, native-backend profiles, or invalid builtin configuration.
     pub fn configure(&self, builder: wreq::ClientBuilder) -> Result<wreq::ClientBuilder> {
         match self.implementation.as_ref() {
             Some(TransportImplementation::Builtin { profile, platform }) => {
@@ -490,7 +514,8 @@ pub enum PlatformKind {
 }
 
 impl PlatformKind {
-    pub fn name(self) -> &'static str {
+    #[must_use]
+    pub const fn name(self) -> &'static str {
         match self {
             Self::Windows => "windows",
             Self::Macos => "macos",
@@ -500,6 +525,11 @@ impl PlatformKind {
         }
     }
 
+    /// Parse a platform name used by the CLI and declarative transport schema.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `value` is not one of the supported platform names.
     pub fn parse_name(value: &str) -> Result<Self> {
         match value {
             "windows" => Ok(Self::Windows),
