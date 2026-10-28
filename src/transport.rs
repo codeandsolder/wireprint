@@ -523,13 +523,17 @@ impl PlatformKind {
             Self::Android => "android",
         }
     }
+}
+
+impl std::str::FromStr for PlatformKind {
+    type Err = anyhow::Error;
 
     /// Parse a platform name used by the CLI and declarative transport schema.
     ///
     /// # Errors
     ///
     /// Returns an error when `value` is not one of the supported platform names.
-    pub fn parse_name(value: &str) -> Result<Self> {
+    fn from_str(value: &str) -> Result<Self> {
         match value {
             "windows" => Ok(Self::Windows),
             "macos" => Ok(Self::Macos),
