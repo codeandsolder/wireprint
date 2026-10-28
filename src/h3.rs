@@ -106,7 +106,7 @@ pub struct H3ServerFingerprint {
     pub family_matches: Vec<H3FingerprintMatch>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NormalizedSetting {
     Grease,
     Setting(u64, u64),
