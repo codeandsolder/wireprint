@@ -36,6 +36,101 @@ fn new_cdn_aliases_emit_edge_provider_claims() {
 }
 
 #[test]
+fn tencent_edgeone_and_alibaba_cloud_cnames_emit_edge_family_claims() {
+    for cname in [
+        "www.example.com.acc.edgeonedy1.com",
+        "www.example.com.acc.tyxcdn.com",
+    ] {
+        let elements = detect_routing_elements(&[cname.into()]);
+        assert!(has(
+            &elements,
+            PathElementRole::EdgeProvider,
+            "tencent-edgeone"
+        ));
+        assert!(!has(
+            &elements,
+            PathElementRole::TrafficManagement,
+            "tencent-edgeone"
+        ));
+    }
+
+    for cname in [
+        "www.example.com.eo.dnse1.com",
+        "www.example.com.eo.dnse2.com",
+        "www.example.com.eo.dnse5.com.",
+    ] {
+        let elements = detect_routing_elements(&[cname.into()]);
+        assert!(has(
+            &elements,
+            PathElementRole::TrafficManagement,
+            "tencent-edgeone"
+        ));
+        assert!(!has(
+            &elements,
+            PathElementRole::EdgeProvider,
+            "tencent-edgeone"
+        ));
+    }
+
+    let chain = detect_routing_elements(&[
+        "www.example.com.eo.dnse2.com".into(),
+        "www.example.com.acc.edgeonedy1.com".into(),
+    ]);
+    assert!(has(
+        &chain,
+        PathElementRole::TrafficManagement,
+        "tencent-edgeone"
+    ));
+    assert!(has(
+        &chain,
+        PathElementRole::EdgeProvider,
+        "tencent-edgeone"
+    ));
+
+    let alibaba = detect_routing_elements(&["cdn.example.com.w.alikunlun.com".into()]);
+    assert!(has(
+        &alibaba,
+        PathElementRole::EdgeProvider,
+        "alibaba-cloud-edge"
+    ));
+}
+
+#[test]
+fn alibaba_cloud_cnames_emit_edge_family_claims() {
+    for cname in [
+        "friends.duolingo.cn.w.kunluncan.com",
+        "fast.example.com.w.kunlunle.com",
+        "cdn.example.com.w.alikunlun.com",
+    ] {
+        let elements = detect_routing_elements(&[cname.into()]);
+        assert!(has(
+            &elements,
+            PathElementRole::EdgeProvider,
+            "alibaba-cloud-edge"
+        ));
+    }
+}
+
+#[test]
+fn similar_but_non_provider_cnames_are_not_force_labeled() {
+    for cname in [
+        "www.example.com.eo.dnse.example",
+        "www.example.com.eo.dnsefoo.com",
+        "www.example.com.acc.edgeonedy1.example",
+        "www.example.com.w.kunlun.invalid",
+        "www.example.com.w.notkunlun.com",
+    ] {
+        let elements = detect_routing_elements(&[cname.into()]);
+        assert!(!elements.iter().any(|element| {
+            matches!(
+                element.product.as_str(),
+                "tencent-edgeone" | "alibaba-cloud-edge"
+            )
+        }));
+    }
+}
+
+#[test]
 fn netlify_and_vercel_aliases_remain_platform_only() {
     let elements = detect_routing_elements(&[
         "my-project.netlify.app".into(),

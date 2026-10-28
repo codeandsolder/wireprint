@@ -1,6 +1,6 @@
 use crate::model::{PathElement, PathElementRole};
 
-pub const ROUTING_CLASSIFIER_VERSION: &str = "builtin-routing-v1";
+pub const ROUTING_CLASSIFIER_VERSION: &str = "builtin-routing-v2";
 
 fn normalize_name(value: &str) -> String {
     value.trim().trim_end_matches('.').to_ascii_lowercase()
@@ -49,6 +49,33 @@ fn looks_like_aws_api_gateway(host: &str) -> bool {
 fn looks_like_azure_api_management_gateway(host: &str) -> bool {
     let parts = labels(host);
     parts.len() == 3 && parts[1..] == ["azure-api", "net"]
+}
+
+fn looks_like_tencent_edgeone_edge_cname(host: &str) -> bool {
+    matches_suffix(host, "acc.edgeonedy1.com") || matches_suffix(host, "acc.tyxcdn.com")
+}
+
+fn looks_like_tencent_edgeone_traffic_cname(host: &str) -> bool {
+    let parts = labels(host);
+    if parts.len() < 4 || parts[parts.len() - 1] != "com" || parts[parts.len() - 3] != "eo" {
+        return false;
+    }
+
+    parts[parts.len() - 2]
+        .strip_prefix("dnse")
+        .is_some_and(|suffix| {
+            !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
+        })
+}
+
+fn looks_like_alibaba_cloud_edge_cname(host: &str) -> bool {
+    let parts = labels(host);
+    if parts.len() < 3 || parts[parts.len() - 1] != "com" {
+        return false;
+    }
+
+    let provider_root = parts[parts.len() - 2];
+    provider_root == "alikunlun" || provider_root.starts_with("kunlun")
 }
 
 fn add(elements: &mut Vec<PathElement>, role: PathElementRole, product: &str, evidence: String) {
@@ -124,6 +151,36 @@ pub fn detect_routing_elements(cname_chain: &[String]) -> Vec<PathElement> {
                 &mut elements,
                 PathElementRole::EdgeProvider,
                 provider,
+                evidence,
+            );
+            continue;
+        }
+
+        if looks_like_tencent_edgeone_edge_cname(&host) {
+            add(
+                &mut elements,
+                PathElementRole::EdgeProvider,
+                "tencent-edgeone",
+                evidence,
+            );
+            continue;
+        }
+
+        if looks_like_tencent_edgeone_traffic_cname(&host) {
+            add(
+                &mut elements,
+                PathElementRole::TrafficManagement,
+                "tencent-edgeone",
+                evidence,
+            );
+            continue;
+        }
+
+        if looks_like_alibaba_cloud_edge_cname(&host) {
+            add(
+                &mut elements,
+                PathElementRole::EdgeProvider,
+                "alibaba-cloud-edge",
                 evidence,
             );
             continue;
