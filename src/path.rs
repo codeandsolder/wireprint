@@ -1,6 +1,6 @@
 use crate::model::{Header, PathElement, PathElementRole};
 
-pub const PATH_CLASSIFIER_VERSION: &str = "builtin-path-v3";
+pub const PATH_CLASSIFIER_VERSION: &str = "builtin-path-v4";
 
 fn header_values<'a>(headers: &'a [Header], name: &str) -> impl Iterator<Item = &'a str> {
     headers
@@ -169,6 +169,52 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             } else {
                 "header:x-77-age"
             },
+        );
+    }
+    if has_header(headers, "eo-log-uuid") || has_header_value(headers, "server", "TencentEdgeOne") {
+        add(
+            &mut elements,
+            PathElementRole::EdgeProvider,
+            "tencent-edgeone",
+            if has_header(headers, "eo-log-uuid") {
+                "header:eo-log-uuid"
+            } else {
+                "server:tencentedgeone"
+            },
+        );
+    }
+    if has_header(headers, "eo-cache-status") {
+        add(
+            &mut elements,
+            PathElementRole::Cache,
+            "tencent-edgeone",
+            "header:eo-cache-status",
+        );
+    }
+    if has_header(headers, "eagleid") {
+        add(
+            &mut elements,
+            PathElementRole::EdgeProvider,
+            "alibaba-cloud-edge",
+            "header:eagleid",
+        );
+    }
+    if has_header(headers, "x-swift-savetime")
+        || has_header(headers, "x-swift-cachetime")
+        || has_header(headers, "ali-swift-global-savetime")
+    {
+        let evidence = if has_header(headers, "x-swift-savetime") {
+            "header:x-swift-savetime"
+        } else if has_header(headers, "x-swift-cachetime") {
+            "header:x-swift-cachetime"
+        } else {
+            "header:ali-swift-global-savetime"
+        };
+        add(
+            &mut elements,
+            PathElementRole::Cache,
+            "alibaba-cloud-cdn",
+            evidence,
         );
     }
     if has_header(headers, "x-amz-cf-id")

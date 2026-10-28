@@ -719,3 +719,65 @@ fn identity_proxy_defaults_are_product_specific_positive_markers() {
         assert!(has(&elements, PathElementRole::IdentityProxy, product));
     }
 }
+
+#[test]
+fn tencent_edgeone_separates_edge_and_cache_participation() {
+    let elements = detect_path_elements(&[
+        header("server", "TencentEdgeOne"),
+        header("eo-log-uuid", "4105283880544427145"),
+        header("eo-cache-status", "HIT"),
+    ]);
+    assert!(has(
+        &elements,
+        PathElementRole::EdgeProvider,
+        "tencent-edgeone"
+    ));
+    assert!(has(&elements, PathElementRole::Cache, "tencent-edgeone"));
+
+    let cache_only = detect_path_elements(&[header("eo-cache-status", "MISS")]);
+    assert!(has(&cache_only, PathElementRole::Cache, "tencent-edgeone"));
+    assert!(!has(
+        &cache_only,
+        PathElementRole::EdgeProvider,
+        "tencent-edgeone"
+    ));
+}
+
+#[test]
+fn alibaba_edge_family_does_not_overclaim_cdn_from_eagleid() {
+    let edge_only = detect_path_elements(&[
+        header("server", "ESA"),
+        header("eagleid", "2b6db2b917931999999377346e"),
+    ]);
+    assert!(has(
+        &edge_only,
+        PathElementRole::EdgeProvider,
+        "alibaba-cloud-edge"
+    ));
+    assert!(!has(
+        &edge_only,
+        PathElementRole::Cache,
+        "alibaba-cloud-cdn"
+    ));
+
+    let cdn = detect_path_elements(&[
+        header("eagleid", "a3b5fea717932000007425309e"),
+        header("x-cache", "HIT TCP_MEM_HIT dirn:-2:-2"),
+        header("x-swift-savetime", "Wed, 28 Oct 2026 15:05:11 GMT"),
+        header("x-swift-cachetime", "113"),
+        header("ali-swift-global-savetime", "1793199911"),
+    ]);
+    assert!(has(
+        &cdn,
+        PathElementRole::EdgeProvider,
+        "alibaba-cloud-edge"
+    ));
+    assert!(has(&cdn, PathElementRole::Cache, "alibaba-cloud-cdn"));
+
+    let generic_x_cache = detect_path_elements(&[header("x-cache", "HIT")]);
+    assert!(
+        !generic_x_cache
+            .iter()
+            .any(|element| element.product.starts_with("alibaba-cloud"))
+    );
+}

@@ -27,9 +27,9 @@ Each element stores the role, product label, classifier version, and the concret
 
 ## Current explicit markers
 
-The v3 recognizer includes:
+The v4 recognizer includes:
 
-- edge/provider: Cloudflare, CloudFront, Akamai, Fastly, F5 Distributed Cloud/Volt, Imperva, Sucuri, BunnyCDN, Google Front End, OpenResty Edge, Vercel, Netlify, Fly.io, Railway, KeyCDN, QUIC.cloud, CDN77;
+- edge/provider: Cloudflare, CloudFront, Akamai, Fastly, F5 Distributed Cloud/Volt, Imperva, Sucuri, BunnyCDN, Google Front End, OpenResty Edge, Vercel, Netlify, Fly.io, Railway, KeyCDN, QUIC.cloud, CDN77, Tencent EdgeOne, Alibaba Cloud edge family;
 - downstream platforms: Vercel, Netlify, Azure Front Door, Render, Railway, Pantheon, Acquia Cloud Platform, Heroku;
 - origin services: Amazon S3, generic S3-compatible object storage, MinIO, Akamai NetStorage, Google Cloud Storage, Azure Blob Storage, Backblaze B2;
 - API gateways: AWS API Gateway, Kong, Apache APISIX, KrakenD, Tyk, Gravitee;
@@ -47,6 +47,8 @@ Fastly-specific `Fastly-Debug-*`, `fastly-restarts`, `x-fastly-backend-reqs`, an
 Origin-service markers are deliberately separate from edge identity. `Server: AkamaiNetStorage` is Akamai NetStorage origin evidence, not proof that an Akamai edge terminated the client connection. Likewise, `Server: UploadServer` is kept as a Google server-implementation marker; Google Cloud Storage is only claimed from storage-specific `x-goog-*` response metadata. `x-amz-bucket-region` is only S3-compatible object-storage evidence by itself because non-AWS implementations can emit the S3 header; `Server: AmazonS3` is required for the stronger `aws-s3` label, while `x-minio-deployment-id` identifies MinIO directly.
 
 The v3 additions follow the same positive-evidence rule. CDN77 documents `X-77-POP` as the edge location that handled and delivered the response, while `X-77-Cache` / `X-77-Age` describe cache state; cache-only evidence therefore does not promote itself to `edge_provider`. Oracle Cloud Load Balancer's default generated stickiness cookie `X-Oracle-BMC-LBS-Route` is load-balancer evidence when present. OAuth2 Proxy's `_oauth2_proxy`, Authelia's `authelia_session`, and authentik's `/outpost.goauthentik.io/` redirect namespace are identity-proxy evidence. The OAuth2 Proxy and Authelia cookie names are configurable, so their absence is especially meaningless.
+
+The v4 edge expansion keeps provider identity separate from cache identity. Tencent EdgeOne documents `EO-LOG-UUID` as its request identifier and `Server: TencentEdgeOne` as the node-added fallback server banner, so either can identify EdgeOne participation; `EO-Cache-Status` is cache participation only. Alibaba Cloud documents `EagleID` as an edge/CDN-node marker, but live ESA responses also expose it, so v4 deliberately emits the broader `alibaba-cloud-edge` provider-family label instead of claiming the CDN product. The CDN-specific `X-Swift-SaveTime`, `X-Swift-CacheTime`, and `Ali-Swift-Global-Savetime` headers independently identify `alibaba-cloud-cdn` cache participation. Generic `X-Cache` remains insufficient by itself.
 
 Absence of a marker is not negative evidence. Products can strip, rename, disable, or route around these markers.
 
