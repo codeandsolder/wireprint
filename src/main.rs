@@ -8,11 +8,11 @@ use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
 use wireprint::{
     BuiltinTransport, EndpointEvidence, H3AddressFamily, H3ProbeConfig, Header,
-    HostAggregationConfig, Observation, PlatformKind, ProbeConfig, ProfileSet, RequestProfile,
-    RoutingAuditSample, RoutingContextCollector, TlsAddressFamily, TlsProbeConfig,
-    TransportProfile, TransportSet, aggregate_observations, assess_endpoint, audit_routing_samples,
-    classify_response, detect_path_elements, detect_routing_elements, probe_batch, probe_h3,
-    probe_tls,
+    HostAggregationConfig, Observation, PATH_CLASSIFIER_VERSION, PlatformKind, ProbeConfig,
+    ProfileSet, RequestProfile, RoutingAuditSample, RoutingContextCollector, TlsAddressFamily,
+    TlsProbeConfig, TransportProfile, TransportSet, aggregate_observations, assess_endpoint,
+    audit_routing_samples, classify_response, detect_path_elements, detect_routing_elements,
+    probe_batch, probe_h3, probe_tls,
 };
 
 #[derive(Debug, Parser)]
@@ -180,8 +180,16 @@ struct ClassifyArgs {
 
 #[derive(Debug, Args)]
 struct PathArgs {
-    #[arg(long = "header", value_name = "NAME:VALUE", required = true)]
+    #[arg(
+        long = "header",
+        value_name = "NAME:VALUE",
+        required_unless_present = "input",
+        conflicts_with = "input"
+    )]
     headers: Vec<String>,
+    /// Replay JSONL rows containing a `headers` array and preserve their other fields.
+    #[arg(long, value_name = "JSONL", conflicts_with = "headers")]
+    input: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
@@ -465,11 +473,50 @@ fn run_classify(args: &ClassifyArgs) -> Result<()> {
 }
 
 fn run_path(args: &PathArgs) -> Result<()> {
-    let headers = parse_headers(&args.headers)?;
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&detect_path_elements(&headers))?
+    let Some(input) = &args.input else {
+        let headers = parse_headers(&args.headers)?;
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&detect_path_elements(&headers))?
+        );
+        return Ok(());
+    };
+
+    let reader =
+        BufReader::new(File::open(input).with_context(|| format!("open {}", input.display()))?);
+    for (index, line) in reader.lines().enumerate() {
+        let line_number = index + 1;
+        let line = line.with_context(|| format!("read {} line {line_number}", input.display()))?;
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        let mut row: serde_json::Value = serde_json::from_str(&line)
+            .with_context(|| format!("parse {} line {line_number}", input.display()))?;
+        classify_path_replay_row(&mut row)
+            .with_context(|| format!("classify {} line {line_number}", input.display()))?;
+        println!("{}", serde_json::to_string(&row)?);
+    }
+    Ok(())
+}
+
+fn classify_path_replay_row(row: &mut serde_json::Value) -> Result<()> {
+    let object = row
+        .as_object_mut()
+        .context("path replay row must be a JSON object")?;
+    let headers: Vec<Header> = serde_json::from_value(
+        object
+            .get("headers")
+            .context("path replay row must contain a `headers` array")?
+            .clone(),
+    )
+    .context("path replay `headers` must match the wireprint Header schema")?;
+    let elements = detect_path_elements(&headers);
+    let _ = object.insert(
+        "path_classifier".into(),
+        serde_json::Value::String(PATH_CLASSIFIER_VERSION.into()),
     );
+    let _ = object.insert("path_elements".into(), serde_json::to_value(elements)?);
     Ok(())
 }
 
@@ -571,4 +618,41 @@ where
         );
     }
     Ok(values)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn path_replay_preserves_input_fields_and_adds_versioned_results() {
+        let mut row = serde_json::json!({
+            "source_file": "capture.har",
+            "status": 200,
+            "headers": [
+                {"name": "eagleid", "value": "abc123"},
+                {"name": "x-swift-savetime", "value": "Wed, 28 Oct 2026 15:05:11 GMT"}
+            ]
+        });
+
+        classify_path_replay_row(&mut row).unwrap();
+
+        assert_eq!(row["source_file"], "capture.har");
+        assert_eq!(row["status"], 200);
+        assert_eq!(row["path_classifier"], PATH_CLASSIFIER_VERSION);
+        let elements = row["path_elements"].as_array().unwrap();
+        assert!(elements.iter().any(|element| {
+            element["role"] == "edge_provider" && element["product"] == "alibaba-cloud-edge"
+        }));
+        assert!(elements.iter().any(|element| {
+            element["role"] == "cache" && element["product"] == "alibaba-cloud-cdn"
+        }));
+    }
+
+    #[test]
+    fn path_replay_rejects_rows_without_headers() {
+        let mut row = serde_json::json!({"source_file": "capture.har"});
+        let error = classify_path_replay_row(&mut row).unwrap_err();
+        assert!(error.to_string().contains("headers"));
+    }
 }

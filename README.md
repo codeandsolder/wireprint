@@ -22,7 +22,7 @@ RequestProfile × TransportProfile × Target
 
 A request profile describes application identity and HTTP headers. A transport profile separately describes a runnable transport implementation and/or transport facts observed elsewhere. Observational-only profiles are valid evidence but cannot execute. The resulting observation snapshots both axes, raw provenance and a semantic outcome classification.
 
-Each successful observation also runs the versioned network-path recognizer (`builtin-path-v3`), DNS/routing provenance (`builtin-dns-v1` / `builtin-routing-v1`), live HTTP/2 server-preface classifier (`builtin-h2-preface-v1`) and per-endpoint fusion (`builtin-endpoint-v1`). Those layers keep path participation, concrete endpoint provenance and likely outer termination separate instead of guessing hop order. `builtin-host-v1` can then aggregate saved observations into freshness-aware current/historical provider state without turning retries into votes. See [`docs/path-elements.md`](docs/path-elements.md) and [`docs/evidence-model.md`](docs/evidence-model.md).
+Each successful observation also runs the versioned network-path recognizer (`builtin-path-v4`), DNS/routing provenance (`builtin-dns-v1` / `builtin-routing-v1`), live HTTP/2 server-preface classifier (`builtin-h2-preface-v1`) and per-endpoint fusion (`builtin-endpoint-v1`). Those layers keep path participation, concrete endpoint provenance and likely outer termination separate instead of guessing hop order. `builtin-host-v1` can then aggregate saved observations into freshness-aware current/historical provider state without turning retries into votes. See [`docs/path-elements.md`](docs/path-elements.md) and [`docs/evidence-model.md`](docs/evidence-model.md).
 
 Built-in outcome classes currently include:
 
@@ -116,7 +116,11 @@ wireprint path \
   --header 'server: DataDome'
 ```
 
-This is intended for corpus replay: it applies exactly the same versioned path recognizer used by live observations.
+This applies exactly the same versioned path recognizer used by live observations. For corpus replay, pass JSONL rows with a `headers` array; all other row fields are preserved and the output adds `path_classifier` plus `path_elements`:
+
+```bash
+wireprint path --input captured-responses.jsonl > classified-responses.jsonl
+```
 
 ## Aggregate hostname history
 
