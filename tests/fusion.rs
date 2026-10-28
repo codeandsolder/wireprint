@@ -1,7 +1,7 @@
 use wireprint::{
-    EndpointEvidence, PathElement, PathElementRole, ProviderEvidenceChannel, ProviderSignal,
-    ProviderSupport, RoutingContext, TerminationState, assess_endpoint, detect_path_elements,
-    detect_routing_elements,
+    EndpointEvidence, PATH_CLASSIFIER_VERSION, PathElement, PathElementRole,
+    ProviderEvidenceChannel, ProviderSignal, ProviderSupport, RoutingContext, TerminationState,
+    assess_endpoint, detect_path_elements, detect_routing_elements,
 };
 
 fn signal(provider: &str, channel: ProviderEvidenceChannel) -> ProviderSignal {
@@ -58,7 +58,7 @@ fn routing_and_response_metadata_corroborate_without_request_count_weights() {
     assert!(
         cloudflare_claims
             .iter()
-            .any(|element| element.classifier == "builtin-path-v3")
+            .any(|element| element.classifier == PATH_CLASSIFIER_VERSION)
     );
     assert!(
         cloudflare_claims
