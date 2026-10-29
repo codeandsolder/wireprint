@@ -52,6 +52,8 @@ The v4 edge expansion keeps provider identity separate from cache identity. Tenc
 
 Routing evidence is versioned independently. `builtin-routing-v2` adds Tencent EdgeOne provider-managed edge CNAME families (`*.acc.edgeonedy1.com` and `*.acc.tyxcdn.com`) as `edge_provider` evidence, while `*.eo.dnseN.com` stays on the separate `traffic_management` role: EdgeOne can use that scheduling CNAME to distribute traffic across EdgeOne, another CDN provider, or the origin. If a DNS chain contains both forms, both roles are preserved. Alibaba Cloud edge CNAME roots (`kunlun*.com` plus the documented `alikunlun.com` family) emit the broad `alibaba-cloud-edge` provider family. The same Kunlun CNAME lineage is used by multiple Alibaba delivery products, so DNS alone does not identify one product.
 
+`builtin-routing-v3` expands exact provider-managed DNS coverage without broad suffix guessing. Akamai now covers its documented production/shared-certificate edge hostname families (`edgekey.net`, `edgesuite.net`, `akamaized.net`, `akamaihd.net`) and their documented staging counterparts (`edgekey-staging.net`, `edgesuite-staging.net`). QUIC.cloud routing recognizes only the assigned CDN CNAME grammar (`c<digits>.tier1.quicns.com`); generic `quicns.com` names such as provider DNS nameservers are intentionally not edge-provider evidence.
+
 Absence of a marker is not negative evidence. Products can strip, rename, disable, or route around these markers.
 
 ## Deliberately conservative rules
