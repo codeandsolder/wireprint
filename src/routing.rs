@@ -1,6 +1,6 @@
 use crate::model::{PathElement, PathElementRole};
 
-pub const ROUTING_CLASSIFIER_VERSION: &str = "builtin-routing-v2";
+pub const ROUTING_CLASSIFIER_VERSION: &str = "builtin-routing-v3";
 
 fn normalize_name(value: &str) -> String {
     value.trim().trim_end_matches('.').to_ascii_lowercase()
@@ -78,6 +78,17 @@ fn looks_like_alibaba_cloud_edge_cname(host: &str) -> bool {
     provider_root == "alikunlun" || provider_root.starts_with("kunlun")
 }
 
+fn looks_like_quic_cloud_cdn_cname(host: &str) -> bool {
+    let parts = labels(host);
+    if parts.len() != 4 || parts[1..] != ["tier1", "quicns", "com"] {
+        return false;
+    }
+
+    parts[0].strip_prefix('c').is_some_and(|site_id| {
+        !site_id.is_empty() && site_id.bytes().all(|byte| byte.is_ascii_digit())
+    })
+}
+
 fn add(elements: &mut Vec<PathElement>, role: PathElementRole, product: &str, evidence: String) {
     if let Some(existing) = elements
         .iter_mut()
@@ -123,7 +134,16 @@ pub fn detect_routing_elements(cname_chain: &[String]) -> Vec<PathElement> {
         let edge_provider = [
             (
                 "akamai",
-                ["edgekey.net", "edgesuite.net", "akamaiedge.net"].as_slice(),
+                [
+                    "edgekey.net",
+                    "edgekey-staging.net",
+                    "edgesuite.net",
+                    "edgesuite-staging.net",
+                    "akamaiedge.net",
+                    "akamaihd.net",
+                    "akamaized.net",
+                ]
+                .as_slice(),
             ),
             ("imperva", ["impervadns.net", "incapdns.net"].as_slice()),
             ("aws-cloudfront", ["cloudfront.net"].as_slice()),
@@ -181,6 +201,16 @@ pub fn detect_routing_elements(cname_chain: &[String]) -> Vec<PathElement> {
                 &mut elements,
                 PathElementRole::EdgeProvider,
                 "alibaba-cloud-edge",
+                evidence,
+            );
+            continue;
+        }
+
+        if looks_like_quic_cloud_cdn_cname(&host) {
+            add(
+                &mut elements,
+                PathElementRole::EdgeProvider,
+                "quic-cloud",
                 evidence,
             );
             continue;

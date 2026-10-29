@@ -24,6 +24,45 @@ fn established_provider_managed_aliases_emit_edge_provider_claims() {
 }
 
 #[test]
+fn akamai_documented_edge_hostname_families_emit_provider_claims() {
+    for cname in [
+        "www.example.com.edgekey.net",
+        "www.example.com.edgekey-staging.net",
+        "www.example.com.edgesuite.net",
+        "www.example.com.edgesuite-staging.net",
+        "media-example.akamaized.net",
+        "media-example-a.akamaihd.net",
+    ] {
+        let elements = detect_routing_elements(&[cname.into()]);
+        assert!(has(&elements, PathElementRole::EdgeProvider, "akamai"));
+    }
+}
+
+#[test]
+fn quic_cloud_assigned_cname_is_edge_but_dns_nameserver_is_not() {
+    for cname in [
+        "c12345.tier1.quicns.com",
+        "c30027.tier1.quicns.com.",
+        "c2351297.tier1.quicns.com",
+    ] {
+        let elements = detect_routing_elements(&[cname.into()]);
+        assert!(has(&elements, PathElementRole::EdgeProvider, "quic-cloud"));
+    }
+
+    for cname in [
+        "kevin.quicns.com",
+        "c12345.quicns.com",
+        "c12345.tierx.quicns.com",
+        "c12345.tier2.quicns.com",
+        "client.tier1.quicns.com",
+        "c12345.tier1.quicns.example",
+    ] {
+        let elements = detect_routing_elements(&[cname.into()]);
+        assert!(!has(&elements, PathElementRole::EdgeProvider, "quic-cloud"));
+    }
+}
+
+#[test]
 fn new_cdn_aliases_emit_edge_provider_claims() {
     for (cname, provider) in [
         ("example-abcdef.kxcdn.com", "keycdn"),
