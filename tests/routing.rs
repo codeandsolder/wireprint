@@ -24,6 +24,21 @@ fn established_provider_managed_aliases_emit_edge_provider_claims() {
 }
 
 #[test]
+fn azure_front_door_managed_name_emits_edge_and_platform_claims() {
+    let elements = detect_routing_elements(&["site.azurefd.net".into()]);
+    assert!(has(
+        &elements,
+        PathElementRole::EdgeProvider,
+        "azure-front-door"
+    ));
+    assert!(has(
+        &elements,
+        PathElementRole::ApplicationPlatform,
+        "azure-front-door"
+    ));
+}
+
+#[test]
 fn akamai_documented_edge_hostname_families_emit_provider_claims() {
     for cname in [
         "www.example.com.edgekey.net",
@@ -63,7 +78,7 @@ fn quic_cloud_assigned_cname_is_edge_but_dns_nameserver_is_not() {
 }
 
 #[test]
-fn railway_and_fly_managed_public_hostnames_emit_edge_claims() {
+fn railway_and_fly_managed_public_hostnames_emit_edge_and_platform_claims() {
     for (hostname, provider) in [
         ("utilities-us-east.up.railway.app", "railway"),
         ("g05ns7.up.railway.app.", "railway"),
@@ -72,6 +87,11 @@ fn railway_and_fly_managed_public_hostnames_emit_edge_claims() {
     ] {
         let elements = detect_routing_elements(&[hostname.into()]);
         assert!(has(&elements, PathElementRole::EdgeProvider, provider));
+        assert!(has(
+            &elements,
+            PathElementRole::ApplicationPlatform,
+            provider
+        ));
     }
 }
 
@@ -88,8 +108,10 @@ fn railway_tcp_proxy_and_managed_hostname_lookalikes_are_not_http_edge_claims() 
     ] {
         let elements = detect_routing_elements(&[hostname.into()]);
         assert!(!elements.iter().any(|element| {
-            element.role == PathElementRole::EdgeProvider
-                && matches!(element.product.as_str(), "railway" | "fly-io")
+            matches!(
+                element.role,
+                PathElementRole::EdgeProvider | PathElementRole::ApplicationPlatform
+            ) && matches!(element.product.as_str(), "railway" | "fly-io")
         }));
     }
 }
@@ -394,6 +416,89 @@ fn azure_cdn_parent_and_deeper_lookalikes_are_not_edge_claims() {
             PathElementRole::EdgeProvider,
             "azure-cloud-edge"
         ));
+    }
+}
+
+#[test]
+fn managed_application_platform_hostnames_emit_bounded_provenance() {
+    for (hostname, product) in [
+        ("example.onrender.com", "render"),
+        ("whispering-willow-5678.herokudns.com", "heroku"),
+        ("example-12345.ssl.herokudns.com", "heroku"),
+        ("my-app-12345.herokuapp.com", "heroku"),
+        ("my-app-12345.us.herokuapp.com", "heroku"),
+        ("haiku-name.space-name.herokuspace.com", "heroku"),
+        ("live-example.pantheonsite.io", "pantheon"),
+    ] {
+        let elements = detect_routing_elements(&[hostname.into()]);
+        assert!(has(
+            &elements,
+            PathElementRole::ApplicationPlatform,
+            product
+        ));
+        assert!(
+            !elements
+                .iter()
+                .any(|element| element.role == PathElementRole::EdgeProvider)
+        );
+    }
+}
+
+#[test]
+fn acquia_default_environment_hostname_emits_platform_and_origin() {
+    for hostname in [
+        "mysite.prod.acquia-sites.com",
+        "examplesite.devcloud.acquia-sites.com.",
+    ] {
+        let elements = detect_routing_elements(&[hostname.into()]);
+        assert!(has(
+            &elements,
+            PathElementRole::ApplicationPlatform,
+            "acquia-cloud-platform"
+        ));
+        assert!(has(
+            &elements,
+            PathElementRole::OriginService,
+            "acquia-cloud-platform"
+        ));
+        assert!(
+            !elements
+                .iter()
+                .any(|element| element.role == PathElementRole::EdgeProvider)
+        );
+    }
+}
+
+#[test]
+fn platform_validation_management_and_deeper_names_are_not_path_claims() {
+    for hostname in [
+        "onrender.com",
+        "nested.example.onrender.com",
+        "example.verify.renderdns.com",
+        "example.hostname.renderdns.com",
+        "herokuapp.com",
+        "nested.too.deep.herokuapp.com",
+        "app..herokuapp.com",
+        "herokudns.com",
+        "nested.too.deep.herokudns.com",
+        "target..herokudns.com",
+        "herokuspace.com",
+        "onlyone.herokuspace.com",
+        "too.many.labels.herokuspace.com",
+        "pantheonsite.io",
+        "nested.example.pantheonsite.io",
+        "acquia-sites.com",
+        "mysite.acquia-sites.com",
+        "mysite.ssh.prod.acquia-sites.com",
+        "nested.mysite.prod.acquia-sites.com",
+    ] {
+        let elements = detect_routing_elements(&[hostname.into()]);
+        assert!(!elements.iter().any(|element| {
+            matches!(
+                element.product.as_str(),
+                "render" | "heroku" | "pantheon" | "acquia-cloud-platform"
+            )
+        }));
     }
 }
 

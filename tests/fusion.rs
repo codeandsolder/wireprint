@@ -102,7 +102,39 @@ fn railway_and_fly_routing_match_existing_response_provider_labels() {
                 ProviderEvidenceChannel::RoutingCname,
             ]
         );
+        assert!(assessment.path_elements.iter().any(|element| {
+            element.role == PathElementRole::ApplicationPlatform && element.product == provider
+        }));
     }
+}
+
+#[test]
+fn managed_platform_routing_stays_non_originating() {
+    for (hostname, product) in [
+        ("example.onrender.com", "render"),
+        ("whispering-willow-5678.herokudns.com", "heroku"),
+        ("live-example.pantheonsite.io", "pantheon"),
+        ("mysite.prod.acquia-sites.com", "acquia-cloud-platform"),
+    ] {
+        let assessment = assess_endpoint(&EndpointEvidence {
+            routing_elements: detect_routing_elements(&[hostname.into()]),
+            ..EndpointEvidence::default()
+        });
+
+        assert_eq!(assessment.state, TerminationState::Unresolved);
+        assert!(assessment.candidates.is_empty());
+        assert!(assessment.path_elements.iter().any(|element| {
+            element.role == PathElementRole::ApplicationPlatform && element.product == product
+        }));
+    }
+
+    let acquia = assess_endpoint(&EndpointEvidence {
+        routing_elements: detect_routing_elements(&["mysite.prod.acquia-sites.com".into()]),
+        ..EndpointEvidence::default()
+    });
+    assert!(acquia.path_elements.iter().any(|element| {
+        element.role == PathElementRole::OriginService && element.product == "acquia-cloud-platform"
+    }));
 }
 
 #[test]

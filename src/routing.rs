@@ -1,6 +1,6 @@
 use crate::model::{PathElement, PathElementRole};
 
-pub const ROUTING_CLASSIFIER_VERSION: &str = "builtin-routing-v6";
+pub const ROUTING_CLASSIFIER_VERSION: &str = "builtin-routing-v7";
 
 fn normalize_name(value: &str) -> String {
     value.trim().trim_end_matches('.').to_ascii_lowercase()
@@ -109,6 +109,36 @@ fn looks_like_fly_app_hostname(host: &str) -> bool {
     parts.len() == 3 && parts[1..] == ["fly", "dev"]
 }
 
+fn looks_like_render_public_hostname(host: &str) -> bool {
+    let parts = labels(host);
+    parts.len() == 3 && parts[1..] == ["onrender", "com"] && !parts[0].is_empty()
+}
+
+fn looks_like_heroku_platform_hostname(host: &str) -> bool {
+    let parts = labels(host);
+    match parts.as_slice() {
+        [app, "herokuapp", "com"] => !app.is_empty(),
+        [app, zone, "herokuapp", "com"] => !app.is_empty() && !zone.is_empty(),
+        [target, "herokudns", "com"] => !target.is_empty(),
+        [target, zone, "herokudns", "com"] => !target.is_empty() && !zone.is_empty(),
+        [app, space, "herokuspace", "com"] => !app.is_empty() && !space.is_empty(),
+        _ => false,
+    }
+}
+
+fn looks_like_pantheon_platform_hostname(host: &str) -> bool {
+    let parts = labels(host);
+    parts.len() == 3 && parts[1..] == ["pantheonsite", "io"] && !parts[0].is_empty()
+}
+
+fn looks_like_acquia_default_hostname(host: &str) -> bool {
+    let parts = labels(host);
+    parts.len() == 4
+        && parts[2..] == ["acquia-sites", "com"]
+        && !parts[0].is_empty()
+        && !parts[1].is_empty()
+}
+
 fn looks_like_azure_cloud_edge_hostname(host: &str) -> bool {
     let parts = labels(host);
     (parts.len() == 3 && parts[1..] == ["azureedge", "net"] && !parts[0].is_empty())
@@ -213,12 +243,27 @@ pub fn detect_routing_elements(cname_chain: &[String]) -> Vec<PathElement> {
         });
 
         if let Some(provider) = edge_provider {
-            add(
-                &mut elements,
-                PathElementRole::EdgeProvider,
-                provider,
-                evidence,
-            );
+            if provider == "azure-front-door" {
+                add(
+                    &mut elements,
+                    PathElementRole::EdgeProvider,
+                    provider,
+                    evidence.clone(),
+                );
+                add(
+                    &mut elements,
+                    PathElementRole::ApplicationPlatform,
+                    provider,
+                    evidence,
+                );
+            } else {
+                add(
+                    &mut elements,
+                    PathElementRole::EdgeProvider,
+                    provider,
+                    evidence,
+                );
+            }
             continue;
         }
 
@@ -267,6 +312,12 @@ pub fn detect_routing_elements(cname_chain: &[String]) -> Vec<PathElement> {
                 &mut elements,
                 PathElementRole::EdgeProvider,
                 "railway",
+                evidence.clone(),
+            );
+            add(
+                &mut elements,
+                PathElementRole::ApplicationPlatform,
+                "railway",
                 evidence,
             );
             continue;
@@ -276,6 +327,12 @@ pub fn detect_routing_elements(cname_chain: &[String]) -> Vec<PathElement> {
             add(
                 &mut elements,
                 PathElementRole::EdgeProvider,
+                "fly-io",
+                evidence.clone(),
+            );
+            add(
+                &mut elements,
+                PathElementRole::ApplicationPlatform,
                 "fly-io",
                 evidence,
             );
@@ -369,6 +426,52 @@ pub fn detect_routing_elements(cname_chain: &[String]) -> Vec<PathElement> {
                 &mut elements,
                 PathElementRole::ApplicationPlatform,
                 "vercel",
+                evidence,
+            );
+            continue;
+        }
+
+        if looks_like_render_public_hostname(&host) {
+            add(
+                &mut elements,
+                PathElementRole::ApplicationPlatform,
+                "render",
+                evidence,
+            );
+            continue;
+        }
+
+        if looks_like_heroku_platform_hostname(&host) {
+            add(
+                &mut elements,
+                PathElementRole::ApplicationPlatform,
+                "heroku",
+                evidence,
+            );
+            continue;
+        }
+
+        if looks_like_pantheon_platform_hostname(&host) {
+            add(
+                &mut elements,
+                PathElementRole::ApplicationPlatform,
+                "pantheon",
+                evidence,
+            );
+            continue;
+        }
+
+        if looks_like_acquia_default_hostname(&host) {
+            add(
+                &mut elements,
+                PathElementRole::ApplicationPlatform,
+                "acquia-cloud-platform",
+                evidence.clone(),
+            );
+            add(
+                &mut elements,
+                PathElementRole::OriginService,
+                "acquia-cloud-platform",
                 evidence,
             );
             continue;
