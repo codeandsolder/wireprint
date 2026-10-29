@@ -69,6 +69,43 @@ fn routing_and_response_metadata_corroborate_without_request_count_weights() {
 }
 
 #[test]
+fn railway_and_fly_routing_match_existing_response_provider_labels() {
+    for (hostname, header_name, header_value, provider) in [
+        (
+            "utilities-us-east.up.railway.app",
+            "x-railway-edge",
+            "waw1",
+            "railway",
+        ),
+        ("debug.fly.dev", "fly-request-id", "01M64WSK-fra", "fly-io"),
+    ] {
+        let response = detect_path_elements(&[wireprint::Header {
+            name: header_name.into(),
+            value: header_value.into(),
+        }]);
+        let routing = detect_routing_elements(&[hostname.into()]);
+        let assessment = assess_endpoint(&EndpointEvidence {
+            response_elements: response,
+            routing_elements: routing,
+            ..EndpointEvidence::default()
+        });
+
+        assert_eq!(assessment.state, TerminationState::SingleCandidate);
+        assert_eq!(assessment.candidates.len(), 1);
+        let candidate = &assessment.candidates[0];
+        assert_eq!(candidate.provider, provider);
+        assert_eq!(candidate.support, ProviderSupport::CrossChannelCorroborated);
+        assert_eq!(
+            candidate.originating_channels,
+            vec![
+                ProviderEvidenceChannel::ResponseMetadata,
+                ProviderEvidenceChannel::RoutingCname,
+            ]
+        );
+    }
+}
+
+#[test]
 fn duplicate_signals_do_not_inflate_independent_channel_support() {
     let assessment = assess_endpoint(&EndpointEvidence {
         provider_signals: vec![

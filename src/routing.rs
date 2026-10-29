@@ -1,6 +1,6 @@
 use crate::model::{PathElement, PathElementRole};
 
-pub const ROUTING_CLASSIFIER_VERSION: &str = "builtin-routing-v3";
+pub const ROUTING_CLASSIFIER_VERSION: &str = "builtin-routing-v4";
 
 fn normalize_name(value: &str) -> String {
     value.trim().trim_end_matches('.').to_ascii_lowercase()
@@ -87,6 +87,16 @@ fn looks_like_quic_cloud_cdn_cname(host: &str) -> bool {
     parts[0].strip_prefix('c').is_some_and(|site_id| {
         !site_id.is_empty() && site_id.bytes().all(|byte| byte.is_ascii_digit())
     })
+}
+
+fn looks_like_railway_public_hostname(host: &str) -> bool {
+    let parts = labels(host);
+    parts.len() == 4 && parts[1..] == ["up", "railway", "app"]
+}
+
+fn looks_like_fly_app_hostname(host: &str) -> bool {
+    let parts = labels(host);
+    parts.len() == 3 && parts[1..] == ["fly", "dev"]
 }
 
 fn add(elements: &mut Vec<PathElement>, role: PathElementRole, product: &str, evidence: String) {
@@ -211,6 +221,26 @@ pub fn detect_routing_elements(cname_chain: &[String]) -> Vec<PathElement> {
                 &mut elements,
                 PathElementRole::EdgeProvider,
                 "quic-cloud",
+                evidence,
+            );
+            continue;
+        }
+
+        if looks_like_railway_public_hostname(&host) {
+            add(
+                &mut elements,
+                PathElementRole::EdgeProvider,
+                "railway",
+                evidence,
+            );
+            continue;
+        }
+
+        if looks_like_fly_app_hostname(&host) {
+            add(
+                &mut elements,
+                PathElementRole::EdgeProvider,
+                "fly-io",
                 evidence,
             );
             continue;

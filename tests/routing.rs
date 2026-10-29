@@ -63,6 +63,38 @@ fn quic_cloud_assigned_cname_is_edge_but_dns_nameserver_is_not() {
 }
 
 #[test]
+fn railway_and_fly_managed_public_hostnames_emit_edge_claims() {
+    for (hostname, provider) in [
+        ("utilities-us-east.up.railway.app", "railway"),
+        ("g05ns7.up.railway.app.", "railway"),
+        ("debug.fly.dev", "fly-io"),
+        ("flyio-landing.fly.dev.", "fly-io"),
+    ] {
+        let elements = detect_routing_elements(&[hostname.into()]);
+        assert!(has(&elements, PathElementRole::EdgeProvider, provider));
+    }
+}
+
+#[test]
+fn railway_tcp_proxy_and_managed_hostname_lookalikes_are_not_http_edge_claims() {
+    for hostname in [
+        "up.railway.app",
+        "nested.example.up.railway.app",
+        "shuttle.proxy.rlwy.net",
+        "proxy.rlwy.net",
+        "fly.dev",
+        "nested.example.fly.dev",
+        "fly.io",
+    ] {
+        let elements = detect_routing_elements(&[hostname.into()]);
+        assert!(!elements.iter().any(|element| {
+            element.role == PathElementRole::EdgeProvider
+                && matches!(element.product.as_str(), "railway" | "fly-io")
+        }));
+    }
+}
+
+#[test]
 fn new_cdn_aliases_emit_edge_provider_claims() {
     for (cname, provider) in [
         ("example-abcdef.kxcdn.com", "keycdn"),
