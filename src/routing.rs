@@ -1,6 +1,6 @@
 use crate::model::{PathElement, PathElementRole};
 
-pub const ROUTING_CLASSIFIER_VERSION: &str = "builtin-routing-v4";
+pub const ROUTING_CLASSIFIER_VERSION: &str = "builtin-routing-v5";
 
 fn normalize_name(value: &str) -> String {
     value.trim().trim_end_matches('.').to_ascii_lowercase()
@@ -14,21 +14,31 @@ fn labels(host: &str) -> Vec<&str> {
     host.split('.').collect()
 }
 
-fn looks_like_vercel_dns(host: &str) -> bool {
-    if matches_suffix(host, "vercel-dns.com") {
+fn looks_like_vercel_ingress(host: &str) -> bool {
+    if host == "cname.vercel-dns.com" {
         return true;
     }
-    let mut labels = host.rsplit('.');
-    let Some(tld) = labels.next() else {
+
+    let parts = labels(host);
+    if parts.len() == 3 && parts[1..] == ["vercel", "app"] {
+        return !parts[0].is_empty();
+    }
+    if parts.len() != 3 || parts[2] != "com" || parts[0].is_empty() {
         return false;
-    };
-    let Some(base) = labels.next() else {
-        return false;
-    };
-    tld == "com"
-        && base.strip_prefix("vercel-dns-").is_some_and(|suffix| {
-            !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
-        })
+    }
+
+    parts[1].strip_prefix("vercel-dns-").is_some_and(|suffix| {
+        !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
+    })
+}
+
+fn looks_like_netlify_ingress(host: &str) -> bool {
+    if host == "apex-loadbalancer.netlify.com" {
+        return true;
+    }
+
+    let parts = labels(host);
+    parts.len() == 3 && parts[1..] == ["netlify", "app"] && !parts[0].is_empty()
 }
 
 fn looks_like_aws_elb(host: &str) -> bool {
@@ -296,10 +306,13 @@ pub fn detect_routing_elements(cname_chain: &[String]) -> Vec<PathElement> {
             continue;
         }
 
-        if matches_suffix(&host, "netlify.app")
-            || matches_suffix(&host, "netlify.com")
-            || host == "apex-loadbalancer.netlify.com"
-        {
+        if looks_like_netlify_ingress(&host) {
+            add(
+                &mut elements,
+                PathElementRole::EdgeProvider,
+                "netlify",
+                evidence.clone(),
+            );
             add(
                 &mut elements,
                 PathElementRole::ApplicationPlatform,
@@ -309,7 +322,23 @@ pub fn detect_routing_elements(cname_chain: &[String]) -> Vec<PathElement> {
             continue;
         }
 
-        if looks_like_vercel_dns(&host) {
+        if matches_suffix(&host, "netlify.com") {
+            add(
+                &mut elements,
+                PathElementRole::ApplicationPlatform,
+                "netlify",
+                evidence,
+            );
+            continue;
+        }
+
+        if looks_like_vercel_ingress(&host) {
+            add(
+                &mut elements,
+                PathElementRole::EdgeProvider,
+                "vercel",
+                evidence.clone(),
+            );
             add(
                 &mut elements,
                 PathElementRole::ApplicationPlatform,

@@ -202,29 +202,51 @@ fn similar_but_non_provider_cnames_are_not_force_labeled() {
 }
 
 #[test]
-fn netlify_and_vercel_aliases_remain_platform_only() {
-    let elements = detect_routing_elements(&[
-        "my-project.netlify.app".into(),
-        "apex-loadbalancer.netlify.com".into(),
-        "d1d4fc829fe7bc7c.vercel-dns-017.com".into(),
-        "cname.vercel-dns-0.com".into(),
-    ]);
+fn netlify_and_vercel_ingress_names_emit_edge_and_platform_claims() {
+    for (hostname, provider) in [
+        ("my-project.netlify.app", "netlify"),
+        ("branch--my-project.netlify.app.", "netlify"),
+        ("apex-loadbalancer.netlify.com", "netlify"),
+        ("d1d4fc829fe7bc7c.vercel-dns-017.com", "vercel"),
+        ("cname.vercel-dns-0.com", "vercel"),
+        ("cname.vercel-dns.com", "vercel"),
+        ("my-project.vercel.app.", "vercel"),
+    ] {
+        let elements = detect_routing_elements(&[hostname.into()]);
+        assert!(has(&elements, PathElementRole::EdgeProvider, provider));
+        assert!(has(
+            &elements,
+            PathElementRole::ApplicationPlatform,
+            provider
+        ));
+    }
+}
 
+#[test]
+fn vercel_nameservers_and_broad_lookalikes_do_not_become_edge_claims() {
+    for hostname in [
+        "ns1.vercel-dns.com",
+        "ns2.vercel-dns.com",
+        "client.vercel-dns.com",
+        "nested.client.vercel-dns-017.com",
+        "vercel-dns-017.com",
+        "netlify.app",
+        "nested.my-project.netlify.app",
+        "teacher-glances-63085.netlify.com",
+    ] {
+        let elements = detect_routing_elements(&[hostname.into()]);
+        assert!(!elements.iter().any(|element| {
+            element.role == PathElementRole::EdgeProvider
+                && matches!(element.product.as_str(), "vercel" | "netlify")
+        }));
+    }
+
+    let legacy = detect_routing_elements(&["teacher-glances-63085.netlify.com".into()]);
     assert!(has(
-        &elements,
+        &legacy,
         PathElementRole::ApplicationPlatform,
         "netlify"
     ));
-    assert!(has(
-        &elements,
-        PathElementRole::ApplicationPlatform,
-        "vercel"
-    ));
-    assert!(
-        !elements
-            .iter()
-            .any(|element| element.role == PathElementRole::EdgeProvider)
-    );
 }
 
 #[test]
