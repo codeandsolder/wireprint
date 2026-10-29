@@ -54,6 +54,8 @@ Routing evidence is versioned independently. `builtin-routing-v2` adds Tencent E
 
 `builtin-routing-v3` expands exact provider-managed DNS coverage without broad suffix guessing. Akamai now covers its documented production/shared-certificate edge hostname families (`edgekey.net`, `edgesuite.net`, `akamaized.net`, `akamaihd.net`) and their documented staging counterparts (`edgekey-staging.net`, `edgesuite-staging.net`). QUIC.cloud routing recognizes only the assigned CDN CNAME grammar (`c<digits>.tier1.quicns.com`); generic `quicns.com` names such as provider DNS nameservers are intentionally not edge-provider evidence.
 
+`builtin-routing-v4` adds exact provider-managed public application hostnames where current provider documentation also identifies the client-facing global edge. Railway HTTP/HTTPS service names match exactly one label under `up.railway.app` and emit `edge_provider: railway`; its separate `proxy.rlwy.net` raw-TCP proxy namespace is intentionally excluded. Fly Apps match exactly one label under `fly.dev` and emit `edge_provider: fly-io`. Neither rule infers provider identity from IP/ASN ownership or arbitrary custom domains.
+
 Absence of a marker is not negative evidence. Products can strip, rename, disable, or route around these markers.
 
 ## Deliberately conservative rules
