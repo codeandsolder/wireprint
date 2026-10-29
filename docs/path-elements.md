@@ -6,7 +6,7 @@ That distinction matters. A response can preserve evidence from an outer CDN, a 
 
 ## Roles
 
-`builtin-path-v3` currently separates these roles:
+`builtin-path-v4` currently separates these roles:
 
 - `edge_provider` — managed serving/edge layer with explicit provider evidence;
 - `application_platform` — downstream delivery/application platform participation;
@@ -49,6 +49,8 @@ Origin-service markers are deliberately separate from edge identity. `Server: Ak
 The v3 additions follow the same positive-evidence rule. CDN77 documents `X-77-POP` as the edge location that handled and delivered the response, while `X-77-Cache` / `X-77-Age` describe cache state; cache-only evidence therefore does not promote itself to `edge_provider`. Oracle Cloud Load Balancer's default generated stickiness cookie `X-Oracle-BMC-LBS-Route` is load-balancer evidence when present. OAuth2 Proxy's `_oauth2_proxy`, Authelia's `authelia_session`, and authentik's `/outpost.goauthentik.io/` redirect namespace are identity-proxy evidence. The OAuth2 Proxy and Authelia cookie names are configurable, so their absence is especially meaningless.
 
 The v4 edge expansion keeps provider identity separate from cache identity. Tencent EdgeOne documents `EO-LOG-UUID` as its request identifier and `Server: TencentEdgeOne` as the node-added fallback server banner, so either can identify EdgeOne participation; `EO-Cache-Status` is cache participation only. Alibaba Cloud documents `EagleID` as an edge/CDN-node marker, but live ESA responses also expose it, so v4 deliberately emits the broader `alibaba-cloud-edge` provider-family label instead of claiming the CDN product. The CDN-specific `X-Swift-SaveTime`, `X-Swift-CacheTime`, and `Ali-Swift-Global-Savetime` headers independently identify `alibaba-cloud-cdn` cache participation. Generic `X-Cache` remains insufficient by itself.
+
+Routing evidence is versioned independently. `builtin-routing-v2` adds Tencent EdgeOne provider-managed edge CNAME families (`*.acc.edgeonedy1.com` and `*.acc.tyxcdn.com`) as `edge_provider` evidence, while `*.eo.dnseN.com` stays on the separate `traffic_management` role: EdgeOne can use that scheduling CNAME to distribute traffic across EdgeOne, another CDN provider, or the origin. If a DNS chain contains both forms, both roles are preserved. Alibaba Cloud edge CNAME roots (`kunlun*.com` plus the documented `alikunlun.com` family) emit the broad `alibaba-cloud-edge` provider family. The same Kunlun CNAME lineage is used by multiple Alibaba delivery products, so DNS alone does not identify one product.
 
 Absence of a marker is not negative evidence. Products can strip, rename, disable, or route around these markers.
 
