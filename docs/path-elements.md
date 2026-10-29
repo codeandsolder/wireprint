@@ -56,6 +56,8 @@ Routing evidence is versioned independently. `builtin-routing-v2` adds Tencent E
 
 `builtin-routing-v4` adds exact provider-managed public application hostnames where current provider documentation also identifies the client-facing global edge. Railway HTTP/HTTPS service names match exactly one label under `up.railway.app` and emit `edge_provider: railway`; its separate `proxy.rlwy.net` raw-TCP proxy namespace is intentionally excluded. Fly Apps match exactly one label under `fly.dev` and emit `edge_provider: fly-io`. Neither rule infers provider identity from IP/ASN ownership or arbitrary custom domains.
 
+`builtin-routing-v5` corrects the Vercel/Netlify ingress-role boundary. Exact Vercel serving names (`cname.vercel-dns.com`, one-label `*.vercel-dns-<digits>.com`, and one-label `*.vercel.app`) now emit both `edge_provider: vercel` and `application_platform: vercel`; authoritative nameservers such as `ns1.vercel-dns.com` are explicitly outside that grammar. Exact Netlify ingress names (one-label `*.netlify.app` and `apex-loadbalancer.netlify.com`) likewise emit both edge-provider and application-platform participation. Legacy/broader `*.netlify.com` names remain platform-only unless they are the documented apex load balancer. No rule infers either provider from generic A/AAAA records, ASN ownership, or arbitrary custom domains.
+
 Absence of a marker is not negative evidence. Products can strip, rename, disable, or route around these markers.
 
 ## Deliberately conservative rules
@@ -64,7 +66,7 @@ The recognizer does **not** treat generic cache vocabulary such as `x-served-by`
 
 Likewise:
 
-- `x-vercel-id`, `x-nf-request-id`, and `x-azure-ref` are participation evidence, not automatic outer-provider claims;
+- `x-vercel-id`, `x-nf-request-id`, and `x-azure-ref` response markers are participation evidence, not automatic outer-provider claims; routing-v5 exact provider-managed ingress names are a separate DNS evidence channel;
 - `ARRAffinity` / `ARRAffinitySameSite` prove an Azure/Microsoft ARR-style affinity layer, not Azure App Service specifically; Application Gateway v1 overlaps on `ARRAffinity`;
 - generic `x-amzn-requestid` does not imply API Gateway; API Gateway uses more specific markers such as `x-amz-apigw-id` / `apigw-requestid`;
 - `Server: UploadServer` does not imply Google Front End or Cloud Storage by itself;

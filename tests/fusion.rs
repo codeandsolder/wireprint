@@ -155,15 +155,47 @@ fn tls_morphology_can_confirm_an_existing_provider_candidate() {
 #[test]
 fn downstream_platform_participation_does_not_become_outer_termination() {
     let assessment = assess_endpoint(&EndpointEvidence {
-        routing_elements: detect_routing_elements(&["d1d4fc829fe7bc7c.vercel-dns-017.com".into()]),
+        routing_elements: detect_routing_elements(&["teacher-glances-63085.netlify.com".into()]),
         ..EndpointEvidence::default()
     });
 
     assert_eq!(assessment.state, TerminationState::Unresolved);
     assert!(assessment.candidates.is_empty());
     assert!(assessment.path_elements.iter().any(|element| {
-        element.role == PathElementRole::ApplicationPlatform && element.product == "vercel"
+        element.role == PathElementRole::ApplicationPlatform && element.product == "netlify"
     }));
+}
+
+#[test]
+fn vercel_and_netlify_ingress_routing_corroborates_response_metadata() {
+    for (hostname, server, provider) in [
+        ("d1d4fc829fe7bc7c.vercel-dns-017.com", "Vercel", "vercel"),
+        ("my-project.netlify.app", "Netlify", "netlify"),
+    ] {
+        let response = detect_path_elements(&[wireprint::Header {
+            name: "server".into(),
+            value: server.into(),
+        }]);
+        let routing = detect_routing_elements(&[hostname.into()]);
+        let assessment = assess_endpoint(&EndpointEvidence {
+            response_elements: response,
+            routing_elements: routing,
+            ..EndpointEvidence::default()
+        });
+
+        assert_eq!(assessment.state, TerminationState::SingleCandidate);
+        assert_eq!(assessment.candidates.len(), 1);
+        let candidate = &assessment.candidates[0];
+        assert_eq!(candidate.provider, provider);
+        assert_eq!(candidate.support, ProviderSupport::CrossChannelCorroborated);
+        assert_eq!(
+            candidate.originating_channels,
+            vec![
+                ProviderEvidenceChannel::ResponseMetadata,
+                ProviderEvidenceChannel::RoutingCname,
+            ]
+        );
+    }
 }
 
 #[test]
