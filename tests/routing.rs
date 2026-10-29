@@ -321,20 +321,91 @@ fn dns_traffic_steering_does_not_become_edge_termination() {
 }
 
 #[test]
+fn azure_cdn_managed_names_emit_broad_edge_family_claims() {
+    for hostname in [
+        "catalogartifact.azureedge.net",
+        "contoso.azureedge.net.",
+        "az416426.vo.msecnd.net",
+        "assets.vo.msecnd.net.",
+    ] {
+        let elements = detect_routing_elements(&[hostname.into()]);
+        assert!(has(
+            &elements,
+            PathElementRole::EdgeProvider,
+            "azure-cloud-edge"
+        ));
+        assert!(!has(
+            &elements,
+            PathElementRole::ApplicationPlatform,
+            "azure-cdn"
+        ));
+    }
+}
+
+#[test]
+fn azure_cloud_edge_refines_to_front_door_when_dns_chain_exposes_both() {
+    let elements = detect_routing_elements(&[
+        "az416426.vo.msecnd.net".into(),
+        "aijscdn1-g4ccc2ajgnahcpct.b02.azurefd.net".into(),
+        "mr-b02.tm-azurefd.net".into(),
+    ]);
+
+    assert!(has(
+        &elements,
+        PathElementRole::EdgeProvider,
+        "azure-front-door"
+    ));
+    assert!(!has(
+        &elements,
+        PathElementRole::EdgeProvider,
+        "azure-cloud-edge"
+    ));
+    let front_door = elements.iter().find(|element| {
+        element.role == PathElementRole::EdgeProvider && element.product == "azure-front-door"
+    });
+    assert!(front_door.is_some());
+    if let Some(front_door) = front_door {
+        assert!(
+            front_door
+                .evidence
+                .contains(&"cname:az416426.vo.msecnd.net".into())
+        );
+        assert!(
+            front_door
+                .evidence
+                .iter()
+                .any(|evidence| evidence.contains("azurefd.net"))
+        );
+    }
+}
+
+#[test]
+fn azure_cdn_parent_and_deeper_lookalikes_are_not_edge_claims() {
+    for hostname in [
+        "azureedge.net",
+        "nested.example.azureedge.net",
+        "vo.msecnd.net",
+        "nested.example.vo.msecnd.net",
+        "example.azureedge.invalid",
+    ] {
+        let elements = detect_routing_elements(&[hostname.into()]);
+        assert!(!has(
+            &elements,
+            PathElementRole::EdgeProvider,
+            "azure-cloud-edge"
+        ));
+    }
+}
+
+#[test]
 fn paas_aliases_remain_application_platform_evidence() {
     let elements = detect_routing_elements(&[
         "teacher-glances-63085.netlify.com".into(),
         "myapp-00000.westus.azurewebsites.net".into(),
         "example.us-east-1.elasticbeanstalk.com".into(),
-        "legacy.azureedge.net".into(),
     ]);
 
-    for product in [
-        "netlify",
-        "azure-app-service",
-        "aws-elastic-beanstalk",
-        "azure-cdn",
-    ] {
+    for product in ["netlify", "azure-app-service", "aws-elastic-beanstalk"] {
         assert!(has(
             &elements,
             PathElementRole::ApplicationPlatform,

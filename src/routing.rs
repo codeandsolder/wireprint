@@ -1,6 +1,6 @@
 use crate::model::{PathElement, PathElementRole};
 
-pub const ROUTING_CLASSIFIER_VERSION: &str = "builtin-routing-v5";
+pub const ROUTING_CLASSIFIER_VERSION: &str = "builtin-routing-v6";
 
 fn normalize_name(value: &str) -> String {
     value.trim().trim_end_matches('.').to_ascii_lowercase()
@@ -107,6 +107,32 @@ fn looks_like_railway_public_hostname(host: &str) -> bool {
 fn looks_like_fly_app_hostname(host: &str) -> bool {
     let parts = labels(host);
     parts.len() == 3 && parts[1..] == ["fly", "dev"]
+}
+
+fn looks_like_azure_cloud_edge_hostname(host: &str) -> bool {
+    let parts = labels(host);
+    (parts.len() == 3 && parts[1..] == ["azureedge", "net"] && !parts[0].is_empty())
+        || (parts.len() == 4 && parts[1..] == ["vo", "msecnd", "net"] && !parts[0].is_empty())
+}
+
+fn refine_edge_provider_family(elements: &mut Vec<PathElement>, family: &str, specific: &str) {
+    let specific_index = elements.iter().position(|element| {
+        element.role == PathElementRole::EdgeProvider && element.product == specific
+    });
+    let family_index = elements.iter().position(|element| {
+        element.role == PathElementRole::EdgeProvider && element.product == family
+    });
+    let (Some(specific_index), Some(family_index)) = (specific_index, family_index) else {
+        return;
+    };
+
+    let family_evidence = elements[family_index].evidence.clone();
+    for evidence in family_evidence {
+        if !elements[specific_index].evidence.contains(&evidence) {
+            elements[specific_index].evidence.push(evidence);
+        }
+    }
+    let _ = elements.remove(family_index);
 }
 
 fn add(elements: &mut Vec<PathElement>, role: PathElementRole, product: &str, evidence: String) {
@@ -368,15 +394,16 @@ pub fn detect_routing_elements(cname_chain: &[String]) -> Vec<PathElement> {
             continue;
         }
 
-        if matches_suffix(&host, "azureedge.net") {
+        if looks_like_azure_cloud_edge_hostname(&host) {
             add(
                 &mut elements,
-                PathElementRole::ApplicationPlatform,
-                "azure-cdn",
+                PathElementRole::EdgeProvider,
+                "azure-cloud-edge",
                 evidence,
             );
         }
     }
 
+    refine_edge_provider_family(&mut elements, "azure-cloud-edge", "azure-front-door");
     elements
 }

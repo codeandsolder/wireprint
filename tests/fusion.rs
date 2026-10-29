@@ -199,6 +199,40 @@ fn vercel_and_netlify_ingress_routing_corroborates_response_metadata() {
 }
 
 #[test]
+fn azure_cdn_namespace_anchors_broad_edge_while_azure_ref_stays_participation_only() {
+    let response = detect_path_elements(&[wireprint::Header {
+        name: "x-azure-ref".into(),
+        value: "20261029T230602Z-example".into(),
+    }]);
+    let routing = detect_routing_elements(&[
+        "catalogartifact.azureedge.net".into(),
+        "catalogartifact.afd.azureedge.net".into(),
+        "azurefd-critical-t-prod.trafficmanager.net".into(),
+        "shed.dual-low.part-0017.t-0009.t-msedge.net".into(),
+        "part-0017.t-0009.t-msedge.net".into(),
+    ]);
+    let assessment = assess_endpoint(&EndpointEvidence {
+        response_elements: response,
+        routing_elements: routing,
+        ..EndpointEvidence::default()
+    });
+
+    assert_eq!(assessment.state, TerminationState::SingleCandidate);
+    assert_eq!(assessment.candidates.len(), 1);
+    let candidate = &assessment.candidates[0];
+    assert_eq!(candidate.provider, "azure-cloud-edge");
+    assert_eq!(candidate.support, ProviderSupport::OriginatingEvidence);
+    assert_eq!(
+        candidate.originating_channels,
+        vec![ProviderEvidenceChannel::RoutingCname]
+    );
+    assert!(assessment.path_elements.iter().any(|element| {
+        element.role == PathElementRole::ApplicationPlatform
+            && element.product == "azure-front-door"
+    }));
+}
+
+#[test]
 fn conflicting_originating_channels_are_preserved_as_multiple_candidates() {
     let assessment = assess_endpoint(&EndpointEvidence {
         response_elements: vec![provider_element("fastly")],
