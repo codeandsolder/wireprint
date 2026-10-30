@@ -54,6 +54,138 @@ fn akamai_documented_edge_hostname_families_emit_provider_claims() {
 }
 
 #[test]
+fn akamai_netstorage_http_hostname_overrides_broad_akamai_edge_suffix() {
+    let elements = detect_routing_elements(&["baseball-nsu.akamaihd.net".into()]);
+    assert!(has(
+        &elements,
+        PathElementRole::OriginService,
+        "akamai-netstorage"
+    ));
+    assert!(!has(&elements, PathElementRole::EdgeProvider, "akamai"));
+
+    let edge = detect_routing_elements(&["media-example-a.akamaihd.net".into()]);
+    assert!(has(&edge, PathElementRole::EdgeProvider, "akamai"));
+    assert!(!has(
+        &edge,
+        PathElementRole::OriginService,
+        "akamai-netstorage"
+    ));
+}
+
+#[test]
+fn managed_object_storage_hostnames_emit_origin_provenance() {
+    for (hostname, product) in [
+        ("c.storage.googleapis.com", "google-cloud-storage"),
+        (
+            "mystorageaccount.blob.core.windows.net",
+            "azure-blob-storage",
+        ),
+        ("s3.us-west-004.backblazeb2.com", "backblaze-b2"),
+        (
+            "example-bucket.s3.us-west-004.backblazeb2.com",
+            "backblaze-b2",
+        ),
+    ] {
+        let elements = detect_routing_elements(&[hostname.into()]);
+        assert!(has(&elements, PathElementRole::OriginService, product));
+        assert!(
+            !elements
+                .iter()
+                .any(|element| element.role == PathElementRole::EdgeProvider)
+        );
+    }
+}
+
+#[test]
+fn aws_s3_documented_public_data_hostnames_emit_origin_provenance() {
+    for hostname in [
+        "s3.amazonaws.com",
+        "s3.us-west-2.amazonaws.com",
+        "s3-us-west-2.amazonaws.com",
+        "s3.dualstack.us-west-2.amazonaws.com",
+        "amzn-s3-demo-bucket1.s3.us-west-2.amazonaws.com",
+        "images.example.com.s3.us-east-1.amazonaws.com",
+        "bucket.s3.dualstack.eu-central-1.amazonaws.com",
+        "bucket.s3-us-west-2.amazonaws.com",
+        "bucket.s3.amazonaws.com",
+        "bucket.s3-accelerate.amazonaws.com",
+        "bucket.s3-accelerate.dualstack.amazonaws.com",
+        "finance-docs-123456789012.s3-accesspoint.us-west-2.amazonaws.com",
+        "mfzwi23gnjvgw.mrap.accesspoint.s3-global.amazonaws.com",
+        "s3.amazonaws.com.cn",
+        "s3.cn-north-1.amazonaws.com.cn",
+        "s3-cn-north-1.amazonaws.com.cn",
+        "s3.dualstack.cn-northwest-1.amazonaws.com.cn",
+        "china-bucket.s3.cn-north-1.amazonaws.com.cn",
+        "china-bucket.s3.dualstack.cn-northwest-1.amazonaws.com.cn",
+        "china-bucket.s3-cn-north-1.amazonaws.com.cn",
+        "china-bucket.s3.amazonaws.com.cn",
+    ] {
+        let elements = detect_routing_elements(&[hostname.into()]);
+        assert!(has(&elements, PathElementRole::OriginService, "aws-s3"));
+        assert!(
+            !elements
+                .iter()
+                .any(|element| element.role == PathElementRole::EdgeProvider)
+        );
+    }
+}
+
+#[test]
+fn aws_s3_adjacent_endpoint_families_are_not_origin_claims() {
+    for hostname in [
+        "bucket.s3.dualstack.amazonaws.com",
+        "bucket.s3.accelerate.amazonaws.com",
+        "bucket.s3-website-us-east-1.amazonaws.com",
+        "example-123456789012.s3-object-lambda.us-east-1.amazonaws.com",
+        "ap-123456789012.s3-outposts.us-east-1.amazonaws.com",
+        "finance-docs-12345.s3-accesspoint.us-west-2.amazonaws.com",
+        "finance-docs-123456789012.s3-accesspoint.not-a-region.amazonaws.com",
+        "mfzwi23gnjvgw.mrap.accesspoint.s3-global.amazonaws.example",
+        "china-bucket.s3-website.cn-north-1.amazonaws.com.cn",
+        "china-bucket.s3-accelerate.amazonaws.com.cn",
+        "finance-docs-123456789012.s3-accesspoint.cn-north-1.amazonaws.com.cn",
+        "mfzwi23gnjvgw.mrap.accesspoint.s3-global.amazonaws.com.cn",
+    ] {
+        let elements = detect_routing_elements(&[hostname.into()]);
+        assert!(!has(&elements, PathElementRole::OriginService, "aws-s3"));
+    }
+}
+
+#[test]
+fn managed_object_storage_validation_and_lookalike_names_are_not_origin_claims() {
+    for hostname in [
+        "-nsu.akamaihd.net",
+        "nested.baseball-nsu.akamaihd.net",
+        "baseball-nsu.akamaihd.example",
+        "storage.googleapis.com",
+        "x.c.storage.googleapis.com",
+        "c.storage.googleapis.example",
+        "blob.core.windows.net",
+        "asverify.mystorageaccount.blob.core.windows.net",
+        "nested.mystorageaccount.blob.core.windows.net",
+        "mystorageaccount.z5.web.core.windows.net",
+        "backblazeb2.com",
+        "s3.backblazeb2.com",
+        "nested.example.s3.us-west-004.backblazeb2.com",
+        "s3.us-west-004.backblazeb2.example",
+    ] {
+        let elements = detect_routing_elements(&[hostname.into()]);
+        assert!(!elements.iter().any(|element| {
+            element.role == PathElementRole::OriginService
+                && matches!(
+                    element.product.as_str(),
+                    "akamai-netstorage"
+                        | "google-cloud-storage"
+                        | "azure-blob-storage"
+                        | "backblaze-b2"
+                        | "aws-s3"
+                )
+        }));
+    }
+}
+
+#[test]
 fn quic_cloud_assigned_cname_is_edge_but_dns_nameserver_is_not() {
     for cname in [
         "c12345.tier1.quicns.com",

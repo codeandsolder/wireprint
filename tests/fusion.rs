@@ -138,6 +138,49 @@ fn managed_platform_routing_stays_non_originating() {
 }
 
 #[test]
+fn routing_object_storage_origins_do_not_originate_termination_candidates() {
+    for (hostname, product) in [
+        ("c.storage.googleapis.com", "google-cloud-storage"),
+        (
+            "mystorageaccount.blob.core.windows.net",
+            "azure-blob-storage",
+        ),
+        ("s3.us-west-004.backblazeb2.com", "backblaze-b2"),
+        ("bucket.s3.us-west-2.amazonaws.com", "aws-s3"),
+        ("baseball-nsu.akamaihd.net", "akamai-netstorage"),
+    ] {
+        let assessment = assess_endpoint(&EndpointEvidence {
+            routing_elements: detect_routing_elements(&[hostname.into()]),
+            ..EndpointEvidence::default()
+        });
+
+        assert_eq!(assessment.state, TerminationState::Unresolved);
+        assert!(assessment.candidates.is_empty());
+        assert!(assessment.path_elements.iter().any(|element| {
+            element.role == PathElementRole::OriginService && element.product == product
+        }));
+    }
+}
+
+#[test]
+fn akamai_edge_and_netstorage_origin_coexist_without_provider_conflict() {
+    let assessment = assess_endpoint(&EndpointEvidence {
+        routing_elements: detect_routing_elements(&[
+            "media-example-a.akamaihd.net".into(),
+            "baseball-nsu.akamaihd.net".into(),
+        ]),
+        ..EndpointEvidence::default()
+    });
+
+    assert_eq!(assessment.state, TerminationState::SingleCandidate);
+    assert_eq!(assessment.candidates.len(), 1);
+    assert_eq!(assessment.candidates[0].provider, "akamai");
+    assert!(assessment.path_elements.iter().any(|element| {
+        element.role == PathElementRole::OriginService && element.product == "akamai-netstorage"
+    }));
+}
+
+#[test]
 fn duplicate_signals_do_not_inflate_independent_channel_support() {
     let assessment = assess_endpoint(&EndpointEvidence {
         provider_signals: vec![
