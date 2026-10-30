@@ -315,6 +315,23 @@ fn fastly_specific_cache_headers_do_not_claim_outer_edge() {
 }
 
 #[test]
+fn fastly_x_timer_is_cache_participation_not_outer_edge() {
+    let elements = detect_path_elements(&[header("x-timer", "S1793200580.826505,VS0,VE15")]);
+    assert!(has(&elements, PathElementRole::Cache, "fastly"));
+    assert!(!has(&elements, PathElementRole::EdgeProvider, "fastly"));
+
+    for non_fastly_value in [
+        "738",
+        "S1793200580,VS0,VE15",
+        "S1793200580.826505,VS1,VE15",
+        "Sbad,VS0,VE15",
+    ] {
+        let elements = detect_path_elements(&[header("x-timer", non_fastly_value)]);
+        assert!(!elements.iter().any(|element| element.product == "fastly"));
+    }
+}
+
+#[test]
 fn generic_x_cache_hits_does_not_imply_fastly() {
     let elements = detect_path_elements(&[header("x-cache-hits", "17")]);
     assert!(!elements.iter().any(|element| element.product == "fastly"));

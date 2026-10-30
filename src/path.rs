@@ -1,6 +1,6 @@
 use crate::model::{Header, PathElement, PathElementRole};
 
-pub const PATH_CLASSIFIER_VERSION: &str = "builtin-path-v4";
+pub const PATH_CLASSIFIER_VERSION: &str = "builtin-path-v5";
 
 fn header_values<'a>(headers: &'a [Header], name: &str) -> impl Iterator<Item = &'a str> {
     headers
@@ -28,6 +28,35 @@ fn joined_header_values(headers: &[Header], name: &str) -> String {
 
 fn has_header_value(headers: &[Header], name: &str, value: &str) -> bool {
     header_values(headers, name).any(|candidate| candidate.eq_ignore_ascii_case(value))
+}
+
+fn looks_like_fastly_x_timer(value: &str) -> bool {
+    let mut parts = value.split(',');
+    let Some(start) = parts.next().and_then(|part| part.strip_prefix('S')) else {
+        return false;
+    };
+    let Some(varnish_start) = parts.next() else {
+        return false;
+    };
+    let Some(varnish_end) = parts.next().and_then(|part| part.strip_prefix("VE")) else {
+        return false;
+    };
+    if parts.next().is_some() || varnish_start != "VS0" || varnish_end.is_empty() {
+        return false;
+    }
+
+    let Some((seconds, fraction)) = start.split_once('.') else {
+        return false;
+    };
+    if seconds.is_empty()
+        || fraction.is_empty()
+        || !seconds.bytes().all(|byte| byte.is_ascii_digit())
+        || !fraction.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return false;
+    }
+
+    varnish_end.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 fn cookie_names(headers: &[Header]) -> Vec<String> {
@@ -253,6 +282,14 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             } else {
                 "server:fastly"
             },
+        );
+    }
+    if header_values(headers, "x-timer").any(looks_like_fastly_x_timer) {
+        add(
+            &mut elements,
+            PathElementRole::Cache,
+            "fastly",
+            "header:x-timer-fastly-shape",
         );
     }
     if via.contains("fastly")
