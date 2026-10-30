@@ -1,6 +1,6 @@
 use crate::model::{Header, PathElement, PathElementRole};
 
-pub const PATH_CLASSIFIER_VERSION: &str = "builtin-path-v5";
+pub const PATH_CLASSIFIER_VERSION: &str = "builtin-path-v6";
 
 fn header_values<'a>(headers: &'a [Header], name: &str) -> impl Iterator<Item = &'a str> {
     headers
@@ -28,6 +28,34 @@ fn joined_header_values(headers: &[Header], name: &str) -> String {
 
 fn has_header_value(headers: &[Header], name: &str, value: &str) -> bool {
     header_values(headers, name).any(|candidate| candidate.eq_ignore_ascii_case(value))
+}
+
+fn looks_like_akamai_grn(value: &str) -> bool {
+    let mut parts = value.split('.');
+    let Some(prefix) = parts.next() else {
+        return false;
+    };
+    let Some(edge_id) = parts.next() else {
+        return false;
+    };
+    let Some(timestamp) = parts.next() else {
+        return false;
+    };
+    let Some(request_id) = parts.next() else {
+        return false;
+    };
+    if parts.next().is_some()
+        || prefix != "0"
+        || edge_id.is_empty()
+        || timestamp.is_empty()
+        || request_id.is_empty()
+    {
+        return false;
+    }
+
+    edge_id.bytes().all(|byte| byte.is_ascii_hexdigit())
+        && timestamp.bytes().all(|byte| byte.is_ascii_digit())
+        && request_id.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn looks_like_fastly_x_timer(value: &str) -> bool {
@@ -270,6 +298,14 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             PathElementRole::EdgeProvider,
             "akamai",
             "marker:akamai-edge",
+        );
+    }
+    if header_values(headers, "x-cdn-traceid").any(looks_like_akamai_grn) {
+        add(
+            &mut elements,
+            PathElementRole::EdgeProvider,
+            "akamai",
+            "header:x-cdn-traceid-akamai-grn-shape",
         );
     }
     if server.contains("fastly") || has_header_value(headers, "server", "Artisanal bits") {

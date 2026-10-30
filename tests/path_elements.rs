@@ -306,6 +306,32 @@ fn fly_response_markers_are_edge_participation_evidence() {
 }
 
 #[test]
+fn akamai_grn_shaped_cdn_trace_id_is_edge_evidence() {
+    let elements =
+        detect_path_elements(&[header("x-cdn-traceid", "0.c43ad417.1790784936.9ebf21b5")]);
+    assert!(has(&elements, PathElementRole::EdgeProvider, "akamai"));
+
+    for non_akamai_value in [
+        "a42ab28e1b50bf23-WAW",
+        "0.c43ad417.not-a-time.9ebf21b5",
+        "0.not-hex.1790784936.9ebf21b5",
+        "1.c43ad417.1790784936.9ebf21b5",
+        "0.c43ad417.1790784936.9ebf21b5.extra",
+    ] {
+        let elements = detect_path_elements(&[header("x-cdn-traceid", non_akamai_value)]);
+        assert!(!has(&elements, PathElementRole::EdgeProvider, "akamai"));
+    }
+
+    let unrelated_header =
+        detect_path_elements(&[header("x-example-trace", "0.c43ad417.1790784936.9ebf21b5")]);
+    assert!(!has(
+        &unrelated_header,
+        PathElementRole::EdgeProvider,
+        "akamai"
+    ));
+}
+
+#[test]
 fn fastly_specific_cache_headers_do_not_claim_outer_edge() {
     for name in ["fastly-debug-path", "fastly-debug-ttl", "fastly-restarts"] {
         let elements = detect_path_elements(&[header(name, "1")]);
