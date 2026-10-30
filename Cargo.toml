@@ -26,7 +26,7 @@ hickory-resolver = { version = "0.26.3", default-features = false, features = ["
 regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
-sha2 = "0.10"
+sha2 = "0.11"
 tokio = { version = "1.52", features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }
 url = "2.5"
 wreq = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "953ea576f699c8664ecbff30805e746368c5cb5b", features = ["gzip", "brotli", "deflate", "stream", "prefix-symbols"] }
