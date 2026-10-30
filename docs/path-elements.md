@@ -6,7 +6,7 @@ That distinction matters. A response can preserve evidence from an outer CDN, a 
 
 ## Roles
 
-`builtin-path-v4` currently separates these roles:
+`builtin-path-v5` currently separates these roles:
 
 - `edge_provider` — managed serving/edge layer with explicit provider evidence;
 - `application_platform` — downstream delivery/application platform participation;
@@ -27,7 +27,7 @@ Each element stores the role, product label, classifier version, and the concret
 
 ## Current explicit markers
 
-The v4 recognizer includes:
+The v5 recognizer includes:
 
 - edge/provider: Cloudflare, CloudFront, Akamai, Fastly, F5 Distributed Cloud/Volt, Imperva, Sucuri, BunnyCDN, Google Front End, OpenResty Edge, Vercel, Netlify, Fly.io, Railway, KeyCDN, QUIC.cloud, CDN77, Tencent EdgeOne, Alibaba Cloud edge family;
 - downstream platforms: Vercel, Netlify, Azure Front Door, Render, Railway, Pantheon, Acquia Cloud Platform, Heroku;
@@ -42,7 +42,7 @@ The v4 recognizer includes:
 - WAF/security: AWS WAF (including `aws-waf-token` state), AWS ALB authentication, Cloudflare security/challenge and rate-limiting state, Imperva WAF, F5 BIG-IP ASM, FortiWeb;
 - bot management: Cloudflare Bot Management, Akamai Bot Manager, DataDome, HUMAN/PerimeterX.
 
-Fastly-specific `Fastly-Debug-*`, `fastly-restarts`, `x-fastly-backend-reqs`, and explicit Fastly `Via` responses are treated as Fastly cache participation rather than automatically asserting that Fastly was the outer edge. Generic `X-Cache-Hits` is deliberately excluded because Acquia and Pantheon also emit it. The same conservative rule is used for BunnyCDN's `cdn-*` cache metadata. Railway is different: its own documentation defines `X-Railway-Edge` as the POP that received the request and terminated TLS, so that marker supports an edge-provider claim while `X-Railway-Upstream-Zone` remains downstream platform/origin-zone evidence.
+Fastly-specific `Fastly-Debug-*`, `fastly-restarts`, `x-fastly-backend-reqs`, explicit Fastly `Via` responses, and `X-Timer` values matching Fastly's documented `S{unixStartTimeSeconds},VS0,VE{durationMilliseconds}` grammar are treated as Fastly cache participation rather than automatically asserting that Fastly was the outer edge. The value-shape check is deliberate: the historical corpus also contains unrelated numeric `X-Timer` values, so the header name alone is not sufficient despite Fastly documenting its own generated form as proprietary. Generic `X-Cache-Hits` is deliberately excluded because Acquia and Pantheon also emit it. The same conservative rule is used for BunnyCDN's `cdn-*` cache metadata. Railway is different: its own documentation defines `X-Railway-Edge` as the POP that received the request and terminated TLS, so that marker supports an edge-provider claim while `X-Railway-Upstream-Zone` remains downstream platform/origin-zone evidence.
 
 Origin-service markers are deliberately separate from edge identity. `Server: AkamaiNetStorage` is Akamai NetStorage origin evidence, not proof that an Akamai edge terminated the client connection. Likewise, `Server: UploadServer` is kept as a Google server-implementation marker; Google Cloud Storage is only claimed from storage-specific `x-goog-*` response metadata. `x-amz-bucket-region` is only S3-compatible object-storage evidence by itself because non-AWS implementations can emit the S3 header; `Server: AmazonS3` is required for the stronger `aws-s3` label, while `x-minio-deployment-id` identifies MinIO directly.
 
