@@ -1,6 +1,6 @@
 use crate::model::{PathElement, PathElementRole};
 
-pub const ROUTING_CLASSIFIER_VERSION: &str = "builtin-routing-v7";
+pub const ROUTING_CLASSIFIER_VERSION: &str = "builtin-routing-v8";
 
 fn normalize_name(value: &str) -> String {
     value.trim().trim_end_matches('.').to_ascii_lowercase()
@@ -139,6 +139,145 @@ fn looks_like_acquia_default_hostname(host: &str) -> bool {
         && !parts[1].is_empty()
 }
 
+fn looks_like_akamai_netstorage_http_hostname(host: &str) -> bool {
+    let parts = labels(host);
+    parts.len() == 3
+        && parts[1..] == ["akamaihd", "net"]
+        && parts[0]
+            .strip_suffix("-nsu")
+            .is_some_and(|prefix| !prefix.is_empty())
+}
+
+fn looks_like_google_cloud_storage_custom_domain_target(host: &str) -> bool {
+    host == "c.storage.googleapis.com"
+}
+
+fn looks_like_azure_blob_storage_hostname(host: &str) -> bool {
+    let parts = labels(host);
+    parts.len() == 5 && parts[1..] == ["blob", "core", "windows", "net"] && !parts[0].is_empty()
+}
+
+fn looks_like_backblaze_b2_s3_hostname(host: &str) -> bool {
+    let parts = labels(host);
+    match parts.as_slice() {
+        ["s3", region, "backblazeb2", "com"] => !region.is_empty(),
+        [bucket, "s3", region, "backblazeb2", "com"] => !bucket.is_empty() && !region.is_empty(),
+        _ => false,
+    }
+}
+
+fn looks_like_aws_region_label(label: &str) -> bool {
+    [
+        "us-", "af-", "ap-", "ca-", "cn-", "eu-", "il-", "me-", "mx-", "sa-", "eusc-",
+    ]
+    .iter()
+    .any(|prefix| label.starts_with(prefix))
+        && label.as_bytes().last().is_some_and(u8::is_ascii_digit)
+        && label
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+}
+
+fn aws_endpoint_root_len(parts: &[&str]) -> Option<usize> {
+    if parts.ends_with(&["amazonaws", "com", "cn"]) {
+        Some(3)
+    } else if parts.ends_with(&["amazonaws", "com"]) {
+        Some(2)
+    } else {
+        None
+    }
+}
+
+fn looks_like_aws_s3_access_point_label(label: &str) -> bool {
+    label.rsplit_once('-').is_some_and(|(name, account_id)| {
+        !name.is_empty()
+            && account_id.len() == 12
+            && account_id.bytes().all(|byte| byte.is_ascii_digit())
+    })
+}
+
+fn looks_like_aws_s3_data_hostname(host: &str) -> bool {
+    let parts = labels(host);
+    if parts.iter().any(|part| part.is_empty()) {
+        return false;
+    }
+    let Some(root_len) = aws_endpoint_root_len(&parts) else {
+        return false;
+    };
+    let body = &parts[..parts.len() - root_len];
+    let is_china_partition = root_len == 3;
+
+    if !is_china_partition && body.len() == 4 && body[1..] == ["mrap", "accesspoint", "s3-global"] {
+        return true;
+    }
+
+    if !is_china_partition
+        && body.len() == 3
+        && body[1] == "s3-accesspoint"
+        && looks_like_aws_s3_access_point_label(body[0])
+        && looks_like_aws_region_label(body[2])
+    {
+        return true;
+    }
+
+    if !is_china_partition && body.len() == 2 && body[1] == "s3-accelerate" {
+        return true;
+    }
+    if !is_china_partition && body.len() == 3 && body[1..] == ["s3-accelerate", "dualstack"] {
+        return true;
+    }
+
+    if body == ["s3"] {
+        return true;
+    }
+    if body.len() == 1
+        && body[0]
+            .strip_prefix("s3-")
+            .is_some_and(looks_like_aws_region_label)
+    {
+        return true;
+    }
+    if body.len() == 2 && body[0] == "s3" && looks_like_aws_region_label(body[1]) {
+        return true;
+    }
+    if body.len() == 3 && body[0..2] == ["s3", "dualstack"] && looks_like_aws_region_label(body[2])
+    {
+        return true;
+    }
+
+    if body.len() >= 4 {
+        let n = body.len();
+        if body[n - 3] == "s3"
+            && body[n - 2] == "dualstack"
+            && looks_like_aws_region_label(body[n - 1])
+        {
+            return true;
+        }
+    }
+
+    if body.len() >= 3 {
+        let n = body.len();
+        if body[n - 2] == "s3" && looks_like_aws_region_label(body[n - 1]) {
+            return true;
+        }
+    }
+
+    if body.len() >= 2 {
+        let service = body[body.len() - 1];
+        if service == "s3" {
+            return true;
+        }
+        if service
+            .strip_prefix("s3-")
+            .is_some_and(looks_like_aws_region_label)
+        {
+            return true;
+        }
+    }
+
+    false
+}
+
 fn looks_like_azure_cloud_edge_hostname(host: &str) -> bool {
     let parts = labels(host);
     (parts.len() == 3 && parts[1..] == ["azureedge", "net"] && !parts[0].is_empty())
@@ -206,6 +345,56 @@ pub fn detect_routing_elements(cname_chain: &[String]) -> Vec<PathElement> {
             continue;
         }
         let evidence = format!("cname:{host}");
+
+        if looks_like_akamai_netstorage_http_hostname(&host) {
+            add(
+                &mut elements,
+                PathElementRole::OriginService,
+                "akamai-netstorage",
+                evidence,
+            );
+            continue;
+        }
+
+        if looks_like_google_cloud_storage_custom_domain_target(&host) {
+            add(
+                &mut elements,
+                PathElementRole::OriginService,
+                "google-cloud-storage",
+                evidence,
+            );
+            continue;
+        }
+
+        if looks_like_azure_blob_storage_hostname(&host) {
+            add(
+                &mut elements,
+                PathElementRole::OriginService,
+                "azure-blob-storage",
+                evidence,
+            );
+            continue;
+        }
+
+        if looks_like_backblaze_b2_s3_hostname(&host) {
+            add(
+                &mut elements,
+                PathElementRole::OriginService,
+                "backblaze-b2",
+                evidence,
+            );
+            continue;
+        }
+
+        if looks_like_aws_s3_data_hostname(&host) {
+            add(
+                &mut elements,
+                PathElementRole::OriginService,
+                "aws-s3",
+                evidence,
+            );
+            continue;
+        }
 
         let edge_provider = [
             (
