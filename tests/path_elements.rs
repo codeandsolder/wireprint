@@ -824,3 +824,296 @@ fn alibaba_edge_family_does_not_overclaim_cdn_from_eagleid() {
             .any(|element| element.product.starts_with("alibaba-cloud"))
     );
 }
+
+#[test]
+fn path_v7_documented_response_markers_are_role_specific() {
+    for (name, value, role, product) in [
+        (
+            "x-msedge-ref",
+            "Ref A: abc Ref B: WAW Ref C: 2026-10-31T00:00:00Z",
+            PathElementRole::ApplicationPlatform,
+            "azure-front-door",
+        ),
+        (
+            "x-railway-request-id",
+            "8ef7494f-2677-4f69-bd30-a6f48e18b04c",
+            PathElementRole::ApplicationPlatform,
+            "railway",
+        ),
+        (
+            "x-github-request-id",
+            "1C73:26D4:E2E500:1EF78F4:62EC2479",
+            PathElementRole::ApplicationPlatform,
+            "github",
+        ),
+        (
+            "x-guploader-uploadid",
+            "ADPycdv-example",
+            PathElementRole::OriginService,
+            "google-cloud-storage",
+        ),
+        (
+            "x-goog-stored-content-length",
+            "350",
+            PathElementRole::OriginService,
+            "google-cloud-storage",
+        ),
+        (
+            "x-ms-access-tier",
+            "Hot",
+            PathElementRole::OriginService,
+            "azure-blob-storage",
+        ),
+        (
+            "x-oss-request-id",
+            "57ABD896CCB80C3669550000",
+            PathElementRole::OriginService,
+            "alibaba-oss",
+        ),
+        (
+            "akamai-cache-status",
+            "Miss from child, Hit from parent",
+            PathElementRole::Cache,
+            "akamai",
+        ),
+        (
+            "x-litespeed-cache",
+            "hit",
+            PathElementRole::Cache,
+            "litespeed",
+        ),
+        ("x-lsadc-cache", "miss", PathElementRole::Cache, "litespeed"),
+        (
+            "fastly-io-info",
+            "ifsz=108501 idim=827x788 ifmt=jpeg ofsz=13066 odim=300x286 ofmt=jpeg",
+            PathElementRole::Cache,
+            "fastly",
+        ),
+        ("fastly-stats", "io=1", PathElementRole::Cache, "fastly"),
+        (
+            "fastly-io-warning",
+            "example",
+            PathElementRole::Cache,
+            "fastly",
+        ),
+        (
+            "fastly-io-error",
+            "example",
+            PathElementRole::Cache,
+            "fastly",
+        ),
+        (
+            "x-ioriver",
+            "Fastly",
+            PathElementRole::TrafficManagement,
+            "ioriver",
+        ),
+    ] {
+        let elements = detect_path_elements(&[header(name, value)]);
+        assert!(
+            has(&elements, role, product),
+            "{name} should identify {role:?}:{product}; got {elements:?}"
+        );
+    }
+}
+
+#[test]
+fn hostinger_request_and_cache_headers_are_separate_roles() {
+    let request_only =
+        detect_path_elements(&[header("x-hcdn-request-id", "7f3a1c-example-us-phx-edge2")]);
+    assert!(has(
+        &request_only,
+        PathElementRole::EdgeProvider,
+        "hostinger-cdn"
+    ));
+    assert!(!has(&request_only, PathElementRole::Cache, "hostinger-cdn"));
+
+    let cache_only = detect_path_elements(&[header("x-hcdn-cache-status", "HIT")]);
+    assert!(has(&cache_only, PathElementRole::Cache, "hostinger-cdn"));
+    assert!(!has(
+        &cache_only,
+        PathElementRole::EdgeProvider,
+        "hostinger-cdn"
+    ));
+}
+
+#[test]
+fn current_heroku_router_via_is_platform_evidence() {
+    let elements = detect_path_elements(&[header("via", "2.0 heroku-router")]);
+    assert!(has(
+        &elements,
+        PathElementRole::ApplicationPlatform,
+        "heroku"
+    ));
+    assert!(!has(&elements, PathElementRole::EdgeProvider, "heroku"));
+}
+
+#[test]
+fn alibaba_oss_server_banner_is_origin_evidence() {
+    let elements = detect_path_elements(&[header("server", "AliyunOSS")]);
+    assert!(has(
+        &elements,
+        PathElementRole::OriginService,
+        "alibaba-oss"
+    ));
+    assert!(!has(
+        &elements,
+        PathElementRole::EdgeProvider,
+        "alibaba-cloud-edge"
+    ));
+}
+
+#[test]
+fn path_v7_composition_keeps_independent_roles() {
+    let alibaba_behind_akamai = detect_path_elements(&[
+        header("x-oss-request-id", "57ABD896CCB80C3669550000"),
+        header("akamai-cache-status", "Hit from child"),
+    ]);
+    assert!(has(
+        &alibaba_behind_akamai,
+        PathElementRole::OriginService,
+        "alibaba-oss"
+    ));
+    assert!(has(
+        &alibaba_behind_akamai,
+        PathElementRole::Cache,
+        "akamai"
+    ));
+    assert!(!has(
+        &alibaba_behind_akamai,
+        PathElementRole::EdgeProvider,
+        "akamai"
+    ));
+
+    let hostinger_and_litespeed = detect_path_elements(&[
+        header("x-hcdn-request-id", "7f3a1c-example-us-phx-edge2"),
+        header("x-hcdn-cache-status", "MISS"),
+        header("x-litespeed-cache", "hit"),
+    ]);
+    assert!(has(
+        &hostinger_and_litespeed,
+        PathElementRole::EdgeProvider,
+        "hostinger-cdn"
+    ));
+    assert!(has(
+        &hostinger_and_litespeed,
+        PathElementRole::Cache,
+        "hostinger-cdn"
+    ));
+    assert!(has(
+        &hostinger_and_litespeed,
+        PathElementRole::Cache,
+        "litespeed"
+    ));
+
+    let ioriver_on_fastly = detect_path_elements(&[
+        header("x-ioriver", "Fastly"),
+        header("fastly-stats", "io=1"),
+        header("via", "1.1 varnish, 1.1 varnish"),
+    ]);
+    assert!(has(
+        &ioriver_on_fastly,
+        PathElementRole::TrafficManagement,
+        "ioriver"
+    ));
+    assert!(has(&ioriver_on_fastly, PathElementRole::Cache, "fastly"));
+    assert!(has(&ioriver_on_fastly, PathElementRole::Cache, "varnish"));
+    assert!(!has(
+        &ioriver_on_fastly,
+        PathElementRole::EdgeProvider,
+        "ioriver"
+    ));
+}
+
+#[test]
+fn azure_front_door_platform_can_coexist_with_akamai_edge() {
+    let elements = detect_path_elements(&[
+        header(
+            "x-msedge-ref",
+            "Ref A: abc Ref B: WAW Ref C: 2026-10-31T00:00:00Z",
+        ),
+        header("akamai-grn", "0.25313217.1562625611.27bb4bb"),
+    ]);
+    assert!(has(
+        &elements,
+        PathElementRole::ApplicationPlatform,
+        "azure-front-door"
+    ));
+    assert!(has(&elements, PathElementRole::EdgeProvider, "akamai"));
+    assert!(!has(
+        &elements,
+        PathElementRole::EdgeProvider,
+        "azure-front-door"
+    ));
+}
+
+#[test]
+fn heroku_vercel_cloudflare_stack_is_not_collapsed() {
+    let elements = detect_path_elements(&[
+        header("server", "cloudflare"),
+        header("cf-ray", "abc-WAW"),
+        header("cf-cache-status", "HIT"),
+        header("via", "2.0 heroku-router"),
+        header("x-vercel-id", "iad1::example"),
+        header("x-vercel-cache", "HIT"),
+    ]);
+    assert!(has(&elements, PathElementRole::EdgeProvider, "cloudflare"));
+    assert!(has(&elements, PathElementRole::Cache, "cloudflare"));
+    assert!(has(
+        &elements,
+        PathElementRole::ApplicationPlatform,
+        "heroku"
+    ));
+    assert!(has(
+        &elements,
+        PathElementRole::ApplicationPlatform,
+        "vercel"
+    ));
+    assert!(has(&elements, PathElementRole::Cache, "vercel"));
+}
+
+#[test]
+fn aws_s3_extended_request_id_pair_survives_outer_proxies() {
+    let elements = detect_path_elements(&[
+        header(
+            "x-amz-id-2",
+            "a+zm50vDJH3LLmCiXvwEo0u0PtPS/qCJaBvB2ZMH9dzyzTiJhiLZkBFFoRfsPfOKztUKT/garCI=",
+        ),
+        header("x-amz-request-id", "N4NMN0MJ4VDFZMX9"),
+        header("server", "cloudflare"),
+        header("cf-ray", "abc-WAW"),
+    ]);
+    assert!(has(&elements, PathElementRole::OriginService, "aws-s3"));
+    assert!(has(&elements, PathElementRole::EdgeProvider, "cloudflare"));
+}
+
+#[test]
+fn s3_compatible_extended_request_id_shapes_do_not_claim_aws() {
+    for (request_id, extended_id) in [
+        (
+            "txg397acb87dde44403ac77-006ac6f50a",
+            "txg397acb87dde44403ac77-006ac6f50a",
+        ),
+        (
+            "0000019E8C51E6BB902181239E836E95",
+            "36AAAQAAEAABAAAQAAEAABAAAQAAEAABAAAaI=AAAAAAAAAAAAAAAAAAAAAAAAAA",
+        ),
+        (
+            "B02889FC63D7597E:B",
+            "YSC0qr7xP5QNv6bUTi6VvDvDF+43podMdekYJn0T7KVlRGYrtWrvk8Ey2jHePl2angkVZ95HEPmv",
+        ),
+        (
+            "e3ddd76a-16a3-457b-837e-0c900c65c561",
+            "e3ddd76a-16a3-457b-837e-0c900c65c561",
+        ),
+    ] {
+        let elements = detect_path_elements(&[
+            header("x-amz-id-2", extended_id),
+            header("x-amz-request-id", request_id),
+        ]);
+        assert!(
+            !has(&elements, PathElementRole::OriginService, "aws-s3"),
+            "compatible request-id shape {request_id:?} must not claim AWS"
+        );
+    }
+}

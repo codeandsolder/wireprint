@@ -1,6 +1,6 @@
 use crate::model::{Header, PathElement, PathElementRole};
 
-pub const PATH_CLASSIFIER_VERSION: &str = "builtin-path-v6";
+pub const PATH_CLASSIFIER_VERSION: &str = "builtin-path-v7";
 
 fn header_values<'a>(headers: &'a [Header], name: &str) -> impl Iterator<Item = &'a str> {
     headers
@@ -56,6 +56,13 @@ fn looks_like_akamai_grn(value: &str) -> bool {
     edge_id.bytes().all(|byte| byte.is_ascii_hexdigit())
         && timestamp.bytes().all(|byte| byte.is_ascii_digit())
         && request_id.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn looks_like_aws_s3_request_id(value: &str) -> bool {
+    value.len() == 16
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit())
 }
 
 fn looks_like_fastly_x_timer(value: &str) -> bool {
@@ -308,6 +315,14 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             "header:x-cdn-traceid-akamai-grn-shape",
         );
     }
+    if has_header(headers, "akamai-cache-status") {
+        add(
+            &mut elements,
+            PathElementRole::Cache,
+            "akamai",
+            "header:akamai-cache-status",
+        );
+    }
     if server.contains("fastly") || has_header_value(headers, "server", "Artisanal bits") {
         add(
             &mut elements,
@@ -337,6 +352,22 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             "header:fastly-debug-*"
         } else {
             "marker:fastly-cache-participation"
+        };
+        add(&mut elements, PathElementRole::Cache, "fastly", evidence);
+    }
+    if has_header(headers, "fastly-io-info")
+        || has_header(headers, "fastly-stats")
+        || has_header(headers, "fastly-io-warning")
+        || has_header(headers, "fastly-io-error")
+    {
+        let evidence = if has_header(headers, "fastly-io-info") {
+            "header:fastly-io-info"
+        } else if has_header(headers, "fastly-stats") {
+            "header:fastly-stats"
+        } else if has_header(headers, "fastly-io-warning") {
+            "header:fastly-io-warning"
+        } else {
+            "header:fastly-io-error"
         };
         add(&mut elements, PathElementRole::Cache, "fastly", evidence);
     }
@@ -441,6 +472,22 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             "marker:fly-io",
         );
     }
+    if has_header(headers, "x-hcdn-request-id") {
+        add(
+            &mut elements,
+            PathElementRole::EdgeProvider,
+            "hostinger-cdn",
+            "header:x-hcdn-request-id",
+        );
+    }
+    if has_header(headers, "x-hcdn-cache-status") {
+        add(
+            &mut elements,
+            PathElementRole::Cache,
+            "hostinger-cdn",
+            "header:x-hcdn-cache-status",
+        );
+    }
 
     // Delivery/application platforms: participation evidence, not necessarily the outer edge.
     if has_header(headers, "x-vercel-id") {
@@ -467,12 +514,16 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             "header:x-nf-request-id",
         );
     }
-    if has_header(headers, "x-azure-ref") {
+    if has_header(headers, "x-azure-ref") || has_header(headers, "x-msedge-ref") {
         add(
             &mut elements,
             PathElementRole::ApplicationPlatform,
             "azure-front-door",
-            "header:x-azure-ref",
+            if has_header(headers, "x-azure-ref") {
+                "header:x-azure-ref"
+            } else {
+                "header:x-msedge-ref"
+            },
         );
     }
 
@@ -492,16 +543,22 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             "header:x-railway-edge",
         );
     }
-    if has_header(headers, "x-railway-edge") || has_header(headers, "x-railway-upstream-zone") {
+    if has_header(headers, "x-railway-edge")
+        || has_header(headers, "x-railway-upstream-zone")
+        || has_header(headers, "x-railway-request-id")
+    {
+        let evidence = if has_header(headers, "x-railway-upstream-zone") {
+            "header:x-railway-upstream-zone"
+        } else if has_header(headers, "x-railway-edge") {
+            "header:x-railway-edge"
+        } else {
+            "header:x-railway-request-id"
+        };
         add(
             &mut elements,
             PathElementRole::ApplicationPlatform,
             "railway",
-            if has_header(headers, "x-railway-upstream-zone") {
-                "header:x-railway-upstream-zone"
-            } else {
-                "header:x-railway-edge"
-            },
+            evidence,
         );
     }
     if has_header(headers, "x-pantheon-styx-hostname") || has_header(headers, "x-styx-req-id") {
@@ -528,12 +585,24 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             },
         );
     }
-    if via.contains("vegur") {
+    if via.contains("vegur") || via.contains("heroku-router") {
         add(
             &mut elements,
             PathElementRole::ApplicationPlatform,
             "heroku",
-            "via:vegur",
+            if via.contains("heroku-router") {
+                "via:heroku-router"
+            } else {
+                "via:vegur"
+            },
+        );
+    }
+    if has_header(headers, "x-github-request-id") {
+        add(
+            &mut elements,
+            PathElementRole::ApplicationPlatform,
+            "github",
+            "header:x-github-request-id",
         );
     }
     if has_cookie(&cookies, "arraffinity") || has_cookie(&cookies, "arraffinitysamesite") {
@@ -859,6 +928,18 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             "server:litespeed",
         );
     }
+    if has_header(headers, "x-litespeed-cache") || has_header(headers, "x-lsadc-cache") {
+        add(
+            &mut elements,
+            PathElementRole::Cache,
+            "litespeed",
+            if has_header(headers, "x-lsadc-cache") {
+                "header:x-lsadc-cache"
+            } else {
+                "header:x-litespeed-cache"
+            },
+        );
+    }
     if has_header_value(headers, "server", "UploadServer") {
         add(
             &mut elements,
@@ -910,12 +991,18 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
 
     // Explicit backend/origin services. These can coexist with any outer
     // edge/cache/gateway marker preserved in the same response.
-    if has_header_value(headers, "server", "AmazonS3") {
+    let has_aws_s3_request_id_pair = has_header(headers, "x-amz-id-2")
+        && header_values(headers, "x-amz-request-id").any(looks_like_aws_s3_request_id);
+    if has_header_value(headers, "server", "AmazonS3") || has_aws_s3_request_id_pair {
         add(
             &mut elements,
             PathElementRole::OriginService,
             "aws-s3",
-            "server:amazons3",
+            if has_header_value(headers, "server", "AmazonS3") {
+                "server:amazons3"
+            } else {
+                "headers:x-amz-id-2+x-amz-request-id-aws-s3-shape"
+            },
         );
     } else if has_header(headers, "x-amz-bucket-region") {
         add(
@@ -946,29 +1033,57 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
         );
     }
     if has_header(headers, "x-goog-storage-class")
+        || has_header(headers, "x-guploader-uploadid")
+        || has_header(headers, "x-goog-stored-content-length")
+        || has_header(headers, "x-goog-stored-content-encoding")
         || (has_header(headers, "x-goog-generation")
             && has_header(headers, "x-goog-metageneration"))
     {
+        let evidence = if has_header(headers, "x-goog-storage-class") {
+            "header:x-goog-storage-class"
+        } else if has_header(headers, "x-guploader-uploadid") {
+            "header:x-guploader-uploadid"
+        } else if has_header(headers, "x-goog-stored-content-length") {
+            "header:x-goog-stored-content-length"
+        } else if has_header(headers, "x-goog-stored-content-encoding") {
+            "header:x-goog-stored-content-encoding"
+        } else {
+            "headers:x-goog-generation+x-goog-metageneration"
+        };
         add(
             &mut elements,
             PathElementRole::OriginService,
             "google-cloud-storage",
-            if has_header(headers, "x-goog-storage-class") {
-                "header:x-goog-storage-class"
-            } else {
-                "headers:x-goog-generation+x-goog-metageneration"
-            },
+            evidence,
         );
     }
-    if has_header(headers, "x-ms-blob-type") || server.contains("windows-azure-blob") {
+    if has_header(headers, "x-ms-blob-type")
+        || has_header(headers, "x-ms-access-tier")
+        || server.contains("windows-azure-blob")
+    {
+        let evidence = if has_header(headers, "x-ms-blob-type") {
+            "header:x-ms-blob-type"
+        } else if has_header(headers, "x-ms-access-tier") {
+            "header:x-ms-access-tier"
+        } else {
+            "server:windows-azure-blob"
+        };
         add(
             &mut elements,
             PathElementRole::OriginService,
             "azure-blob-storage",
-            if has_header(headers, "x-ms-blob-type") {
-                "header:x-ms-blob-type"
+            evidence,
+        );
+    }
+    if has_header(headers, "x-oss-request-id") || has_header_value(headers, "server", "AliyunOSS") {
+        add(
+            &mut elements,
+            PathElementRole::OriginService,
+            "alibaba-oss",
+            if has_header(headers, "x-oss-request-id") {
+                "header:x-oss-request-id"
             } else {
-                "server:windows-azure-blob"
+                "server:aliyunoss"
             },
         );
     }
@@ -1028,6 +1143,14 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             PathElementRole::IdentityProxy,
             "authentik",
             "location:/outpost.goauthentik.io/",
+        );
+    }
+    if has_header(headers, "x-ioriver") {
+        add(
+            &mut elements,
+            PathElementRole::TrafficManagement,
+            "ioriver",
+            "header:x-ioriver",
         );
     }
     if has_cookie_prefix(&cookies, "__cfwaitingroom") {

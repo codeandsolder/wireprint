@@ -6,7 +6,7 @@ That distinction matters. A response can preserve evidence from an outer CDN, a 
 
 ## Roles
 
-`builtin-path-v6` currently separates these roles:
+`builtin-path-v7` currently separates these roles:
 
 - `edge_provider` — managed serving/edge layer with explicit provider evidence;
 - `application_platform` — downstream delivery/application platform participation;
@@ -17,7 +17,7 @@ That distinction matters. A response can preserve evidence from an outer CDN, a 
 - `api_gateway` — API gateway participation;
 - `service_mesh` — service-mesh participation;
 - `identity_proxy` — identity-aware access proxy participation;
-- `traffic_management` — virtual waiting room / request-admission layer participation;
+- `traffic_management` — traffic steering/orchestration or request-admission layer participation;
 - `waf` — explicit WAF/product evidence;
 - `security_middleware` — security/challenge state that is not specific enough to call a WAF;
 - `bot_management` — bot-management product evidence;
@@ -27,26 +27,32 @@ Each element stores the role, product label, classifier version, and the concret
 
 ## Current explicit markers
 
-The v6 recognizer includes:
+The v7 recognizer includes:
 
 - edge/provider: Cloudflare, CloudFront, Akamai, Fastly, F5 Distributed Cloud/Volt, Imperva, Sucuri, BunnyCDN, Google Front End, OpenResty Edge, Vercel, Netlify, Fly.io, Railway, KeyCDN, QUIC.cloud, CDN77, Tencent EdgeOne, Alibaba Cloud edge family;
-- downstream platforms: Vercel, Netlify, Azure Front Door, Render, Railway, Pantheon, Acquia Cloud Platform, Heroku;
-- origin services: Amazon S3, generic S3-compatible object storage, MinIO, Akamai NetStorage, Google Cloud Storage, Azure Blob Storage, Backblaze B2;
+- downstream platforms: Vercel, Netlify, Azure Front Door, Render, Railway, Pantheon, Acquia Cloud Platform, Heroku, GitHub;
+- origin services: Amazon S3, generic S3-compatible object storage, MinIO, Akamai NetStorage, Google Cloud Storage, Azure Blob Storage, Alibaba OSS, Backblaze B2;
 - API gateways: AWS API Gateway, Kong, Apache APISIX, KrakenD, Tyk, Gravitee;
 - load balancers: AWS Application Load Balancer, AWS Classic Load Balancer, Google Cloud Application Load Balancer, F5 BIG-IP LTM, NetScaler ADC, Azure Application Gateway, Azure/Microsoft ARR affinity family, Cloudflare Load Balancer, Oracle Cloud Load Balancer;
-- reverse proxies / caches: Envoy, nghttpx, HAProxy, Traefik, Varnish, Squid, Apache Traffic Server;
+- reverse proxies / caches: Fastly Image Optimizer, Akamai cache, Hostinger CDN cache, LiteSpeed cache/Web ADC, Envoy, nghttpx, HAProxy, Traefik, Varnish, Squid, Apache Traffic Server;
 - service mesh: Istio when explicitly exposed as `istio-envoy`, and Linkerd when `l5d-*` response markers are exposed;
 - identity proxies: Google Cloud IAP, Cloudflare Access, OAuth2 Proxy, Authelia, authentik;
-- traffic management: Cloudflare Waiting Room, Queue-it;
+- traffic management: IO River, Cloudflare Waiting Room, Queue-it;
 - server implementations: nginx, OpenResty, Caddy, Apache HTTP Server, Microsoft IIS, LiteSpeed, Google UploadServer, SFFE, GSE;
 - WAF/security: AWS WAF (including `aws-waf-token` state), AWS ALB authentication, Cloudflare security/challenge and rate-limiting state, Imperva WAF, F5 BIG-IP ASM, FortiWeb;
 - bot management: Cloudflare Bot Management, Akamai Bot Manager, DataDome, HUMAN/PerimeterX.
 
 Fastly-specific `Fastly-Debug-*`, `fastly-restarts`, `x-fastly-backend-reqs`, explicit Fastly `Via` responses, and `X-Timer` values matching Fastly's documented `S{unixStartTimeSeconds},VS0,VE{durationMilliseconds}` grammar are treated as Fastly cache participation rather than automatically asserting that Fastly was the outer edge. The value-shape check is deliberate: the historical corpus also contains unrelated numeric `X-Timer` values, so the header name alone is not sufficient despite Fastly documenting its own generated form as proprietary. Generic `X-Cache-Hits` is deliberately excluded because Acquia and Pantheon also emit it. The same conservative rule is used for BunnyCDN's `cdn-*` cache metadata. Railway is different: its own documentation defines `X-Railway-Edge` as the POP that received the request and terminated TLS, so that marker supports an edge-provider claim while `X-Railway-Upstream-Zone` remains downstream platform/origin-zone evidence.
 
-Path v6 also recognizes an Akamai Global Request Number carried in the observed `X-CDN-TraceID` header, but only when the value has the documented GRN shape `0.<hex>.<decimal timestamp>.<hex>`. Akamai documents GRNs as identifiers generated on its edge network and allows the response-header name to be customer-configured. The value grammar is therefore the provider evidence; `X-CDN-TraceID` presence alone is not. Historical negative controls on `vcf.bing.com` use a different `...-WAW` value form and are deliberately excluded. Arbitrary headers containing a GRN-looking string are also not matched.
+Path v7 also recognizes an Akamai Global Request Number carried in the observed `X-CDN-TraceID` header, but only when the value has the documented GRN shape `0.<hex>.<decimal timestamp>.<hex>`. Akamai documents GRNs as identifiers generated on its edge network and allows the response-header name to be customer-configured. The value grammar is therefore the provider evidence; `X-CDN-TraceID` presence alone is not. Historical negative controls on `vcf.bing.com` use a different `...-WAW` value form and are deliberately excluded. Arbitrary headers containing a GRN-looking string are also not matched.
 
-Origin-service markers are deliberately separate from edge identity. `Server: AkamaiNetStorage` is Akamai NetStorage origin evidence, not proof that an Akamai edge terminated the client connection. Likewise, `Server: UploadServer` is kept as a Google server-implementation marker; Google Cloud Storage is only claimed from storage-specific `x-goog-*` response metadata. `x-amz-bucket-region` is only S3-compatible object-storage evidence by itself because non-AWS implementations can emit the S3 header; `Server: AmazonS3` is required for the stronger `aws-s3` label, while `x-minio-deployment-id` identifies MinIO directly.
+Path v7 expands response provenance using provider-documented markers found by a wide historical-header census and then validated compositionally rather than from co-occurrence alone. `X-HCDN-Request-ID` identifies Hostinger CDN delivery while `X-HCDN-Cache-Status` is a separate Hostinger cache role. `Akamai-Cache-Status` likewise contributes `cache: akamai` without upgrading itself into an outer-edge claim. Fastly Image Optimizer's documented `Fastly-IO-Info`, `Fastly-Stats`, warning, and error response headers contribute Fastly cache/transform participation; they can coexist with a different outer edge or preserved origin metadata.
+
+The same release broadens downstream and origin provenance. Azure Front Door's reserved `X-MSEdge-Ref` joins `X-Azure-Ref` as application-platform participation only. Current `Via: ... heroku-router` values join legacy `vegur` as Heroku platform evidence. `X-Railway-Request-Id` adds Railway platform evidence without implying TLS termination, while `X-Railway-Edge` remains the stronger edge marker. `X-GitHub-Request-Id` identifies GitHub platform participation. Google Cloud Storage now accepts its documented `X-Guploader-UploadID` and stored-content response headers; Azure Blob accepts `X-MS-Access-Tier`; Alibaba OSS accepts `X-OSS-Request-ID` or `Server: AliyunOSS`. These remain origin-service claims even when Cloudflare, Akamai, Fastly, CDN77, or another delivery layer preserves them.
+
+Finally, `X-IORiver` is deliberately modeled as `traffic_management: ioriver`, not as a serving CDN. IO River documents that the header is present on traffic served through its service and that the header value identifies the CDN provider actually handling the request. This lets one response correctly preserve both the orchestration layer and the concrete downstream CDN/cache participant.
+
+Origin-service markers are deliberately separate from edge identity. `Server: AkamaiNetStorage` is Akamai NetStorage origin evidence, not proof that an Akamai edge terminated the client connection. Likewise, `Server: UploadServer` is kept as a Google server-implementation marker; Google Cloud Storage is only claimed from storage-specific `x-goog-*` response metadata. `x-amz-bucket-region` is only S3-compatible object-storage evidence by itself because non-AWS implementations can emit the S3 header. The stronger `aws-s3` label accepts `Server: AmazonS3` or the paired S3 extended/request-ID response headers when `x-amz-request-id` has the 16-character uppercase-alphanumeric form observed in current AWS general-purpose S3 responses. This shape constraint is deliberate: historical controls include Scaleway/Ceph `tx...` IDs, 32-hex IDs, UUIDs, and `HEX:B` IDs alongside `x-amz-id-2`. `x-minio-deployment-id` continues to identify MinIO directly.
 
 The v3 additions follow the same positive-evidence rule. CDN77 documents `X-77-POP` as the edge location that handled and delivered the response, while `X-77-Cache` / `X-77-Age` describe cache state; cache-only evidence therefore does not promote itself to `edge_provider`. Oracle Cloud Load Balancer's default generated stickiness cookie `X-Oracle-BMC-LBS-Route` is load-balancer evidence when present. OAuth2 Proxy's `_oauth2_proxy`, Authelia's `authelia_session`, and authentik's `/outpost.goauthentik.io/` redirect namespace are identity-proxy evidence. The OAuth2 Proxy and Authelia cookie names are configurable, so their absence is especially meaningless.
 
