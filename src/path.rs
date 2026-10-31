@@ -605,6 +605,32 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             "header:x-github-request-id",
         );
     }
+    if has_header(headers, "x-wix-request-id") {
+        add(
+            &mut elements,
+            PathElementRole::ApplicationPlatform,
+            "wix",
+            "header:x-wix-request-id",
+        );
+    }
+    if has_header(headers, "ki-cf-cache-status")
+        || has_header(headers, "ki-cache-type")
+        || has_header(headers, "x-kinsta-cache")
+    {
+        let evidence = if has_header(headers, "ki-cf-cache-status") {
+            "header:ki-cf-cache-status"
+        } else if has_header(headers, "ki-cache-type") {
+            "header:ki-cache-type"
+        } else {
+            "header:x-kinsta-cache"
+        };
+        add(
+            &mut elements,
+            PathElementRole::ApplicationPlatform,
+            "kinsta",
+            evidence,
+        );
+    }
     if has_cookie(&cookies, "arraffinity") || has_cookie(&cookies, "arraffinitysamesite") {
         add(
             &mut elements,
@@ -938,6 +964,14 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             } else {
                 "header:x-litespeed-cache"
             },
+        );
+    }
+    if has_header(headers, "x-kinsta-cache") {
+        add(
+            &mut elements,
+            PathElementRole::Cache,
+            "kinsta",
+            "header:x-kinsta-cache",
         );
     }
     if has_header_value(headers, "server", "UploadServer") {

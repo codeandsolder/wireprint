@@ -911,7 +911,7 @@ fn path_v7_documented_response_markers_are_role_specific() {
     ] {
         let elements = detect_path_elements(&[header(name, value)]);
         assert!(
-            has(&elements, role, product),
+            has(&elements, role.clone(), product),
             "{name} should identify {role:?}:{product}; got {elements:?}"
         );
     }
@@ -1116,4 +1116,92 @@ fn s3_compatible_extended_request_id_shapes_do_not_claim_aws() {
             "compatible request-id shape {request_id:?} must not claim AWS"
         );
     }
+}
+
+#[test]
+fn kinsta_platform_and_site_cache_are_distinct_from_cloudflare_edge_cache() {
+    let platform_only = detect_path_elements(&[
+        header("ki-cache-type", "Edge"),
+        header("ki-cf-cache-status", "HIT"),
+    ]);
+    assert!(has(
+        &platform_only,
+        PathElementRole::ApplicationPlatform,
+        "kinsta"
+    ));
+    assert!(!has(&platform_only, PathElementRole::Cache, "kinsta"));
+    assert!(!has(
+        &platform_only,
+        PathElementRole::EdgeProvider,
+        "kinsta"
+    ));
+    let full_stack = detect_path_elements(&[
+        header("server", "cloudflare"),
+        header("cf-ray", "abc-WAW"),
+        header("cf-cache-status", "DYNAMIC"),
+        header("ki-cache-type", "Edge"),
+        header("ki-cf-cache-status", "HIT"),
+        header("x-kinsta-cache", "HIT"),
+    ]);
+    assert!(has(
+        &full_stack,
+        PathElementRole::ApplicationPlatform,
+        "kinsta"
+    ));
+    assert!(has(&full_stack, PathElementRole::Cache, "kinsta"));
+    assert!(has(
+        &full_stack,
+        PathElementRole::EdgeProvider,
+        "cloudflare"
+    ));
+    assert!(has(&full_stack, PathElementRole::Cache, "cloudflare"));
+}
+
+#[test]
+fn kinsta_site_cache_header_is_also_platform_provenance() {
+    let elements = detect_path_elements(&[header("x-kinsta-cache", "HIT")]);
+    assert!(has(
+        &elements,
+        PathElementRole::ApplicationPlatform,
+        "kinsta"
+    ));
+    assert!(has(&elements, PathElementRole::Cache, "kinsta"));
+}
+
+#[test]
+fn undocumented_ki_edge_header_alone_is_not_kinsta_provenance() {
+    let elements = detect_path_elements(&[header("ki-edge", "v=28.6.0;mv=99.9.9")]);
+    assert!(!elements.iter().any(|element| element.product == "kinsta"));
+}
+
+#[test]
+fn wix_request_id_is_platform_provenance_not_outer_edge() {
+    let elements =
+        detect_path_elements(&[header("x-wix-request-id", "1790856103.75865081988264117")]);
+    assert!(has(&elements, PathElementRole::ApplicationPlatform, "wix"));
+    assert!(!has(&elements, PathElementRole::EdgeProvider, "wix"));
+}
+
+#[test]
+fn wix_platform_survives_independent_google_and_cloudflare_layers() {
+    let elements = detect_path_elements(&[
+        header("x-wix-request-id", "1790856103.75865081988264117"),
+        header("via", "1.1 google"),
+        header("server", "cloudflare"),
+        header("cf-cache-status", "DYNAMIC"),
+    ]);
+    assert!(has(&elements, PathElementRole::ApplicationPlatform, "wix"));
+    assert!(has(
+        &elements,
+        PathElementRole::LoadBalancer,
+        "google-cloud-application-load-balancer"
+    ));
+    assert!(has(&elements, PathElementRole::EdgeProvider, "cloudflare"));
+    assert!(has(&elements, PathElementRole::Cache, "cloudflare"));
+}
+
+#[test]
+fn generic_wix_seen_by_header_alone_is_not_platform_provenance() {
+    let elements = detect_path_elements(&[header("x-seen-by", "opaque")]);
+    assert!(!elements.iter().any(|element| element.product == "wix"));
 }
