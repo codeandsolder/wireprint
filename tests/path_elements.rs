@@ -859,6 +859,12 @@ fn path_v7_documented_response_markers_are_role_specific() {
             "google-cloud-storage",
         ),
         (
+            "x-goog-stored-content-encoding",
+            "identity",
+            PathElementRole::OriginService,
+            "google-cloud-storage",
+        ),
+        (
             "x-ms-access-tier",
             "Hot",
             PathElementRole::OriginService,
