@@ -148,6 +148,8 @@ fn routing_object_storage_origins_do_not_originate_termination_candidates() {
         ("s3.us-west-004.backblazeb2.com", "backblaze-b2"),
         ("bucket.s3.us-west-2.amazonaws.com", "aws-s3"),
         ("baseball-nsu.akamaihd.net", "akamai-netstorage"),
+        ("fra1.digitaloceanspaces.com", "digitalocean-spaces"),
+        ("payload.fra1.digitaloceanspaces.com", "digitalocean-spaces"),
     ] {
         let assessment = assess_endpoint(&EndpointEvidence {
             routing_elements: detect_routing_elements(&[hostname.into()]),
@@ -160,6 +162,56 @@ fn routing_object_storage_origins_do_not_originate_termination_candidates() {
             element.role == PathElementRole::OriginService && element.product == product
         }));
     }
+}
+
+#[test]
+fn digitalocean_spaces_cdn_and_cloudflare_preserve_layered_serving_candidates() {
+    let response = detect_path_elements(&[
+        wireprint::Header {
+            name: "server".into(),
+            value: "cloudflare".into(),
+        },
+        wireprint::Header {
+            name: "cf-ray".into(),
+            value: "a545ed47b926b617-WAW".into(),
+        },
+    ]);
+    let routing = detect_routing_elements(&["hopperhq.ams3.cdn.digitaloceanspaces.com".into()]);
+    let assessment = assess_endpoint(&EndpointEvidence {
+        response_elements: response,
+        routing_elements: routing,
+        ..EndpointEvidence::default()
+    });
+
+    assert_eq!(assessment.state, TerminationState::MultipleCandidates);
+    assert_eq!(
+        assessment
+            .candidates
+            .iter()
+            .map(|candidate| candidate.provider.as_str())
+            .collect::<Vec<_>>(),
+        vec!["cloudflare", "digitalocean-spaces-cdn"]
+    );
+    assert!(assessment.path_elements.iter().any(|element| {
+        element.role == PathElementRole::OriginService && element.product == "digitalocean-spaces"
+    }));
+}
+
+#[test]
+fn digitalocean_spaces_cdn_routing_can_originate_its_managed_edge() {
+    let assessment = assess_endpoint(&EndpointEvidence {
+        routing_elements: detect_routing_elements(&[
+            "hopperhq.ams3.cdn.digitaloceanspaces.com".into()
+        ]),
+        ..EndpointEvidence::default()
+    });
+
+    assert_eq!(assessment.state, TerminationState::SingleCandidate);
+    assert_eq!(assessment.candidates.len(), 1);
+    assert_eq!(assessment.candidates[0].provider, "digitalocean-spaces-cdn");
+    assert!(assessment.path_elements.iter().any(|element| {
+        element.role == PathElementRole::OriginService && element.product == "digitalocean-spaces"
+    }));
 }
 
 #[test]

@@ -1,6 +1,6 @@
 use crate::model::{PathElement, PathElementRole};
 
-pub const ROUTING_CLASSIFIER_VERSION: &str = "builtin-routing-v8";
+pub const ROUTING_CLASSIFIER_VERSION: &str = "builtin-routing-v9";
 
 fn normalize_name(value: &str) -> String {
     value.trim().trim_end_matches('.').to_ascii_lowercase()
@@ -164,6 +164,71 @@ fn looks_like_backblaze_b2_s3_hostname(host: &str) -> bool {
         [bucket, "s3", region, "backblazeb2", "com"] => !bucket.is_empty() && !region.is_empty(),
         _ => false,
     }
+}
+
+fn looks_like_digitalocean_spaces_region(label: &str) -> bool {
+    matches!(
+        label,
+        "nyc3"
+            | "ams3"
+            | "sfo2"
+            | "sfo3"
+            | "sgp1"
+            | "lon1"
+            | "fra1"
+            | "tor1"
+            | "blr1"
+            | "syd1"
+            | "atl1"
+            | "ric1"
+            | "mkc1"
+    )
+}
+
+fn looks_like_dns_label(label: &str) -> bool {
+    let bytes = label.as_bytes();
+    !bytes.is_empty()
+        && bytes.len() <= 63
+        && bytes.first().is_some_and(u8::is_ascii_alphanumeric)
+        && bytes.last().is_some_and(u8::is_ascii_alphanumeric)
+        && bytes
+            .iter()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-')
+}
+
+fn digitalocean_spaces_body(host: &str) -> Option<&str> {
+    host.strip_suffix(".digitaloceanspaces.com")
+        .filter(|body| !body.is_empty())
+}
+
+fn looks_like_digitalocean_spaces_bucket(bucket: &str) -> bool {
+    (3..=63).contains(&bucket.len()) && bucket.split('.').all(looks_like_dns_label)
+}
+
+fn looks_like_digitalocean_spaces_cdn_hostname(host: &str) -> bool {
+    let Some(body) = digitalocean_spaces_body(host) else {
+        return false;
+    };
+    let Some(endpoint) = body.strip_suffix(".cdn") else {
+        return false;
+    };
+    let Some((bucket, region)) = endpoint.rsplit_once('.') else {
+        return false;
+    };
+
+    looks_like_digitalocean_spaces_region(region) && looks_like_digitalocean_spaces_bucket(bucket)
+}
+
+fn looks_like_digitalocean_spaces_origin_hostname(host: &str) -> bool {
+    let Some(body) = digitalocean_spaces_body(host) else {
+        return false;
+    };
+    if let Some((bucket, region)) = body.rsplit_once('.') {
+        return looks_like_digitalocean_spaces_region(region)
+            && looks_like_digitalocean_spaces_bucket(bucket);
+    }
+
+    looks_like_digitalocean_spaces_region(body)
 }
 
 fn looks_like_aws_region_label(label: &str) -> bool {
@@ -381,6 +446,32 @@ pub fn detect_routing_elements(cname_chain: &[String]) -> Vec<PathElement> {
                 &mut elements,
                 PathElementRole::OriginService,
                 "backblaze-b2",
+                evidence,
+            );
+            continue;
+        }
+
+        if looks_like_digitalocean_spaces_cdn_hostname(&host) {
+            add(
+                &mut elements,
+                PathElementRole::EdgeProvider,
+                "digitalocean-spaces-cdn",
+                evidence.clone(),
+            );
+            add(
+                &mut elements,
+                PathElementRole::OriginService,
+                "digitalocean-spaces",
+                evidence,
+            );
+            continue;
+        }
+
+        if looks_like_digitalocean_spaces_origin_hostname(&host) {
+            add(
+                &mut elements,
+                PathElementRole::OriginService,
+                "digitalocean-spaces",
                 evidence,
             );
             continue;
