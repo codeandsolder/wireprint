@@ -97,6 +97,40 @@ fn managed_object_storage_hostnames_emit_origin_provenance() {
 }
 
 #[test]
+fn imgix_source_hostnames_emit_managed_edge_provenance() {
+    for hostname in [
+        "axeptio.imgix.net",
+        "fractal-media.imgix.net",
+        "unsplash.imgix.net.",
+    ] {
+        let elements = detect_routing_elements(&[hostname.into()]);
+        assert!(has(&elements, PathElementRole::EdgeProvider, "imgix"));
+    }
+
+    let layered = detect_routing_elements(&[
+        "unsplash.imgix.net".into(),
+        "dualstack.com.imgix.map.fastly.net".into(),
+    ]);
+    assert!(has(&layered, PathElementRole::EdgeProvider, "imgix"));
+    assert!(has(&layered, PathElementRole::EdgeProvider, "fastly"));
+}
+
+#[test]
+fn imgix_parent_deeper_and_malformed_names_are_not_edge_claims() {
+    for hostname in [
+        "imgix.net",
+        "foo.bar.imgix.net",
+        "-bad.imgix.net",
+        "bad-.imgix.net",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.imgix.net",
+        "imgix.net.example",
+    ] {
+        let elements = detect_routing_elements(&[hostname.into()]);
+        assert!(!has(&elements, PathElementRole::EdgeProvider, "imgix"));
+    }
+}
+
+#[test]
 fn digitalocean_spaces_endpoints_separate_cdn_edge_from_storage_origin() {
     for hostname in [
         "hopperhq.ams3.cdn.digitaloceanspaces.com",

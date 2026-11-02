@@ -167,6 +167,40 @@ fn routing_object_storage_origins_do_not_originate_termination_candidates() {
 }
 
 #[test]
+fn imgix_and_fastly_routing_preserve_layered_serving_candidates() {
+    let routing = detect_routing_elements(&[
+        "unsplash.imgix.net".into(),
+        "dualstack.com.imgix.map.fastly.net".into(),
+    ]);
+    let assessment = assess_endpoint(&EndpointEvidence {
+        routing_elements: routing,
+        ..EndpointEvidence::default()
+    });
+
+    assert_eq!(assessment.state, TerminationState::MultipleCandidates);
+    assert_eq!(
+        assessment
+            .candidates
+            .iter()
+            .map(|candidate| candidate.provider.as_str())
+            .collect::<Vec<_>>(),
+        vec!["fastly", "imgix"]
+    );
+}
+
+#[test]
+fn imgix_routing_can_originate_its_managed_edge() {
+    let assessment = assess_endpoint(&EndpointEvidence {
+        routing_elements: detect_routing_elements(&["axeptio.imgix.net".into()]),
+        ..EndpointEvidence::default()
+    });
+
+    assert_eq!(assessment.state, TerminationState::SingleCandidate);
+    assert_eq!(assessment.candidates.len(), 1);
+    assert_eq!(assessment.candidates[0].provider, "imgix");
+}
+
+#[test]
 fn cloudflare_edge_and_hubspot_platform_preserve_layered_roles() {
     let response = detect_path_elements(&[
         wireprint::Header {

@@ -1,6 +1,6 @@
 use crate::model::{PathElement, PathElementRole};
 
-pub const ROUTING_CLASSIFIER_VERSION: &str = "builtin-routing-v10";
+pub const ROUTING_CLASSIFIER_VERSION: &str = "builtin-routing-v11";
 
 fn normalize_name(value: &str) -> String {
     value.trim().trim_end_matches('.').to_ascii_lowercase()
@@ -542,6 +542,16 @@ pub fn detect_routing_elements(cname_chain: &[String]) -> Vec<PathElement> {
                 &mut elements,
                 PathElementRole::OriginService,
                 "aws-s3",
+                evidence,
+            );
+            continue;
+        }
+
+        if one_valid_label_under(&host, "imgix.net").is_some() {
+            add(
+                &mut elements,
+                PathElementRole::EdgeProvider,
+                "imgix",
                 evidence,
             );
             continue;
