@@ -1224,3 +1224,16 @@ fn digitalocean_cdn_uuid_alone_is_not_response_provenance() {
             .any(|element| element.product.starts_with("digitalocean"))
     );
 }
+
+#[test]
+fn hubspot_internal_headers_alone_are_not_response_provenance() {
+    let elements = detect_path_elements(&[
+        header("x-hs-portal-id", "449964"),
+        header("x-hs-cfworker-meta", r#"{"resolver":"HubFsResolver"}"#),
+        header(
+            "x-hubspot-correlation-id",
+            "01a11929-2fd9-7e47-95f7-f1b4a63ad068",
+        ),
+    ]);
+    assert!(!elements.iter().any(|element| element.product == "hubspot"));
+}

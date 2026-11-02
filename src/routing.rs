@@ -1,6 +1,6 @@
 use crate::model::{PathElement, PathElementRole};
 
-pub const ROUTING_CLASSIFIER_VERSION: &str = "builtin-routing-v9";
+pub const ROUTING_CLASSIFIER_VERSION: &str = "builtin-routing-v10";
 
 fn normalize_name(value: &str) -> String {
     value.trim().trim_end_matches('.').to_ascii_lowercase()
@@ -229,6 +229,66 @@ fn looks_like_digitalocean_spaces_origin_hostname(host: &str) -> bool {
     }
 
     looks_like_digitalocean_spaces_region(body)
+}
+
+fn one_valid_label_under<'a>(host: &'a str, suffix: &str) -> Option<&'a str> {
+    let label = host.strip_suffix(suffix)?.strip_suffix('.')?;
+    (!label.contains('.') && looks_like_dns_label(label)).then_some(label)
+}
+
+fn looks_like_numeric_label(label: &str) -> bool {
+    looks_like_dns_label(label) && label.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+fn looks_like_hubspot_named_system_label(label: &str) -> bool {
+    label
+        .rsplit_once('-')
+        .is_some_and(|(name, hub_id)| !name.is_empty() && looks_like_numeric_label(hub_id))
+}
+
+fn looks_like_hubspot_system_hostname(host: &str) -> bool {
+    const NUMERIC_ONLY_ROOTS: [&str; 1] = ["hs-sites.eu"];
+    const NUMERIC_OR_NAMED_ROOTS: [&str; 5] = [
+        "hs-sites.com",
+        "hs-sites-eu1.com",
+        "hs-sites-na2.com",
+        "hs-sites-na3.com",
+        "hs-sites-ap1.com",
+    ];
+    const NAMED_ONLY_ROOTS: [&str; 3] = ["hs-sites.net", "hs-sites.ca", "hs-sites.au"];
+    const LEGACY_PAGE_BUILDER_ROOTS: [&str; 5] = [
+        "hubspotpagebuilder.com",
+        "hubspotpagebuilder.eu",
+        "hubspotpagebuilder.net",
+        "hubspotpagebuilder.ca",
+        "hubspotpagebuilder.au",
+    ];
+
+    NUMERIC_ONLY_ROOTS
+        .into_iter()
+        .any(|suffix| one_valid_label_under(host, suffix).is_some_and(looks_like_numeric_label))
+        || NUMERIC_OR_NAMED_ROOTS.into_iter().any(|suffix| {
+            one_valid_label_under(host, suffix).is_some_and(|label| {
+                looks_like_numeric_label(label) || looks_like_hubspot_named_system_label(label)
+            })
+        })
+        || NAMED_ONLY_ROOTS.into_iter().any(|suffix| {
+            one_valid_label_under(host, suffix).is_some_and(looks_like_hubspot_named_system_label)
+        })
+        || LEGACY_PAGE_BUILDER_ROOTS
+            .into_iter()
+            .any(|suffix| one_valid_label_under(host, suffix).is_some_and(looks_like_numeric_label))
+}
+
+fn looks_like_hubspot_site_cname(host: &str) -> bool {
+    let parts = labels(host);
+    parts.len() == 5
+        && parts[2..] == ["sites", "hubspot", "net"]
+        && looks_like_numeric_label(parts[0])
+        && looks_like_dns_label(parts[1])
+        && parts[1]
+            .strip_prefix("group")
+            .is_some_and(looks_like_numeric_label)
 }
 
 fn looks_like_aws_region_label(label: &str) -> bool {
@@ -736,6 +796,16 @@ pub fn detect_routing_elements(cname_chain: &[String]) -> Vec<PathElement> {
                 &mut elements,
                 PathElementRole::ApplicationPlatform,
                 "pantheon",
+                evidence,
+            );
+            continue;
+        }
+
+        if looks_like_hubspot_system_hostname(&host) || looks_like_hubspot_site_cname(&host) {
+            add(
+                &mut elements,
+                PathElementRole::ApplicationPlatform,
+                "hubspot",
                 evidence,
             );
             continue;

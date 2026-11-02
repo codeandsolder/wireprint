@@ -114,6 +114,8 @@ fn managed_platform_routing_stays_non_originating() {
         ("example.onrender.com", "render"),
         ("whispering-willow-5678.herokudns.com", "heroku"),
         ("live-example.pantheonsite.io", "pantheon"),
+        ("137828.hs-sites.com", "hubspot"),
+        ("19490924.group24.sites.hubspot.net", "hubspot"),
         ("mysite.prod.acquia-sites.com", "acquia-cloud-platform"),
     ] {
         let assessment = assess_endpoint(&EndpointEvidence {
@@ -162,6 +164,33 @@ fn routing_object_storage_origins_do_not_originate_termination_candidates() {
             element.role == PathElementRole::OriginService && element.product == product
         }));
     }
+}
+
+#[test]
+fn cloudflare_edge_and_hubspot_platform_preserve_layered_roles() {
+    let response = detect_path_elements(&[
+        wireprint::Header {
+            name: "server".into(),
+            value: "cloudflare".into(),
+        },
+        wireprint::Header {
+            name: "cf-ray".into(),
+            value: "a545ed47b926b617-WAW".into(),
+        },
+    ]);
+    let routing = detect_routing_elements(&["19490924.group24.sites.hubspot.net".into()]);
+    let assessment = assess_endpoint(&EndpointEvidence {
+        response_elements: response,
+        routing_elements: routing,
+        ..EndpointEvidence::default()
+    });
+
+    assert_eq!(assessment.state, TerminationState::SingleCandidate);
+    assert_eq!(assessment.candidates.len(), 1);
+    assert_eq!(assessment.candidates[0].provider, "cloudflare");
+    assert!(assessment.path_elements.iter().any(|element| {
+        element.role == PathElementRole::ApplicationPlatform && element.product == "hubspot"
+    }));
 }
 
 #[test]

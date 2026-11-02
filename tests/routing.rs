@@ -673,6 +673,80 @@ fn managed_application_platform_hostnames_emit_bounded_provenance() {
 }
 
 #[test]
+fn hubspot_hosted_site_names_emit_platform_provenance() {
+    for hostname in [
+        "137828.hs-sites.com",
+        "ezblockchain-4353115.hs-sites.com",
+        "12345.hs-sites.eu",
+        "143796548.hs-sites-eu1.com",
+        "portal-12345.hs-sites.net",
+        "12345.hs-sites-na2.com",
+        "portal-12345.hs-sites.ca",
+        "12345.hs-sites-na3.com",
+        "portal-12345.hs-sites.au",
+        "12345.hs-sites-ap1.com",
+        "12345.hubspotpagebuilder.com",
+        "12345.hubspotpagebuilder.eu",
+        "12345.hubspotpagebuilder.net",
+        "12345.hubspotpagebuilder.ca",
+        "12345.hubspotpagebuilder.au",
+        "19490924.group24.sites.hubspot.net",
+    ] {
+        let elements = detect_routing_elements(&[hostname.into()]);
+        assert!(has(
+            &elements,
+            PathElementRole::ApplicationPlatform,
+            "hubspot"
+        ));
+        assert!(
+            !elements
+                .iter()
+                .any(|element| element.role == PathElementRole::EdgeProvider)
+        );
+    }
+}
+
+#[test]
+fn hubspot_non_hosting_and_lookalike_names_are_not_platform_provenance() {
+    for hostname in [
+        "hs-sites.com",
+        "bareportal.hs-sites.com",
+        "portal-name.hs-sites.net",
+        "portal-abc.hs-sites-eu1.com",
+        "portal-12345.hs-sites.eu",
+        "12345.hs-sites.net",
+        "12345.hs-sites.ca",
+        "12345.hs-sites.au",
+        "nested.137828.hs-sites.com",
+        "-invalid.hs-sites.com",
+        "invalid-.hs-sites.com",
+        "hubspotpagebuilder.com",
+        "legacy-name.hubspotpagebuilder.com",
+        "nested.12345.hubspotpagebuilder.com",
+        "sites.hubspot.net",
+        "group24.sites.hubspot.net",
+        "abc.group24.sites.hubspot.net",
+        "19490924.groupx.sites.hubspot.net",
+        "19490924.group.sites.hubspot.net",
+        "nested.19490924.group24.sites.hubspot.net",
+        "1111111111111111111111111111111111111111111111111111111111111111.group24.sites.hubspot.net",
+        "19490924.group22222222222222222222222222222222222222222222222222222222222.sites.hubspot.net",
+        "513577g27.secure004.hubspot.net",
+        "cdn2.hubspot.net",
+        "js.hs-scripts.com",
+        "forms.hsforms.com",
+        "example.hs1a.dkim.hubspotemail.net",
+    ] {
+        let elements = detect_routing_elements(&[hostname.into()]);
+        assert!(!has(
+            &elements,
+            PathElementRole::ApplicationPlatform,
+            "hubspot"
+        ));
+    }
+}
+
+#[test]
 fn acquia_default_environment_hostname_emits_platform_and_origin() {
     for hostname in [
         "mysite.prod.acquia-sites.com",
