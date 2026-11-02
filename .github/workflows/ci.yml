@@ -29,7 +29,7 @@ jobs:
   rust-1-99-1-pr:
     name: Rust 1.99.1 PR build and tests
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
