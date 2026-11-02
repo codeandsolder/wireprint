@@ -1237,3 +1237,14 @@ fn hubspot_internal_headers_alone_are_not_response_provenance() {
     ]);
     assert!(!elements.iter().any(|element| element.product == "hubspot"));
 }
+
+#[test]
+fn imgix_response_headers_alone_are_not_response_provenance() {
+    let elements = detect_path_elements(&[
+        header("server", "imgix"),
+        header("x-imgix-id", "deadbeefcafebabe"),
+        header("x-imgix-cache", "HIT"),
+        header("x-imgix-served-by", "cache-waw18737-WAW"),
+    ]);
+    assert!(!elements.iter().any(|element| element.product == "imgix"));
+}
