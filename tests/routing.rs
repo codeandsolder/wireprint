@@ -97,6 +97,102 @@ fn managed_object_storage_hostnames_emit_origin_provenance() {
 }
 
 #[test]
+fn digitalocean_spaces_endpoints_separate_cdn_edge_from_storage_origin() {
+    for hostname in [
+        "hopperhq.ams3.cdn.digitaloceanspaces.com",
+        "assets.example.fra1.cdn.digitaloceanspaces.com",
+    ] {
+        let elements = detect_routing_elements(&[hostname.into()]);
+        assert!(has(
+            &elements,
+            PathElementRole::EdgeProvider,
+            "digitalocean-spaces-cdn"
+        ));
+        assert!(has(
+            &elements,
+            PathElementRole::OriginService,
+            "digitalocean-spaces"
+        ));
+    }
+
+    for hostname in [
+        "fra1.digitaloceanspaces.com",
+        "payload.fra1.digitaloceanspaces.com",
+        "assets.example.fra1.digitaloceanspaces.com",
+    ] {
+        let elements = detect_routing_elements(&[hostname.into()]);
+        assert!(has(
+            &elements,
+            PathElementRole::OriginService,
+            "digitalocean-spaces"
+        ));
+        assert!(!has(
+            &elements,
+            PathElementRole::EdgeProvider,
+            "digitalocean-spaces-cdn"
+        ));
+    }
+}
+
+#[test]
+fn digitalocean_spaces_current_regions_are_explicitly_covered() {
+    for region in [
+        "nyc3", "ams3", "sfo2", "sfo3", "sgp1", "lon1", "fra1", "tor1", "blr1", "syd1", "atl1",
+        "ric1", "mkc1",
+    ] {
+        let origin = detect_routing_elements(&[format!("bucket.{region}.digitaloceanspaces.com")]);
+        assert!(has(
+            &origin,
+            PathElementRole::OriginService,
+            "digitalocean-spaces"
+        ));
+        assert!(!has(
+            &origin,
+            PathElementRole::EdgeProvider,
+            "digitalocean-spaces-cdn"
+        ));
+
+        let cdn = detect_routing_elements(&[format!("bucket.{region}.cdn.digitaloceanspaces.com")]);
+        assert!(has(
+            &cdn,
+            PathElementRole::EdgeProvider,
+            "digitalocean-spaces-cdn"
+        ));
+        assert!(has(
+            &cdn,
+            PathElementRole::OriginService,
+            "digitalocean-spaces"
+        ));
+    }
+}
+
+#[test]
+fn digitalocean_spaces_lookalikes_do_not_become_path_claims() {
+    for hostname in [
+        "digitaloceanspaces.com",
+        "cdn.digitaloceanspaces.com",
+        "fra1.cdn.digitaloceanspaces.com",
+        "payload.unknown1.digitaloceanspaces.com",
+        "payload.unknown1.cdn.digitaloceanspaces.com",
+        "payload.mem1.digitaloceanspaces.com",
+        "payload.mem1.cdn.digitaloceanspaces.com",
+        "payload.fra1.cdn.digitaloceanspaces.example",
+        "ab.fra1.digitaloceanspaces.com",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.fra1.digitaloceanspaces.com",
+        "-bad.fra1.digitaloceanspaces.com",
+        "bad-.fra1.cdn.digitaloceanspaces.com",
+    ] {
+        let elements = detect_routing_elements(&[hostname.into()]);
+        assert!(!elements.iter().any(|element| {
+            matches!(
+                element.product.as_str(),
+                "digitalocean-spaces" | "digitalocean-spaces-cdn"
+            )
+        }));
+    }
+}
+
+#[test]
 fn aws_s3_documented_public_data_hostnames_emit_origin_provenance() {
     for hostname in [
         "s3.amazonaws.com",

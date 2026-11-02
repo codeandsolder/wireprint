@@ -1211,3 +1211,16 @@ fn generic_wix_seen_by_header_alone_is_not_platform_provenance() {
     let elements = detect_path_elements(&[header("x-seen-by", "opaque")]);
     assert!(!elements.iter().any(|element| element.product == "wix"));
 }
+
+#[test]
+fn digitalocean_cdn_uuid_alone_is_not_response_provenance() {
+    let elements = detect_path_elements(&[header(
+        "x-do-cdn-uuid",
+        "c8063128-f66d-45a8-add2-52067ba224c3",
+    )]);
+    assert!(
+        !elements
+            .iter()
+            .any(|element| element.product.starts_with("digitalocean"))
+    );
+}
