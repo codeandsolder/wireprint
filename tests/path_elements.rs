@@ -1257,3 +1257,12 @@ fn webflow_internal_headers_alone_are_not_response_provenance() {
     ]);
     assert!(!elements.iter().any(|element| element.product == "webflow"));
 }
+
+#[test]
+fn intercom_version_header_alone_is_not_response_provenance() {
+    let elements = detect_path_elements(&[header(
+        "x-intercom-version",
+        "dc4c0110e2ce72b23e297944b68921213a1f6fe8",
+    )]);
+    assert!(!elements.iter().any(|element| element.product == "intercom"));
+}

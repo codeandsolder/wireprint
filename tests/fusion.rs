@@ -547,3 +547,35 @@ fn webflow_routing_stays_non_originating() {
         element.role == PathElementRole::ApplicationPlatform && element.product == "webflow"
     }));
 }
+
+#[test]
+fn cloudfront_edge_and_intercom_help_center_preserve_layered_roles() {
+    let assessment = assess_endpoint(&EndpointEvidence {
+        routing_elements: detect_routing_elements(&[
+            "d21fzxmyf1hje3.cloudfront.net".into(),
+            "custom.intercom.help".into(),
+        ]),
+        ..EndpointEvidence::default()
+    });
+
+    assert_eq!(assessment.state, TerminationState::SingleCandidate);
+    assert_eq!(assessment.candidates.len(), 1);
+    assert_eq!(assessment.candidates[0].provider, "aws-cloudfront");
+    assert!(assessment.path_elements.iter().any(|element| {
+        element.role == PathElementRole::ApplicationPlatform && element.product == "intercom"
+    }));
+}
+
+#[test]
+fn intercom_help_center_routing_stays_non_originating() {
+    let assessment = assess_endpoint(&EndpointEvidence {
+        routing_elements: detect_routing_elements(&["custom.intercom.help".into()]),
+        ..EndpointEvidence::default()
+    });
+
+    assert_eq!(assessment.state, TerminationState::Unresolved);
+    assert!(assessment.candidates.is_empty());
+    assert!(assessment.path_elements.iter().any(|element| {
+        element.role == PathElementRole::ApplicationPlatform && element.product == "intercom"
+    }));
+}

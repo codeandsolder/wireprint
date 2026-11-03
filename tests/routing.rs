@@ -920,3 +920,56 @@ fn webflow_non_hosting_and_lookalike_names_are_not_platform_provenance() {
         ));
     }
 }
+
+#[test]
+fn intercom_help_center_names_emit_platform_provenance() {
+    for hostname in [
+        "intercom.help",
+        "custom.intercom.help",
+        "custom.eu.intercom.help",
+        "custom.au.intercom.help",
+        "custom.intercom-help.eu",
+        "us.intercomhelpcenter.com",
+        "eu.intercomhelpcenter.com",
+        "au.intercomhelpcenter.com",
+        "CUSTOM.INTERCOM.HELP.",
+    ] {
+        let elements = detect_routing_elements(&[hostname.into()]);
+        assert!(has(
+            &elements,
+            PathElementRole::ApplicationPlatform,
+            "intercom"
+        ));
+        assert!(
+            !elements
+                .iter()
+                .any(|element| element.role == PathElementRole::EdgeProvider)
+        );
+    }
+}
+
+#[test]
+fn intercom_non_help_center_and_lookalike_names_are_not_platform_provenance() {
+    for hostname in [
+        "intercom.com",
+        "api.intercom.com",
+        "api-iam.intercom.io",
+        "downloads.intercomcdn.com",
+        "fin.ai",
+        "intercomhelpcenter.com",
+        "intercom-help.eu",
+        "eu.intercom.help",
+        "nested.intercom.help",
+        "nested.custom.intercom.help",
+        "nested.us.intercomhelpcenter.com",
+        "custom.intercom.help.example",
+        "us.intercomhelpcenter.com.example",
+    ] {
+        let elements = detect_routing_elements(&[hostname.into()]);
+        assert!(!has(
+            &elements,
+            PathElementRole::ApplicationPlatform,
+            "intercom"
+        ));
+    }
+}
