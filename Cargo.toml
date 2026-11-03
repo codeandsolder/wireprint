@@ -29,14 +29,14 @@ serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.11"
 tokio = { version = "1.52", features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }
 url = "2.5"
-wreq = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "953ea576f699c8664ecbff30805e746368c5cb5b", features = ["gzip", "brotli", "deflate", "stream", "prefix-symbols"] }
+wreq = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "f43e50336a6773836e70045076b795f06444913a", features = ["gzip", "brotli", "deflate", "stream", "prefix-symbols"] }
 wreq-util = { version = "0.2.0", features = ["tokio-rt"] }
 
 [dev-dependencies]
 pretty_assertions = "1"
 
 [patch.crates-io]
-wreq = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "953ea576f699c8664ecbff30805e746368c5cb5b" }
+wreq = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "f43e50336a6773836e70045076b795f06444913a" }
 
 [lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
