@@ -1,4 +1,11 @@
-use wireprint::{PathElement, PathElementRole, detect_routing_elements};
+use wireprint::{
+    PathElement, PathElementRole, detect_routing_elements as detect_routing_with_source,
+};
+
+// Synthetic CNAME-target fixture; production callers supply both sources.
+fn detect_routing_elements(cname_targets: &[String]) -> Vec<PathElement> {
+    detect_routing_with_source("customer.example.invalid", cname_targets)
+}
 
 fn has(elements: &[PathElement], role: PathElementRole, product: &str) -> bool {
     elements
@@ -1019,4 +1026,44 @@ fn intercom_non_help_center_and_lookalike_names_are_not_platform_provenance() {
             "intercom"
         ));
     }
+}
+
+#[test]
+fn routing_provenance_keeps_direct_host_separate_from_cname_targets() {
+    let direct = detect_routing_with_source("SITE.CDN.CLOUDFLARE.NET.", &[]);
+    let direct_claim = direct
+        .iter()
+        .find(|element| element.product == "cloudflare")
+        .expect("direct provider-managed hostname");
+    assert_eq!(direct_claim.evidence, ["host:site.cdn.cloudflare.net"]);
+
+    let alias =
+        detect_routing_with_source("customer.example.org", &["SITE.CDN.CLOUDFLARE.NET.".into()]);
+    let alias_claim = alias
+        .iter()
+        .find(|element| element.product == "cloudflare")
+        .expect("provider-managed CNAME target");
+    assert_eq!(alias_claim.evidence, ["cname:site.cdn.cloudflare.net"]);
+
+    let both = detect_routing_with_source(
+        "site.cdn.cloudflare.net",
+        &[
+            "SITE.CDN.CLOUDFLARE.NET.".into(),
+            "site.cdn.cloudflare.net".into(),
+        ],
+    );
+    let claim = both
+        .iter()
+        .find(|element| element.product == "cloudflare")
+        .expect("same name seen from both sources");
+    assert_eq!(
+        claim.evidence,
+        [
+            "host:site.cdn.cloudflare.net",
+            "cname:site.cdn.cloudflare.net"
+        ]
+    );
+
+    let unknown = detect_routing_with_source("customer.example.org", &[]);
+    assert!(unknown.is_empty());
 }

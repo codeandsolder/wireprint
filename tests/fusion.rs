@@ -2,8 +2,13 @@ use wireprint::{
     EndpointEvidence, PATH_CLASSIFIER_VERSION, PathElement, PathElementRole,
     ProviderEvidenceChannel, ProviderSignal, ProviderSupport, ROUTING_CLASSIFIER_VERSION,
     RoutingContext, TerminationState, assess_endpoint, detect_path_elements,
-    detect_routing_elements,
+    detect_routing_elements as detect_routing_with_source,
 };
+
+// Synthetic CNAME-target fixture; production callers supply both sources.
+fn detect_routing_elements(cname_targets: &[String]) -> Vec<PathElement> {
+    detect_routing_with_source("customer.example.invalid", cname_targets)
+}
 
 fn signal(provider: &str, channel: ProviderEvidenceChannel) -> ProviderSignal {
     ProviderSignal {
@@ -45,7 +50,7 @@ fn routing_and_response_metadata_corroborate_without_request_count_weights() {
         candidate.originating_channels,
         vec![
             ProviderEvidenceChannel::ResponseMetadata,
-            ProviderEvidenceChannel::RoutingCname,
+            ProviderEvidenceChannel::RoutingDns,
         ]
     );
     let cloudflare_claims = assessment
@@ -99,7 +104,7 @@ fn railway_and_fly_routing_match_existing_response_provider_labels() {
             candidate.originating_channels,
             vec![
                 ProviderEvidenceChannel::ResponseMetadata,
-                ProviderEvidenceChannel::RoutingCname,
+                ProviderEvidenceChannel::RoutingDns,
             ]
         );
         assert!(assessment.path_elements.iter().any(|element| {
@@ -382,7 +387,7 @@ fn vercel_and_netlify_ingress_routing_corroborates_response_metadata() {
             candidate.originating_channels,
             vec![
                 ProviderEvidenceChannel::ResponseMetadata,
-                ProviderEvidenceChannel::RoutingCname,
+                ProviderEvidenceChannel::RoutingDns,
             ]
         );
     }
@@ -414,7 +419,7 @@ fn azure_cdn_namespace_anchors_broad_edge_while_azure_ref_stays_participation_on
     assert_eq!(candidate.support, ProviderSupport::OriginatingEvidence);
     assert_eq!(
         candidate.originating_channels,
-        vec![ProviderEvidenceChannel::RoutingCname]
+        vec![ProviderEvidenceChannel::RoutingDns]
     );
     assert!(assessment.path_elements.iter().any(|element| {
         element.role == PathElementRole::ApplicationPlatform
@@ -619,4 +624,41 @@ fn intercom_help_center_routing_stays_non_originating() {
     assert!(assessment.path_elements.iter().any(|element| {
         element.role == PathElementRole::ApplicationPlatform && element.product == "intercom"
     }));
+}
+
+#[test]
+fn direct_host_and_cname_provenance_survive_fusion_without_false_extra_channels() {
+    let elements = detect_routing_with_source(
+        "site.cdn.cloudflare.net",
+        &["site.cdn.cloudflare.net".into()],
+    );
+    let assessment = assess_endpoint(&EndpointEvidence {
+        routing_elements: elements,
+        ..EndpointEvidence::default()
+    });
+    assert_eq!(assessment.state, TerminationState::SingleCandidate);
+    assert_eq!(assessment.candidates.len(), 1);
+    assert_eq!(
+        assessment.candidates[0].originating_channels,
+        [ProviderEvidenceChannel::RoutingDns]
+    );
+    assert_eq!(
+        assessment.candidates[0].support,
+        ProviderSupport::OriginatingEvidence
+    );
+    assert_eq!(
+        assessment.candidates[0].evidence,
+        [
+            "cname:site.cdn.cloudflare.net",
+            "host:site.cdn.cloudflare.net"
+        ]
+    );
+}
+
+#[test]
+fn routing_dns_channel_serializes_without_mislabeling_direct_host_as_cname() {
+    assert_eq!(
+        serde_json::to_value(ProviderEvidenceChannel::RoutingDns).ok(),
+        Some(serde_json::json!("routing_dns"))
+    );
 }

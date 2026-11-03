@@ -71,7 +71,7 @@ fn stale_provider_stays_historical_without_resurrecting_current_membership() {
             Some("203.0.113.10"),
             vec![candidate(
                 "fastly",
-                &[ProviderEvidenceChannel::RoutingCname],
+                &[ProviderEvidenceChannel::RoutingDns],
                 &[],
             )],
         ),
@@ -103,7 +103,7 @@ fn simultaneous_current_routes_preserve_multiple_provider_state() {
             Some("192.0.2.10"),
             vec![candidate(
                 "fastly",
-                &[ProviderEvidenceChannel::RoutingCname],
+                &[ProviderEvidenceChannel::RoutingDns],
                 &[],
             )],
         ),
@@ -212,7 +212,7 @@ fn fresh_cross_channel_evidence_is_reported_separately() {
         vec![candidate(
             "fastly",
             &[
-                ProviderEvidenceChannel::RoutingCname,
+                ProviderEvidenceChannel::RoutingDns,
                 ProviderEvidenceChannel::H2Transport,
             ],
             &[],
@@ -235,7 +235,7 @@ fn untimed_provider_evidence_is_current_only_when_no_timed_provider_evidence_exi
             Some("192.0.2.1"),
             vec![candidate(
                 "fastly",
-                &[ProviderEvidenceChannel::RoutingCname],
+                &[ProviderEvidenceChannel::RoutingDns],
                 &[],
             )],
         ),
@@ -265,7 +265,7 @@ fn untimed_evidence_cannot_override_timed_freshness() {
             Some("192.0.2.1"),
             vec![candidate(
                 "fastly",
-                &[ProviderEvidenceChannel::RoutingCname],
+                &[ProviderEvidenceChannel::RoutingDns],
                 &[],
             )],
         ),

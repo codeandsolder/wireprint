@@ -32,7 +32,7 @@ enum Command {
     Classify(ClassifyArgs),
     /// Classify response headers into unordered network-path participation claims.
     Path(PathArgs),
-    /// Classify provider-managed CNAMEs into routing/path participation claims.
+    /// Classify requested hostname and ordered CNAME targets separately.
     Route(RouteArgs),
     /// Fuse one endpoint/vantage evidence document into termination candidates.
     AssessEndpoint(AssessEndpointArgs),
@@ -194,7 +194,11 @@ struct PathArgs {
 
 #[derive(Debug, Args)]
 struct RouteArgs {
-    #[arg(long = "cname", value_name = "HOSTNAME", required = true)]
+    /// Requested hostname, distinct from DNS CNAME targets.
+    #[arg(long, value_name = "HOSTNAME")]
+    host: String,
+    /// Ordered CNAME targets resolved for --host.
+    #[arg(long = "cname", value_name = "TARGET")]
     cnames: Vec<String>,
 }
 
@@ -523,7 +527,7 @@ fn classify_path_replay_row(row: &mut serde_json::Value) -> Result<()> {
 fn run_route(args: &RouteArgs) -> Result<()> {
     println!(
         "{}",
-        serde_json::to_string_pretty(&detect_routing_elements(&args.cnames))?
+        serde_json::to_string_pretty(&detect_routing_elements(&args.host, &args.cnames))?
     );
     Ok(())
 }

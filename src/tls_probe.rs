@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use tokio::net::ToSocketAddrs;
 use url::Url;
 
-use crate::dns::{DNS_CAPTURE_VERSION, RoutingDnsSnapshotter, routing_names};
+use crate::dns::{DNS_CAPTURE_VERSION, RoutingDnsSnapshotter};
 use crate::fusion::assess_endpoint;
 use crate::model::{DnsProvenance, EndpointEvidence, Observation};
 use crate::routing::detect_routing_elements;
@@ -89,7 +89,7 @@ pub async fn probe_tls(target: &str, config: &TlsProbeConfig) -> Result<Observat
         routing_snapshot_unix_ms: Some(routing.observed_unix_ms),
         routing_snapshot_error: routing.error,
     };
-    let routing_elements = detect_routing_elements(&routing_names(&dns));
+    let routing_elements = detect_routing_elements(&dns.host, &dns.cname_chain);
 
     let blocking = BlockingTlsConfig {
         host,

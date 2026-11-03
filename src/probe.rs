@@ -13,7 +13,7 @@ use tokio_util::io::StreamReader;
 use crate::classify_response;
 use crate::dns::{
     RecordingResolver, RoutingDnsSnapshot, RoutingDnsSnapshotter, build_dns_provenance,
-    host_from_url, routing_names, selected_endpoint,
+    host_from_url, selected_endpoint,
 };
 use crate::fusion::assess_endpoint;
 use crate::h2::{H2Setting, classify_h2_preface, provider_signals as h2_provider_signals};
@@ -358,7 +358,7 @@ fn dns_for_host(
 }
 
 fn routing_elements_for_dns(dns: Option<&DnsProvenance>) -> Vec<PathElement> {
-    dns.map_or_default(|dns| detect_routing_elements(&routing_names(dns)))
+    dns.map_or_default(|dns| detect_routing_elements(&dns.host, &dns.cname_chain))
 }
 
 fn finalize_observation(mut observation: Observation) -> Observation {

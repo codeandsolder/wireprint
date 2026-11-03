@@ -1,6 +1,6 @@
 use crate::model::{PathElement, PathElementRole};
 
-pub const ROUTING_CLASSIFIER_VERSION: &str = "builtin-routing-v14";
+pub const ROUTING_CLASSIFIER_VERSION: &str = "builtin-routing-v15";
 
 fn normalize_name(value: &str) -> String {
     value.trim().trim_end_matches('.').to_ascii_lowercase()
@@ -472,7 +472,10 @@ fn add(elements: &mut Vec<PathElement>, role: PathElementRole, product: &str, ev
     });
 }
 
-/// Recognize provider-managed DNS aliases as routing/path participation.
+/// Recognize provider-managed DNS names with their original source preserved.
+///
+/// The host is the requested hostname; cname_chain contains only observed
+/// CNAME targets in resolver order. A direct provider hostname is not a CNAME.
 ///
 /// `EdgeProvider` results are strong enough to originate a termination-provider
 /// candidate in endpoint fusion. Other roles intentionally are not: DNS can
@@ -485,15 +488,17 @@ fn add(elements: &mut Vec<PathElement>, role: PathElementRole, product: &str, ev
     reason = "routing namespace recognition is an ordered audit table kept contiguous for reviewability"
 )]
 #[must_use]
-pub fn detect_routing_elements(cname_chain: &[String]) -> Vec<PathElement> {
+pub fn detect_routing_elements(host: &str, cname_chain: &[String]) -> Vec<PathElement> {
     let mut elements = Vec::new();
 
-    for raw in cname_chain {
+    let names = std::iter::once((host, "host"))
+        .chain(cname_chain.iter().map(|cname| (cname.as_str(), "cname")));
+    for (raw, source) in names {
         let host = normalize_name(raw);
         if host.is_empty() {
             continue;
         }
-        let evidence = format!("cname:{host}");
+        let evidence = format!("{source}:{host}");
 
         if looks_like_akamai_netstorage_http_hostname(&host) {
             add(

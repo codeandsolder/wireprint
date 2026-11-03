@@ -78,7 +78,7 @@ pub struct PathElement {
 #[serde(rename_all = "snake_case")]
 pub enum ProviderEvidenceChannel {
     ResponseMetadata,
-    RoutingCname,
+    RoutingDns,
     H2Transport,
     H3Transport,
     TlsMorphology,
