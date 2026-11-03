@@ -855,7 +855,7 @@ dependencies = [
 [[package]]
 name = "http2"
 version = "0.5.20"
-source = "git+https://github.com/codeandsolder/wreq-exp.git?rev=953ea576f699c8664ecbff30805e746368c5cb5b#953ea576f699c8664ecbff30805e746368c5cb5b"
+source = "git+https://github.com/codeandsolder/wreq-exp.git?rev=49a29dc52a4fa674af9a552755b4958b8cb2abdd#49a29dc52a4fa674af9a552755b4958b8cb2abdd"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -2336,7 +2336,7 @@ dependencies = [
 [[package]]
 name = "wreq"
 version = "0.16.1"
-source = "git+https://github.com/codeandsolder/wreq-exp.git?rev=953ea576f699c8664ecbff30805e746368c5cb5b#953ea576f699c8664ecbff30805e746368c5cb5b"
+source = "git+https://github.com/codeandsolder/wreq-exp.git?rev=49a29dc52a4fa674af9a552755b4958b8cb2abdd#49a29dc52a4fa674af9a552755b4958b8cb2abdd"
 dependencies = [
  "btls",
  "btls-sys",
@@ -2368,7 +2368,7 @@ dependencies = [
 [[package]]
 name = "wreq-proto"
 version = "0.2.6"
-source = "git+https://github.com/codeandsolder/wreq-exp.git?rev=953ea576f699c8664ecbff30805e746368c5cb5b#953ea576f699c8664ecbff30805e746368c5cb5b"
+source = "git+https://github.com/codeandsolder/wreq-exp.git?rev=49a29dc52a4fa674af9a552755b4958b8cb2abdd#49a29dc52a4fa674af9a552755b4958b8cb2abdd"
 dependencies = [
  "bytes",
  "futures-channel",
@@ -2387,7 +2387,7 @@ dependencies = [
 [[package]]
 name = "wreq-rt"
 version = "0.2.2-rc.4"
-source = "git+https://github.com/codeandsolder/wreq-exp.git?rev=953ea576f699c8664ecbff30805e746368c5cb5b#953ea576f699c8664ecbff30805e746368c5cb5b"
+source = "git+https://github.com/codeandsolder/wreq-exp.git?rev=49a29dc52a4fa674af9a552755b4958b8cb2abdd#49a29dc52a4fa674af9a552755b4958b8cb2abdd"
 dependencies = [
  "pin-project-lite",
  "tokio",
