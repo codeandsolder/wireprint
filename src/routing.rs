@@ -1,6 +1,6 @@
 use crate::model::{PathElement, PathElementRole};
 
-pub const ROUTING_CLASSIFIER_VERSION: &str = "builtin-routing-v11";
+pub const ROUTING_CLASSIFIER_VERSION: &str = "builtin-routing-v12";
 
 fn normalize_name(value: &str) -> String {
     value.trim().trim_end_matches('.').to_ascii_lowercase()
@@ -289,6 +289,12 @@ fn looks_like_hubspot_site_cname(host: &str) -> bool {
         && parts[1]
             .strip_prefix("group")
             .is_some_and(looks_like_numeric_label)
+}
+
+fn looks_like_webflow_platform_hostname(host: &str) -> bool {
+    host == "cdn.webflow.com"
+        || host == "proxy-ssl.webflow.com"
+        || one_valid_label_under(host, "webflow.io").is_some()
 }
 
 fn looks_like_aws_region_label(label: &str) -> bool {
@@ -816,6 +822,16 @@ pub fn detect_routing_elements(cname_chain: &[String]) -> Vec<PathElement> {
                 &mut elements,
                 PathElementRole::ApplicationPlatform,
                 "hubspot",
+                evidence,
+            );
+            continue;
+        }
+
+        if looks_like_webflow_platform_hostname(&host) {
+            add(
+                &mut elements,
+                PathElementRole::ApplicationPlatform,
+                "webflow",
                 evidence,
             );
             continue;

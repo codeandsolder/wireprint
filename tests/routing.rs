@@ -872,3 +872,51 @@ fn azure_api_management_non_gateway_hosts_are_not_mislabeled_as_gateway() {
         "azure-api-management"
     ));
 }
+
+#[test]
+fn webflow_hosted_site_names_emit_platform_provenance() {
+    for hostname in [
+        "cdn.webflow.com",
+        "proxy-ssl.webflow.com",
+        "my-project.webflow.io",
+        "branch-preview.webflow.io",
+        "MY-PROJECT.WEBFLOW.IO.",
+    ] {
+        let elements = detect_routing_elements(&[hostname.into()]);
+        assert!(has(
+            &elements,
+            PathElementRole::ApplicationPlatform,
+            "webflow"
+        ));
+        assert!(
+            !elements
+                .iter()
+                .any(|element| element.role == PathElementRole::EdgeProvider)
+        );
+    }
+}
+
+#[test]
+fn webflow_non_hosting_and_lookalike_names_are_not_platform_provenance() {
+    for hostname in [
+        "webflow.io",
+        "nested.site.webflow.io",
+        "-invalid.webflow.io",
+        "invalid-.webflow.io",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.webflow.io",
+        "webflow.com",
+        "api.webflow.com",
+        "nested.cdn.webflow.com",
+        "cdn.webflow.com.example",
+        "prod.website-files.com",
+        "cdn.prod.website-files.com",
+        "nested.proxy-ssl.webflow.com",
+    ] {
+        let elements = detect_routing_elements(&[hostname.into()]);
+        assert!(!has(
+            &elements,
+            PathElementRole::ApplicationPlatform,
+            "webflow"
+        ));
+    }
+}

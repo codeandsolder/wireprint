@@ -82,6 +82,8 @@ Routing evidence is versioned independently. `builtin-routing-v2` adds Tencent E
 
 `builtin-routing-v11` adds Imgix's documented Source hostname namespace as managed-edge routing provenance. Exactly one valid DNS label under `imgix.net` emits `edge_provider: imgix`; the parent, deeper names, malformed labels and unrelated roots remain unmatched. Imgix documents that each Source owns such a hostname, that custom domains CNAME to it, and that its edge cache is the outermost Imgix CDN layer serving end users. If the observed DNS chain continues into Fastly, both Imgix and Fastly edge participation are preserved rather than collapsed. Response-only `X-Imgix-Id`, `X-Imgix-Cache`, `X-Imgix-Served-By`, and `Server: imgix` remain intentionally unclassified until their generation semantics are independently source-backed.
 
+`builtin-routing-v12` adds Webflow hosted-site routing as downstream `application_platform: webflow`. Exact current `cdn.webflow.com` and legacy `proxy-ssl.webflow.com` CNAME targets are recognized, along with exactly one valid DNS label under Webflow's documented staging namespace `webflow.io`. Bare parents, deeper names, malformed labels, generic `webflow.com` service names, and asset namespaces remain unmatched. Webflow's current hosting infrastructure uses Cloudflare, so Webflow routing deliberately does not emit an outer-edge candidate; Cloudflare or other serving layers remain independent path evidence. Observed `X-Wf-Region` and `X-Lambda-Id` response headers remain intentionally unclassified as Webflow provenance.
+
 Absence of a marker is not negative evidence. Products can strip, rename, disable, or route around these markers.
 
 ## Deliberately conservative rules
