@@ -1,6 +1,6 @@
 use crate::model::{PathElement, PathElementRole};
 
-pub const ROUTING_CLASSIFIER_VERSION: &str = "builtin-routing-v12";
+pub const ROUTING_CLASSIFIER_VERSION: &str = "builtin-routing-v13";
 
 fn normalize_name(value: &str) -> String {
     value.trim().trim_end_matches('.').to_ascii_lowercase()
@@ -295,6 +295,20 @@ fn looks_like_webflow_platform_hostname(host: &str) -> bool {
     host == "cdn.webflow.com"
         || host == "proxy-ssl.webflow.com"
         || one_valid_label_under(host, "webflow.io").is_some()
+}
+
+fn looks_like_intercom_help_center_hostname(host: &str) -> bool {
+    matches!(
+        host,
+        "intercom.help"
+            | "custom.intercom.help"
+            | "custom.eu.intercom.help"
+            | "custom.au.intercom.help"
+            | "custom.intercom-help.eu"
+            | "us.intercomhelpcenter.com"
+            | "eu.intercomhelpcenter.com"
+            | "au.intercomhelpcenter.com"
+    )
 }
 
 fn looks_like_aws_region_label(label: &str) -> bool {
@@ -832,6 +846,16 @@ pub fn detect_routing_elements(cname_chain: &[String]) -> Vec<PathElement> {
                 &mut elements,
                 PathElementRole::ApplicationPlatform,
                 "webflow",
+                evidence,
+            );
+            continue;
+        }
+
+        if looks_like_intercom_help_center_hostname(&host) {
+            add(
+                &mut elements,
+                PathElementRole::ApplicationPlatform,
+                "intercom",
                 evidence,
             );
             continue;
