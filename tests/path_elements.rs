@@ -1248,3 +1248,12 @@ fn imgix_response_headers_alone_are_not_response_provenance() {
     ]);
     assert!(!elements.iter().any(|element| element.product == "imgix"));
 }
+
+#[test]
+fn webflow_internal_headers_alone_are_not_response_provenance() {
+    let elements = detect_path_elements(&[
+        header("x-wf-region", "us-east-1"),
+        header("x-lambda-id", "f3ac527e-c08c-4971-9f2c-67b737227c7b"),
+    ]);
+    assert!(!elements.iter().any(|element| element.product == "webflow"));
+}

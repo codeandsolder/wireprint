@@ -506,3 +506,44 @@ fn routing_context_does_not_inflate_existing_provider_support() {
     );
     assert!(assessment.candidates[0].corroborating_channels.is_empty());
 }
+
+#[test]
+fn cloudflare_edge_and_webflow_platform_preserve_layered_roles() {
+    let response = detect_path_elements(&[
+        wireprint::Header {
+            name: "server".into(),
+            value: "cloudflare".into(),
+        },
+        wireprint::Header {
+            name: "cf-ray".into(),
+            value: "a4f140517c85bfdf-WAW".into(),
+        },
+    ]);
+    let routing = detect_routing_elements(&["cdn.webflow.com".into()]);
+    let assessment = assess_endpoint(&EndpointEvidence {
+        response_elements: response,
+        routing_elements: routing,
+        ..EndpointEvidence::default()
+    });
+
+    assert_eq!(assessment.state, TerminationState::SingleCandidate);
+    assert_eq!(assessment.candidates.len(), 1);
+    assert_eq!(assessment.candidates[0].provider, "cloudflare");
+    assert!(assessment.path_elements.iter().any(|element| {
+        element.role == PathElementRole::ApplicationPlatform && element.product == "webflow"
+    }));
+}
+
+#[test]
+fn webflow_routing_stays_non_originating() {
+    let assessment = assess_endpoint(&EndpointEvidence {
+        routing_elements: detect_routing_elements(&["my-project.webflow.io".into()]),
+        ..EndpointEvidence::default()
+    });
+
+    assert_eq!(assessment.state, TerminationState::Unresolved);
+    assert!(assessment.candidates.is_empty());
+    assert!(assessment.path_elements.iter().any(|element| {
+        element.role == PathElementRole::ApplicationPlatform && element.product == "webflow"
+    }));
+}
