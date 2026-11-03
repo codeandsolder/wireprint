@@ -949,6 +949,53 @@ fn intercom_help_center_names_emit_platform_provenance() {
 }
 
 #[test]
+fn shopify_storefront_names_emit_platform_provenance() {
+    for hostname in [
+        "cdn.shopify.com",
+        "shops.myshopify.com",
+        "example-store.myshopify.com",
+        "EXAMPLE-STORE.MYSHOPIFY.COM.",
+    ] {
+        let elements = detect_routing_elements(&[hostname.into()]);
+        assert!(has(
+            &elements,
+            PathElementRole::ApplicationPlatform,
+            "shopify"
+        ));
+        assert!(
+            !elements
+                .iter()
+                .any(|element| element.role == PathElementRole::EdgeProvider)
+        );
+    }
+}
+
+#[test]
+fn shopify_non_storefront_and_lookalike_names_are_not_platform_provenance() {
+    for hostname in [
+        "myshopify.com",
+        "nested.store.myshopify.com",
+        "-invalid.myshopify.com",
+        "invalid-.myshopify.com",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.myshopify.com",
+        "shopify.com",
+        "www.shopify.com",
+        "shop.app",
+        "monorail-edge.shopifysvc.com",
+        "apps.cloudflare-edge.shopifycloud.com",
+        "nested.cdn.shopify.com",
+        "cdn.shopify.com.example",
+    ] {
+        let elements = detect_routing_elements(&[hostname.into()]);
+        assert!(!has(
+            &elements,
+            PathElementRole::ApplicationPlatform,
+            "shopify"
+        ));
+    }
+}
+
+#[test]
 fn intercom_non_help_center_and_lookalike_names_are_not_platform_provenance() {
     for hostname in [
         "intercom.com",

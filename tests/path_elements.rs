@@ -1259,6 +1259,16 @@ fn webflow_internal_headers_alone_are_not_response_provenance() {
 }
 
 #[test]
+fn shopify_internal_headers_alone_are_not_response_provenance() {
+    let elements = detect_path_elements(&[
+        header("x-shopify-location", "gcp-us-central1"),
+        header("shopify-complexity-score", "123"),
+        header("x-shopify-gclb-trace-timing", "example"),
+    ]);
+    assert!(!elements.iter().any(|element| element.product == "shopify"));
+}
+
+#[test]
 fn intercom_version_header_alone_is_not_response_provenance() {
     let elements = detect_path_elements(&[header(
         "x-intercom-version",
