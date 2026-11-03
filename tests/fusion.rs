@@ -567,6 +567,47 @@ fn cloudfront_edge_and_intercom_help_center_preserve_layered_roles() {
 }
 
 #[test]
+fn cloudflare_edge_and_shopify_platform_preserve_layered_roles() {
+    let response = detect_path_elements(&[
+        wireprint::Header {
+            name: "server".into(),
+            value: "cloudflare".into(),
+        },
+        wireprint::Header {
+            name: "cf-ray".into(),
+            value: "a4f140517c85bfdf-WAW".into(),
+        },
+    ]);
+    let routing = detect_routing_elements(&["shops.myshopify.com".into()]);
+    let assessment = assess_endpoint(&EndpointEvidence {
+        response_elements: response,
+        routing_elements: routing,
+        ..EndpointEvidence::default()
+    });
+
+    assert_eq!(assessment.state, TerminationState::SingleCandidate);
+    assert_eq!(assessment.candidates.len(), 1);
+    assert_eq!(assessment.candidates[0].provider, "cloudflare");
+    assert!(assessment.path_elements.iter().any(|element| {
+        element.role == PathElementRole::ApplicationPlatform && element.product == "shopify"
+    }));
+}
+
+#[test]
+fn shopify_routing_stays_non_originating() {
+    let assessment = assess_endpoint(&EndpointEvidence {
+        routing_elements: detect_routing_elements(&["example-store.myshopify.com".into()]),
+        ..EndpointEvidence::default()
+    });
+
+    assert_eq!(assessment.state, TerminationState::Unresolved);
+    assert!(assessment.candidates.is_empty());
+    assert!(assessment.path_elements.iter().any(|element| {
+        element.role == PathElementRole::ApplicationPlatform && element.product == "shopify"
+    }));
+}
+
+#[test]
 fn intercom_help_center_routing_stays_non_originating() {
     let assessment = assess_endpoint(&EndpointEvidence {
         routing_elements: detect_routing_elements(&["custom.intercom.help".into()]),
