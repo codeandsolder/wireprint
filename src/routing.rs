@@ -474,7 +474,7 @@ fn add(elements: &mut Vec<PathElement>, role: PathElementRole, product: &str, ev
 
 /// Recognize provider-managed DNS names with their original source preserved.
 ///
-/// The host is the requested hostname; cname_chain contains only observed
+/// The host is the requested hostname; `cname_chain` contains only observed
 /// CNAME targets in resolver order. A direct provider hostname is not a CNAME.
 ///
 /// `EdgeProvider` results are strong enough to originate a termination-provider
