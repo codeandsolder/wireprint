@@ -686,3 +686,27 @@ fn zendesk_cname_and_cloudflare_response_preserve_downstream_role() {
             && element.evidence == ["cname:coda-docs.zendesk.com"]
     }));
 }
+
+#[test]
+fn freshdesk_cname_and_cloudflare_response_do_not_merge_layers() {
+    let response = detect_path_elements(&[wireprint::Header {
+        name: "cf-ray".into(),
+        value: "a557e28fba359d13-WAW".into(),
+    }]);
+    let assessment = assess_endpoint(&EndpointEvidence {
+        response_elements: response,
+        routing_elements: detect_routing_with_source(
+            "helpline.cdlib.org",
+            &["584fd6f03d18689f8f63743ad3a71133.freshdesk.com".into()],
+        ),
+        ..EndpointEvidence::default()
+    });
+    assert_eq!(assessment.state, TerminationState::SingleCandidate);
+    assert_eq!(assessment.candidates.len(), 1);
+    assert_eq!(assessment.candidates[0].provider, "cloudflare");
+    assert!(assessment.path_elements.iter().any(|element| {
+        element.role == PathElementRole::ApplicationPlatform
+            && element.product == "freshdesk"
+            && element.evidence == ["cname:584fd6f03d18689f8f63743ad3a71133.freshdesk.com"]
+    }));
+}
