@@ -47,7 +47,7 @@ pub use model::{
     DnsProvenance, EndpointAssessment, EndpointEvidence, Header, Observation, Outcome, OutcomeKind,
     PathElement, PathElementRole, ProfileSet, ProviderCandidate, ProviderEvidenceChannel,
     ProviderSignal, ProviderSupport, RequestProfile, RoutingContext, RoutingContextSnapshot,
-    TerminationState,
+    RoutingSnapshotBinding, TerminationState,
 };
 pub use normalize::{NORMALIZER_VERSION, normalize_response_template};
 pub use path::{PATH_CLASSIFIER_VERSION, detect_path_elements};

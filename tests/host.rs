@@ -1,7 +1,8 @@
 use wireprint::{
-    EndpointAssessment, HostAggregationConfig, HostFreshnessBasis, HostProviderState,
-    HostProviderSupport, ProviderCandidate, ProviderEvidenceChannel, ProviderSignal,
-    ProviderSupport, TerminationState, aggregate_host,
+    EndpointAssessment, EndpointEvidence, HostAggregationConfig, HostFreshnessBasis,
+    HostProviderState, HostProviderSupport, ProviderCandidate, ProviderEvidenceChannel,
+    ProviderSignal, ProviderSupport, RoutingSnapshotBinding, TerminationState, aggregate_host,
+    aggregate_observations, assess_endpoint,
 };
 
 const HOUR: u128 = 60 * 60 * 1000;
@@ -38,6 +39,7 @@ fn assessment(
         protocol: Some("HTTP/2.0".into()),
         selected_endpoint: endpoint.map(str::to_owned),
         actual_peer: endpoint.map(str::to_owned),
+        routing_snapshot_binding: RoutingSnapshotBinding::Unverified,
         state: match candidates.len() {
             0 => TerminationState::Unresolved,
             1 => TerminationState::SingleCandidate,
@@ -415,4 +417,34 @@ fn tls_shape_for_other_provider_cannot_create_conflict() {
             .current_corroborating_channels
             .is_empty()
     );
+}
+
+#[test]
+fn hostname_aggregation_recomputes_stale_endpoint_dns_votes() {
+    // This archived Asus observation was recorded by endpoint-v2 with a
+    // parallel Fastly DNS snapshot inconsistent with the Akamai socket peer.
+    let mut observation: wireprint::Observation =
+        serde_json::from_str(include_str!("fixtures/pinterest-snapshot-divergent.json"))
+            .expect("captured observation");
+    let mut old_evidence = EndpointEvidence::from(&observation);
+    old_evidence.routing_snapshot_binding = RoutingSnapshotBinding::Matched;
+    let stale = assess_endpoint(&old_evidence);
+    assert_eq!(stale.state, TerminationState::MultipleCandidates);
+    // The archived assessment really came from v2: it lacks the new
+    // routing-snapshot binding field. The old cached conclusion is ignored.
+    let mut cached = serde_json::to_value(stale).expect("serialize stale assessment");
+    let _ = cached
+        .as_object_mut()
+        .expect("assessment object")
+        .remove("routing_snapshot_binding");
+    let mut serialized = serde_json::to_value(&observation).expect("serialize observation");
+    serialized["endpoint_assessment"] = cached;
+    observation = serde_json::from_value(serialized).expect("deserialize legacy capture");
+    assert!(observation.endpoint_assessment.is_some());
+
+    let hosts = aggregate_observations(&[observation], HostAggregationConfig::default());
+    assert_eq!(hosts.len(), 1);
+    assert_eq!(hosts[0].classifier, wireprint::HOST_FUSION_VERSION);
+    assert_eq!(hosts[0].state, HostProviderState::SingleCurrentProvider);
+    assert_eq!(hosts[0].current_provider_set, ["akamai"]);
 }

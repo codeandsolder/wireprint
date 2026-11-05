@@ -1,0 +1,73 @@
+{
+  "target": "https://ct.pinterest.com/",
+  "observed_unix_ms": 1793881738994,
+  "vantage": "asus-20261105-r2",
+  "request_profile": "neutral-fusion-audit",
+  "request_profile_headers": [],
+  "transport_profile": "plain",
+  "result": "response",
+  "elapsed_ms": 221,
+  "status": 404,
+  "http_version": "HTTP/2.0",
+  "remote": "151.101.128.84:443",
+  "selected_endpoint": "151.101.128.84",
+  "dns": {
+    "classifier": "builtin-dns-v1",
+    "host": "ct.pinterest.com",
+    "connection_candidates": [
+      "151.101.128.84",
+      "151.101.0.84",
+      "151.101.192.84",
+      "151.101.64.84"
+    ],
+    "connection_resolution_unix_ms": 1793881738996,
+    "connection_resolution_reused": false,
+    "cname_chain": [
+      "www.pinterest.com",
+      "www-pinterest-com.gslb.pinterest.com",
+      "www.gslb2.pinterest.net",
+      "prod.pinterest.global.map.fastly.net"
+    ],
+    "routing_snapshot_ips": [
+      "151.101.192.84",
+      "151.101.64.84",
+      "151.101.128.84",
+      "151.101.0.84"
+    ],
+    "routing_snapshot_unix_ms": 1793881738995
+  },
+  "response_headers": [],
+  "path_elements": [
+    {
+      "role": "reverse_proxy",
+      "product": "envoy",
+      "classifier": "builtin-path-v7",
+      "evidence": [
+        "marker:envoy"
+      ]
+    }
+  ],
+  "routing_elements": [
+    {
+      "role": "edge_provider",
+      "product": "fastly",
+      "classifier": "builtin-routing-v17",
+      "evidence": [
+        "cname:prod.pinterest.global.map.fastly.net"
+      ]
+    }
+  ],
+  "provider_signals": [
+    {
+      "provider": "fastly",
+      "channel": "h2_transport",
+      "classifier": "builtin-h2-preface-v1",
+      "evidence": [
+        "h2-preface:fastly-h2o-edge-current-config",
+        "settings:1=8192;3=100;18550=0",
+        "connection-window:16777216",
+        "control-order:SETTINGS>WINDOW_UPDATE>SETTINGS_ACK"
+      ]
+    }
+  ]
+}

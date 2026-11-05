@@ -1,3 +1,5 @@
+use std::net::IpAddr;
+
 use serde::{Deserialize, Serialize};
 
 use crate::h2::H2ServerPreface;
@@ -84,6 +86,16 @@ pub enum ProviderEvidenceChannel {
     TlsMorphology,
 }
 
+/// Agreement between an independent DNS snapshot and the selected peer.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RoutingSnapshotBinding {
+    Matched,
+    Divergent,
+    #[default]
+    Unverified,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProviderSignal {
     pub provider: String,
@@ -133,6 +145,8 @@ pub struct EndpointEvidence {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub actual_peer: Option<String>,
     #[serde(default)]
+    pub routing_snapshot_binding: RoutingSnapshotBinding,
+    #[serde(default)]
     pub response_elements: Vec<PathElement>,
     #[serde(default)]
     pub routing_elements: Vec<PathElement>,
@@ -181,6 +195,8 @@ pub struct EndpointAssessment {
     pub selected_endpoint: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub actual_peer: Option<String>,
+    #[serde(default)]
+    pub routing_snapshot_binding: RoutingSnapshotBinding,
     pub state: TerminationState,
     pub candidates: Vec<ProviderCandidate>,
     pub path_elements: Vec<PathElement>,
@@ -205,6 +221,34 @@ pub struct DnsProvenance {
     pub routing_snapshot_unix_ms: Option<u128>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub routing_snapshot_error: Option<String>,
+}
+
+impl DnsProvenance {
+    /// Does the independent routing snapshot contain the selected endpoint?
+    #[must_use]
+    pub fn routing_snapshot_binding(
+        &self,
+        selected_endpoint: Option<&str>,
+    ) -> RoutingSnapshotBinding {
+        let Some(peer) = selected_endpoint.and_then(|ip| ip.parse::<IpAddr>().ok()) else {
+            return RoutingSnapshotBinding::Unverified;
+        };
+        if self.routing_snapshot_error.is_some() {
+            return RoutingSnapshotBinding::Unverified;
+        }
+        let snapshot_ips = self
+            .routing_snapshot_ips
+            .iter()
+            .filter_map(|ip| ip.parse::<IpAddr>().ok())
+            .collect::<Vec<_>>();
+        if snapshot_ips.is_empty() {
+            RoutingSnapshotBinding::Unverified
+        } else if snapshot_ips.contains(&peer) {
+            RoutingSnapshotBinding::Matched
+        } else {
+            RoutingSnapshotBinding::Divergent
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -286,6 +330,12 @@ impl From<&Observation> for EndpointEvidence {
                 .or_else(|| observation.http_version.clone()),
             selected_endpoint: observation.selected_endpoint.clone(),
             actual_peer: observation.remote.clone(),
+            routing_snapshot_binding: observation
+                .dns
+                .as_ref()
+                .map_or(RoutingSnapshotBinding::Unverified, |dns| {
+                    dns.routing_snapshot_binding(observation.selected_endpoint.as_deref())
+                }),
             response_elements: observation.path_elements.clone(),
             routing_elements: observation.routing_elements.clone(),
             provider_signals: observation.provider_signals.clone(),
