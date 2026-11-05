@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -21,58 +21,25 @@ env:
 jobs:
   strict-rust:
     name: Strict Rust
-    uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@3aabbfba4462bf6d05392ff4477a93dcc5cfd658 # main
+    uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@d3fd9e6bfeee2d9a12c90ea17ed6c650b39fad9f # main
     with:
       cargo-args: "--locked --workspace --all-targets --all-features"
       allow-test-panics: true
 
-  rust-1-99-1-pr:
-    name: Rust 1.99.1 PR build and tests
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-26.04
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - name: Install Rust 1.99.1
-        uses: dtolnay/rust-toolchain@1.99.1
-        with:
-          components: clippy,rustfmt
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-        with:
-          shared-key: rust-1.99.1
-      - name: Toolchain versions
-        run: |
-          rustc --version
-          cargo --version
-      - name: Lockfile consistency
-        run: cargo metadata --locked --format-version 1 >/dev/null
-      - name: Format
-        run: cargo fmt --all -- --check
-      - name: Check all targets
-        run: cargo check --locked --workspace --all-targets --all-features
-      - name: Clippy
-        run: cargo clippy --locked --workspace --all-features -- -D warnings
-      - name: Test
-        run: cargo test --locked --workspace --all-features
-      - name: Documentation
-        env:
-          RUSTDOCFLAGS: -D warnings
-        run: cargo doc --locked --workspace --all-features --no-deps
-
-  rust-1-99-1-shared-sccache:
-    name: Rust 1.99.1 shared sccache
-    if: github.event_name != 'pull_request'
+  rust-current-linux:
+    name: Rust 1.99.1 Linux checks and tests
     permissions:
       contents: read
-      id-token: write
-    uses: codeandsolder/ci-workflows/.github/workflows/rust-sccache.yml@9be344b41c4c7e53f451d7ab1f66d7d9e7a9a6f4 # main
+    uses: codeandsolder/ci-workflows/.github/workflows/rust-sccache.yml@23b86d2eeed31f7893c34e942c32cf6555299dbb # main
     with:
+      runner: ubuntu-26.04
       rust-toolchain: "1.99.1"
       rust-components: "clippy rustfmt"
       rustflags: "-C target-cpu=x86-64-v2"
-      command: >-
-        cargo +1.99.1 fmt --all -- --check &&
-        CARGO_BUILD_WARNINGS=deny cargo +1.99.1 check --locked --workspace --all-targets --all-features &&
-        CARGO_BUILD_WARNINGS=deny cargo +1.99.1 clippy --locked --workspace --all-features -- -D warnings &&
-        cargo +1.99.1 test --locked --workspace --all-features &&
+      command: |
+        cargo +1.99.1 metadata --locked --format-version 1 >/dev/null
+        cargo +1.99.1 fmt --all -- --check
+        CARGO_BUILD_WARNINGS=deny cargo +1.99.1 check --locked --workspace --all-targets --all-features
+        CARGO_BUILD_WARNINGS=deny cargo +1.99.1 clippy --locked --workspace --all-features -- -D warnings
+        cargo +1.99.1 test --locked --workspace --all-features
         RUSTDOCFLAGS='-D warnings' cargo +1.99.1 doc --locked --workspace --all-features --no-deps
