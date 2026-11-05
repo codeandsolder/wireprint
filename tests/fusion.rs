@@ -662,3 +662,27 @@ fn routing_dns_channel_serializes_without_mislabeling_direct_host_as_cname() {
         Some(serde_json::json!("routing_dns"))
     );
 }
+
+#[test]
+fn zendesk_cname_and_cloudflare_response_preserve_downstream_role() {
+    let response = detect_path_elements(&[wireprint::Header {
+        name: "cf-ray".into(),
+        value: "a557c23d690645c1-WAW".into(),
+    }]);
+    let assessment = assess_endpoint(&EndpointEvidence {
+        response_elements: response,
+        routing_elements: detect_routing_with_source(
+            "help.coda.io",
+            &["coda-docs.zendesk.com".into()],
+        ),
+        ..EndpointEvidence::default()
+    });
+    assert_eq!(assessment.state, TerminationState::SingleCandidate);
+    assert_eq!(assessment.candidates.len(), 1);
+    assert_eq!(assessment.candidates[0].provider, "cloudflare");
+    assert!(assessment.path_elements.iter().any(|element| {
+        element.role == PathElementRole::ApplicationPlatform
+            && element.product == "zendesk"
+            && element.evidence == ["cname:coda-docs.zendesk.com"]
+    }));
+}

@@ -1067,3 +1067,85 @@ fn routing_provenance_keeps_direct_host_separate_from_cname_targets() {
     let unknown = detect_routing_with_source("customer.example.org", &[]);
     assert!(unknown.is_empty());
 }
+
+#[test]
+fn zendesk_host_mapped_account_cname_is_platform_participation_only() {
+    for (requested, target) in [
+        ("help.coda.io", "coda-docs.zendesk.com"),
+        ("support.jvid.com", "jvid.zendesk.com"),
+        ("help.redletterdays.co.uk", "redletterdays.zendesk.com"),
+        ("support.beenverified.com", "BEENVERIFIED.ZENDESK.COM."),
+        ("support.example.invalid", "a-b-c.zendesk.com"),
+    ] {
+        let elements = detect_routing_with_source(requested, &[target.into()]);
+        let zendesk = elements
+            .iter()
+            .find(|e| e.product == "zendesk" && e.role == PathElementRole::ApplicationPlatform)
+            .expect("Zendesk CNAME target");
+        assert_eq!(
+            zendesk.evidence,
+            [format!(
+                "cname:{}",
+                target.trim_end_matches('.').to_ascii_lowercase()
+            )]
+        );
+        assert!(!has(&elements, PathElementRole::EdgeProvider, "zendesk"));
+    }
+}
+
+#[test]
+fn zendesk_direct_names_and_unrelated_dns_aliases_are_not_host_mapping_evidence() {
+    for requested in [
+        "cheathappens.zendesk.com",
+        "whistichelp.zendesk.com",
+        "www.zendesk.com",
+        "web-assets.zendesk.com",
+        "mail1.zendesk.com",
+    ] {
+        let elements = detect_routing_with_source(requested, &[]);
+        assert!(!has(
+            &elements,
+            PathElementRole::ApplicationPlatform,
+            "zendesk"
+        ));
+    }
+
+    for target in [
+        "zendesk.com",
+        "nested.coda-docs.zendesk.com",
+        "coda-docs.zendesk.com.evil.example",
+        "zendesks.com",
+        "ab.zendesk.com",
+        "-invalid.zendesk.com",
+        "invalid-.zendesk.com",
+        "inv_alid.zendesk.com",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.zendesk.com",
+        "zendesk1._domainkey.zendesk.com",
+        "mail.zendesk.com.example",
+    ] {
+        let elements = detect_routing_with_source("support.customer.example", &[target.into()]);
+        assert!(!has(
+            &elements,
+            PathElementRole::ApplicationPlatform,
+            "zendesk"
+        ));
+    }
+}
+
+#[test]
+fn zendesk_cname_layered_with_cloudflare_keeps_one_outer_provider() {
+    let elements = detect_routing_with_source(
+        "help.coda.io",
+        &[
+            "coda-docs.zendesk.com".into(),
+            "site.cdn.cloudflare.net".into(),
+        ],
+    );
+    assert!(has(
+        &elements,
+        PathElementRole::ApplicationPlatform,
+        "zendesk"
+    ));
+    assert!(has(&elements, PathElementRole::EdgeProvider, "cloudflare"));
+    assert!(!has(&elements, PathElementRole::EdgeProvider, "zendesk"));
+}
