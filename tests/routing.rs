@@ -1149,3 +1149,88 @@ fn zendesk_cname_layered_with_cloudflare_keeps_one_outer_provider() {
     assert!(has(&elements, PathElementRole::EdgeProvider, "cloudflare"));
     assert!(!has(&elements, PathElementRole::EdgeProvider, "zendesk"));
 }
+
+#[test]
+fn freshdesk_cname_source_matches_account_and_generated_provider_names() {
+    for (requested, target) in [
+        (
+            "helpline.cdlib.org",
+            "584fd6f03d18689f8f63743ad3a71133.freshdesk.com",
+        ),
+        ("support.natero.com", "elb77.freshdesk.com"),
+        ("support.freshdesk.com", "cf-routing.freshdesk.com"),
+        ("customer.example.org", "MYCOMPANY.FRESHDESK.COM."),
+    ] {
+        let elements = detect_routing_with_source(requested, &[target.into()]);
+        let claim = elements
+            .iter()
+            .find(|element| {
+                element.role == PathElementRole::ApplicationPlatform
+                    && element.product == "freshdesk"
+            })
+            .expect("Freshdesk CNAME target");
+        assert_eq!(
+            claim.evidence,
+            [format!(
+                "cname:{}",
+                target.trim_end_matches('.').to_ascii_lowercase()
+            )]
+        );
+        assert!(!has(&elements, PathElementRole::EdgeProvider, "freshdesk"));
+    }
+}
+
+#[test]
+fn freshdesk_direct_names_and_lookalike_cnames_are_not_platform_evidence() {
+    for requested in [
+        "www.freshdesk.com",
+        "freshdesk.com",
+        "orangeone.freshdesk.com",
+        "partnerimplementationsupport.freshdesk.com",
+    ] {
+        let elements = detect_routing_with_source(requested, &[]);
+        assert!(!has(
+            &elements,
+            PathElementRole::ApplicationPlatform,
+            "freshdesk"
+        ));
+    }
+
+    for target in [
+        "freshdesk.com",
+        "nested.elb77.freshdesk.com",
+        "elb77.freshdesk.com.example",
+        "freshdesk.co",
+        "freshservice.com",
+        "cf-routing.freshworks.com",
+        "-bad.freshdesk.com",
+        "bad-.freshdesk.com",
+        "bad_name.freshdesk.com",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.freshdesk.com",
+    ] {
+        let elements = detect_routing_with_source("custom.example.org", &[target.into()]);
+        assert!(!has(
+            &elements,
+            PathElementRole::ApplicationPlatform,
+            "freshdesk"
+        ));
+    }
+}
+
+#[test]
+fn freshdesk_cname_preserves_cloudflare_edge_as_separate_role() {
+    let elements = detect_routing_with_source(
+        "support.natero.com",
+        &[
+            "elb77.freshdesk.com".into(),
+            "site.cdn.cloudflare.net".into(),
+        ],
+    );
+    assert!(has(
+        &elements,
+        PathElementRole::ApplicationPlatform,
+        "freshdesk"
+    ));
+    assert!(has(&elements, PathElementRole::EdgeProvider, "cloudflare"));
+    assert!(!has(&elements, PathElementRole::EdgeProvider, "freshdesk"));
+}

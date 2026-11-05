@@ -1,6 +1,6 @@
 use crate::model::{PathElement, PathElementRole};
 
-pub const ROUTING_CLASSIFIER_VERSION: &str = "builtin-routing-v16";
+pub const ROUTING_CLASSIFIER_VERSION: &str = "builtin-routing-v17";
 
 fn normalize_name(value: &str) -> String {
     value.trim().trim_end_matches('.').to_ascii_lowercase()
@@ -324,6 +324,13 @@ fn looks_like_intercom_help_center_hostname(host: &str) -> bool {
             | "eu.intercomhelpcenter.com"
             | "au.intercomhelpcenter.com"
     )
+}
+
+fn looks_like_freshdesk_managed_hostname(host: &str) -> bool {
+    // Freshdesk assigns CNAME targets as account names and generated
+    // provider labels (for example, elb77 and 32-hex labels). No fixed
+    // account naming grammar captures all documented deployments.
+    one_valid_label_under(host, "freshdesk.com").is_some()
 }
 
 fn looks_like_zendesk_account_hostname(host: &str) -> bool {
@@ -911,6 +918,21 @@ pub fn detect_routing_elements(host: &str, cname_chain: &[String]) -> Vec<PathEl
                 &mut elements,
                 PathElementRole::ApplicationPlatform,
                 "zendesk",
+                evidence,
+            );
+            continue;
+        }
+
+        // DNS CNAMEs to the Freshdesk-owned namespace establish broad
+        // platform participation. Account names, generated aliases, and
+        // provider routing labels coexist here, so do not infer a specific
+        // customer portal, product configuration, or outer edge.
+        if source == RoutingNameSource::CnameTarget && looks_like_freshdesk_managed_hostname(&host)
+        {
+            add(
+                &mut elements,
+                PathElementRole::ApplicationPlatform,
+                "freshdesk",
                 evidence,
             );
             continue;
