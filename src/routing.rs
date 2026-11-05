@@ -1,9 +1,24 @@
 use crate::model::{PathElement, PathElementRole};
 
-pub const ROUTING_CLASSIFIER_VERSION: &str = "builtin-routing-v15";
+pub const ROUTING_CLASSIFIER_VERSION: &str = "builtin-routing-v16";
 
 fn normalize_name(value: &str) -> String {
     value.trim().trim_end_matches('.').to_ascii_lowercase()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RoutingNameSource {
+    RequestedHost,
+    CnameTarget,
+}
+
+impl RoutingNameSource {
+    const fn evidence_prefix(self) -> &'static str {
+        match self {
+            Self::RequestedHost => "host",
+            Self::CnameTarget => "cname",
+        }
+    }
 }
 
 fn matches_suffix(host: &str, suffix: &str) -> bool {
@@ -311,6 +326,11 @@ fn looks_like_intercom_help_center_hostname(host: &str) -> bool {
     )
 }
 
+fn looks_like_zendesk_account_hostname(host: &str) -> bool {
+    one_valid_label_under(host, "zendesk.com")
+        .is_some_and(|account| (3..=63).contains(&account.len()))
+}
+
 fn looks_like_shopify_platform_hostname(host: &str) -> bool {
     host == "cdn.shopify.com" || one_valid_label_under(host, "myshopify.com").is_some()
 }
@@ -491,14 +511,17 @@ fn add(elements: &mut Vec<PathElement>, role: PathElementRole, product: &str, ev
 pub fn detect_routing_elements(host: &str, cname_chain: &[String]) -> Vec<PathElement> {
     let mut elements = Vec::new();
 
-    let names = std::iter::once((host, "host"))
-        .chain(cname_chain.iter().map(|cname| (cname.as_str(), "cname")));
+    let names = std::iter::once((host, RoutingNameSource::RequestedHost)).chain(
+        cname_chain
+            .iter()
+            .map(|cname| (cname.as_str(), RoutingNameSource::CnameTarget)),
+    );
     for (raw, source) in names {
         let host = normalize_name(raw);
         if host.is_empty() {
             continue;
         }
-        let evidence = format!("{source}:{host}");
+        let evidence = format!("{}:{host}", source.evidence_prefix());
 
         if looks_like_akamai_netstorage_http_hostname(&host) {
             add(
@@ -875,6 +898,19 @@ pub fn detect_routing_elements(host: &str, cname_chain: &[String]) -> Vec<PathEl
                 &mut elements,
                 PathElementRole::ApplicationPlatform,
                 "shopify",
+                evidence,
+            );
+            continue;
+        }
+
+        // Only the CNAME source describes a customer-controlled domain
+        // pointing to a Zendesk account/brand address. A direct one-label
+        // zendesk.com hostname is ambiguous (account, marketing, email, etc.).
+        if source == RoutingNameSource::CnameTarget && looks_like_zendesk_account_hostname(&host) {
+            add(
+                &mut elements,
+                PathElementRole::ApplicationPlatform,
+                "zendesk",
                 evidence,
             );
             continue;
