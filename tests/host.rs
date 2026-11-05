@@ -433,7 +433,7 @@ fn hostname_aggregation_recomputes_stale_endpoint_dns_votes() {
     // The archived assessment really came from v2: it lacks the new
     // routing-snapshot binding field. The old cached conclusion is ignored.
     let mut cached = serde_json::to_value(stale).expect("serialize stale assessment");
-    cached
+    let _ = cached
         .as_object_mut()
         .expect("assessment object")
         .remove("routing_snapshot_binding");
