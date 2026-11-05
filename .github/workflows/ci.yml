@@ -21,7 +21,7 @@ env:
 jobs:
   strict-rust:
     name: Strict Rust
-    uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@3aabbfba4462bf6d05392ff4477a93dcc5cfd658 # main
+    uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@d3fd9e6bfeee2d9a12c90ea17ed6c650b39fad9f # main
     with:
       cargo-args: "--locked --workspace --all-targets --all-features"
       allow-test-panics: true
@@ -65,7 +65,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    uses: codeandsolder/ci-workflows/.github/workflows/rust-sccache.yml@9be344b41c4c7e53f451d7ab1f66d7d9e7a9a6f4 # main
+    uses: codeandsolder/ci-workflows/.github/workflows/rust-sccache.yml@23b86d2eeed31f7893c34e942c32cf6555299dbb # main
     with:
       rust-toolchain: "1.99.1"
       rust-components: "clippy rustfmt"
