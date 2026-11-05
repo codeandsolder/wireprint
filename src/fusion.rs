@@ -5,7 +5,7 @@ use crate::model::{
     ProviderEvidenceChannel, ProviderSupport, TerminationState,
 };
 
-pub const ENDPOINT_FUSION_VERSION: &str = "builtin-endpoint-v1";
+pub const ENDPOINT_FUSION_VERSION: &str = "builtin-endpoint-v2";
 
 impl ProviderEvidenceChannel {
     const fn originates_termination(self) -> bool {
@@ -53,7 +53,7 @@ fn add_signal(
 
 /// Fuse one concrete endpoint/vantage observation without inventing hop order.
 ///
-/// Response metadata, provider-managed CNAMEs and H2/H3 provider-family signals
+/// Response metadata, provider-managed DNS names and H2/H3 provider-family signals
 /// may originate a termination candidate. TLS morphology is confirmatory-only.
 /// Application-platform and middleware path elements remain participation claims
 /// and are preserved verbatim rather than being promoted into outer providers.
@@ -80,7 +80,7 @@ pub fn assess_endpoint(evidence: &EndpointEvidence) -> EndpointAssessment {
             add_signal(
                 &mut candidates,
                 &element.product,
-                ProviderEvidenceChannel::RoutingCname,
+                ProviderEvidenceChannel::RoutingDns,
                 element.evidence.clone(),
             );
         }

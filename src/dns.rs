@@ -218,13 +218,6 @@ pub(crate) fn host_from_url(value: &str) -> Option<String> {
     Url::parse(value).ok()?.host_str().map(normalize_dns_name)
 }
 
-pub(crate) fn routing_names(dns: &DnsProvenance) -> Vec<String> {
-    let mut names = Vec::with_capacity(dns.cname_chain.len() + 1);
-    names.push(dns.host.clone());
-    names.extend(dns.cname_chain.iter().cloned());
-    names
-}
-
 fn unique_ips(ips: impl IntoIterator<Item = IpAddr>) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut out = Vec::new();
@@ -282,7 +275,7 @@ mod tests {
     }
 
     #[test]
-    fn routing_names_include_direct_provider_hostnames() {
+    fn routing_evidence_distinguishes_direct_hosts_from_cname_targets() {
         let dns = DnsProvenance {
             classifier: DNS_CAPTURE_VERSION.into(),
             host: "d123.cloudfront.net".into(),
@@ -294,9 +287,16 @@ mod tests {
             routing_snapshot_unix_ms: None,
             routing_snapshot_error: None,
         };
-        assert_eq!(
-            routing_names(&dns),
-            vec!["d123.cloudfront.net", "terminal.example.net"]
+        let direct = crate::routing::detect_routing_elements(&dns.host, &dns.cname_chain);
+        assert!(direct.iter().any(|e| {
+            e.product == "aws-cloudfront" && e.evidence == ["host:d123.cloudfront.net"]
+        }));
+        let alias = crate::routing::detect_routing_elements(
+            "customer.example.net",
+            &["d123.cloudfront.net".into()],
         );
+        assert!(alias.iter().any(|e| {
+            e.product == "aws-cloudfront" && e.evidence == ["cname:d123.cloudfront.net"]
+        }));
     }
 }

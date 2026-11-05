@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use tokio::net::{ToSocketAddrs, UdpSocket};
 use url::Url;
 
-use crate::dns::{DNS_CAPTURE_VERSION, RoutingDnsSnapshotter, routing_names};
+use crate::dns::{DNS_CAPTURE_VERSION, RoutingDnsSnapshotter};
 use crate::fusion::assess_endpoint;
 use crate::h3::{H3ServerFingerprint, H3Setting, classify_h3_quic, provider_signals};
 use crate::model::{DnsProvenance, EndpointEvidence, Header, Observation};
@@ -105,7 +105,7 @@ pub async fn probe_h3(target: &str, config: &H3ProbeConfig) -> Result<Observatio
         routing_snapshot_unix_ms: Some(routing.observed_unix_ms),
         routing_snapshot_error: routing.error,
     };
-    let routing_elements = detect_routing_elements(&routing_names(&dns));
+    let routing_elements = detect_routing_elements(&dns.host, &dns.cname_chain);
 
     let bind = match peer {
         SocketAddr::V4(_) => "0.0.0.0:0",
