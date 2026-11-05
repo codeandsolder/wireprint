@@ -121,3 +121,17 @@ bot_management: datadome
 ```
 
 That is more useful than collapsing everything into one `vendor` field, and more defensible than guessing which internal hop emitted every preserved header.
+
+
+### Endpoint-bound DNS snapshot attribution (endpoint-v3)
+
+An independent routing DNS snapshot is not necessarily the route used by the
+socket that answered an HTTP/H3/TLS request. The routing_snapshot_binding value
+is matched only when a successful, nonempty routing address set contains the
+evidence-backed selected peer; divergent when the set excludes the peer; and
+unverified when the peer or snapshot cannot be checked. Only matched routing
+edge-provider evidence can originate/corroborate endpoint termination.
+All host:/cname: path elements remain visible as participation or alternate-route
+evidence even when divergent. Response/H2/H3 evidence remains independent,
+TLS is confirmatory-only. Synthetic EndpointEvidence must explicitly assert
+matched when its routing evidence is known to describe that endpoint.

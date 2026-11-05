@@ -1,8 +1,8 @@
 use wireprint::{
-    EndpointEvidence, PATH_CLASSIFIER_VERSION, PathElement, PathElementRole,
+    DnsProvenance, EndpointEvidence, PATH_CLASSIFIER_VERSION, PathElement, PathElementRole,
     ProviderEvidenceChannel, ProviderSignal, ProviderSupport, ROUTING_CLASSIFIER_VERSION,
-    RoutingContext, TerminationState, assess_endpoint, detect_path_elements,
-    detect_routing_elements as detect_routing_with_source,
+    RoutingContext, RoutingSnapshotBinding, TerminationState, assess_endpoint,
+    detect_path_elements, detect_routing_elements as detect_routing_with_source,
 };
 
 // Synthetic CNAME-target fixture; production callers supply both sources.
@@ -37,6 +37,7 @@ fn routing_and_response_metadata_corroborate_without_request_count_weights() {
     let routing = detect_routing_elements(&["site.cdn.cloudflare.net".into()]);
     let assessment = assess_endpoint(&EndpointEvidence {
         response_elements: response,
+        routing_snapshot_binding: RoutingSnapshotBinding::Matched,
         routing_elements: routing,
         ..EndpointEvidence::default()
     });
@@ -91,6 +92,7 @@ fn railway_and_fly_routing_match_existing_response_provider_labels() {
         let routing = detect_routing_elements(&[hostname.into()]);
         let assessment = assess_endpoint(&EndpointEvidence {
             response_elements: response,
+            routing_snapshot_binding: RoutingSnapshotBinding::Matched,
             routing_elements: routing,
             ..EndpointEvidence::default()
         });
@@ -124,6 +126,7 @@ fn managed_platform_routing_stays_non_originating() {
         ("mysite.prod.acquia-sites.com", "acquia-cloud-platform"),
     ] {
         let assessment = assess_endpoint(&EndpointEvidence {
+            routing_snapshot_binding: RoutingSnapshotBinding::Matched,
             routing_elements: detect_routing_elements(&[hostname.into()]),
             ..EndpointEvidence::default()
         });
@@ -136,6 +139,7 @@ fn managed_platform_routing_stays_non_originating() {
     }
 
     let acquia = assess_endpoint(&EndpointEvidence {
+        routing_snapshot_binding: RoutingSnapshotBinding::Matched,
         routing_elements: detect_routing_elements(&["mysite.prod.acquia-sites.com".into()]),
         ..EndpointEvidence::default()
     });
@@ -159,6 +163,7 @@ fn routing_object_storage_origins_do_not_originate_termination_candidates() {
         ("payload.fra1.digitaloceanspaces.com", "digitalocean-spaces"),
     ] {
         let assessment = assess_endpoint(&EndpointEvidence {
+            routing_snapshot_binding: RoutingSnapshotBinding::Matched,
             routing_elements: detect_routing_elements(&[hostname.into()]),
             ..EndpointEvidence::default()
         });
@@ -178,6 +183,7 @@ fn imgix_and_fastly_routing_preserve_layered_serving_candidates() {
         "dualstack.com.imgix.map.fastly.net".into(),
     ]);
     let assessment = assess_endpoint(&EndpointEvidence {
+        routing_snapshot_binding: RoutingSnapshotBinding::Matched,
         routing_elements: routing,
         ..EndpointEvidence::default()
     });
@@ -196,6 +202,7 @@ fn imgix_and_fastly_routing_preserve_layered_serving_candidates() {
 #[test]
 fn imgix_routing_can_originate_its_managed_edge() {
     let assessment = assess_endpoint(&EndpointEvidence {
+        routing_snapshot_binding: RoutingSnapshotBinding::Matched,
         routing_elements: detect_routing_elements(&["axeptio.imgix.net".into()]),
         ..EndpointEvidence::default()
     });
@@ -220,6 +227,7 @@ fn cloudflare_edge_and_hubspot_platform_preserve_layered_roles() {
     let routing = detect_routing_elements(&["19490924.group24.sites.hubspot.net".into()]);
     let assessment = assess_endpoint(&EndpointEvidence {
         response_elements: response,
+        routing_snapshot_binding: RoutingSnapshotBinding::Matched,
         routing_elements: routing,
         ..EndpointEvidence::default()
     });
@@ -247,6 +255,7 @@ fn digitalocean_spaces_cdn_and_cloudflare_preserve_layered_serving_candidates() 
     let routing = detect_routing_elements(&["hopperhq.ams3.cdn.digitaloceanspaces.com".into()]);
     let assessment = assess_endpoint(&EndpointEvidence {
         response_elements: response,
+        routing_snapshot_binding: RoutingSnapshotBinding::Matched,
         routing_elements: routing,
         ..EndpointEvidence::default()
     });
@@ -268,6 +277,7 @@ fn digitalocean_spaces_cdn_and_cloudflare_preserve_layered_serving_candidates() 
 #[test]
 fn digitalocean_spaces_cdn_routing_can_originate_its_managed_edge() {
     let assessment = assess_endpoint(&EndpointEvidence {
+        routing_snapshot_binding: RoutingSnapshotBinding::Matched,
         routing_elements: detect_routing_elements(&[
             "hopperhq.ams3.cdn.digitaloceanspaces.com".into()
         ]),
@@ -285,6 +295,7 @@ fn digitalocean_spaces_cdn_routing_can_originate_its_managed_edge() {
 #[test]
 fn akamai_edge_and_netstorage_origin_coexist_without_provider_conflict() {
     let assessment = assess_endpoint(&EndpointEvidence {
+        routing_snapshot_binding: RoutingSnapshotBinding::Matched,
         routing_elements: detect_routing_elements(&[
             "media-example-a.akamaihd.net".into(),
             "baseball-nsu.akamaihd.net".into(),
@@ -334,6 +345,7 @@ fn tls_morphology_cannot_originate_a_provider() {
 #[test]
 fn tls_morphology_can_confirm_an_existing_provider_candidate() {
     let assessment = assess_endpoint(&EndpointEvidence {
+        routing_snapshot_binding: RoutingSnapshotBinding::Matched,
         routing_elements: vec![provider_element("imperva")],
         provider_signals: vec![signal("imperva", ProviderEvidenceChannel::TlsMorphology)],
         ..EndpointEvidence::default()
@@ -350,6 +362,7 @@ fn tls_morphology_can_confirm_an_existing_provider_candidate() {
 #[test]
 fn downstream_platform_participation_does_not_become_outer_termination() {
     let assessment = assess_endpoint(&EndpointEvidence {
+        routing_snapshot_binding: RoutingSnapshotBinding::Matched,
         routing_elements: detect_routing_elements(&["teacher-glances-63085.netlify.com".into()]),
         ..EndpointEvidence::default()
     });
@@ -374,6 +387,7 @@ fn vercel_and_netlify_ingress_routing_corroborates_response_metadata() {
         let routing = detect_routing_elements(&[hostname.into()]);
         let assessment = assess_endpoint(&EndpointEvidence {
             response_elements: response,
+            routing_snapshot_binding: RoutingSnapshotBinding::Matched,
             routing_elements: routing,
             ..EndpointEvidence::default()
         });
@@ -408,6 +422,7 @@ fn azure_cdn_namespace_anchors_broad_edge_while_azure_ref_stays_participation_on
     ]);
     let assessment = assess_endpoint(&EndpointEvidence {
         response_elements: response,
+        routing_snapshot_binding: RoutingSnapshotBinding::Matched,
         routing_elements: routing,
         ..EndpointEvidence::default()
     });
@@ -431,6 +446,7 @@ fn azure_cdn_namespace_anchors_broad_edge_while_azure_ref_stays_participation_on
 fn conflicting_originating_channels_are_preserved_as_multiple_candidates() {
     let assessment = assess_endpoint(&EndpointEvidence {
         response_elements: vec![provider_element("fastly")],
+        routing_snapshot_binding: RoutingSnapshotBinding::Matched,
         routing_elements: vec![provider_element("azure-front-door")],
         ..EndpointEvidence::default()
     });
@@ -527,6 +543,7 @@ fn cloudflare_edge_and_webflow_platform_preserve_layered_roles() {
     let routing = detect_routing_elements(&["cdn.webflow.com".into()]);
     let assessment = assess_endpoint(&EndpointEvidence {
         response_elements: response,
+        routing_snapshot_binding: RoutingSnapshotBinding::Matched,
         routing_elements: routing,
         ..EndpointEvidence::default()
     });
@@ -542,6 +559,7 @@ fn cloudflare_edge_and_webflow_platform_preserve_layered_roles() {
 #[test]
 fn webflow_routing_stays_non_originating() {
     let assessment = assess_endpoint(&EndpointEvidence {
+        routing_snapshot_binding: RoutingSnapshotBinding::Matched,
         routing_elements: detect_routing_elements(&["my-project.webflow.io".into()]),
         ..EndpointEvidence::default()
     });
@@ -556,6 +574,7 @@ fn webflow_routing_stays_non_originating() {
 #[test]
 fn cloudfront_edge_and_intercom_help_center_preserve_layered_roles() {
     let assessment = assess_endpoint(&EndpointEvidence {
+        routing_snapshot_binding: RoutingSnapshotBinding::Matched,
         routing_elements: detect_routing_elements(&[
             "d21fzxmyf1hje3.cloudfront.net".into(),
             "custom.intercom.help".into(),
@@ -586,6 +605,7 @@ fn cloudflare_edge_and_shopify_platform_preserve_layered_roles() {
     let routing = detect_routing_elements(&["shops.myshopify.com".into()]);
     let assessment = assess_endpoint(&EndpointEvidence {
         response_elements: response,
+        routing_snapshot_binding: RoutingSnapshotBinding::Matched,
         routing_elements: routing,
         ..EndpointEvidence::default()
     });
@@ -601,6 +621,7 @@ fn cloudflare_edge_and_shopify_platform_preserve_layered_roles() {
 #[test]
 fn shopify_routing_stays_non_originating() {
     let assessment = assess_endpoint(&EndpointEvidence {
+        routing_snapshot_binding: RoutingSnapshotBinding::Matched,
         routing_elements: detect_routing_elements(&["example-store.myshopify.com".into()]),
         ..EndpointEvidence::default()
     });
@@ -615,6 +636,7 @@ fn shopify_routing_stays_non_originating() {
 #[test]
 fn intercom_help_center_routing_stays_non_originating() {
     let assessment = assess_endpoint(&EndpointEvidence {
+        routing_snapshot_binding: RoutingSnapshotBinding::Matched,
         routing_elements: detect_routing_elements(&["custom.intercom.help".into()]),
         ..EndpointEvidence::default()
     });
@@ -633,6 +655,7 @@ fn direct_host_and_cname_provenance_survive_fusion_without_false_extra_channels(
         &["site.cdn.cloudflare.net".into()],
     );
     let assessment = assess_endpoint(&EndpointEvidence {
+        routing_snapshot_binding: RoutingSnapshotBinding::Matched,
         routing_elements: elements,
         ..EndpointEvidence::default()
     });
@@ -671,6 +694,7 @@ fn zendesk_cname_and_cloudflare_response_preserve_downstream_role() {
     }]);
     let assessment = assess_endpoint(&EndpointEvidence {
         response_elements: response,
+        routing_snapshot_binding: RoutingSnapshotBinding::Matched,
         routing_elements: detect_routing_with_source(
             "help.coda.io",
             &["coda-docs.zendesk.com".into()],
@@ -695,6 +719,7 @@ fn freshdesk_cname_and_cloudflare_response_do_not_merge_layers() {
     }]);
     let assessment = assess_endpoint(&EndpointEvidence {
         response_elements: response,
+        routing_snapshot_binding: RoutingSnapshotBinding::Matched,
         routing_elements: detect_routing_with_source(
             "helpline.cdlib.org",
             &["584fd6f03d18689f8f63743ad3a71133.freshdesk.com".into()],
@@ -709,4 +734,206 @@ fn freshdesk_cname_and_cloudflare_response_do_not_merge_layers() {
             && element.product == "freshdesk"
             && element.evidence == ["cname:584fd6f03d18689f8f63743ad3a71133.freshdesk.com"]
     }));
+}
+
+fn routing_snapshot(addresses: &[&str], error: Option<&str>) -> DnsProvenance {
+    DnsProvenance {
+        classifier: "builtin-dns-v1".into(),
+        host: "ct.pinterest.com".into(),
+        connection_candidates: vec!["23.197.161.35".into()],
+        connection_resolution_unix_ms: Some(1793881734257),
+        connection_resolution_reused: false,
+        cname_chain: vec![
+            "www.pinterest.com".into(),
+            "www-pinterest-com.gslb.pinterest.com".into(),
+            "www.gslb2.pinterest.net".into(),
+            "prod.pinterest.global.map.fastly.net".into(),
+        ],
+        routing_snapshot_ips: addresses.iter().map(|x| (*x).into()).collect(),
+        routing_snapshot_unix_ms: Some(1793881734130),
+        routing_snapshot_error: error.map(str::to_owned),
+    }
+}
+
+#[test]
+fn parallel_dns_snapshot_divergence_is_not_a_second_termination_candidate() {
+    // Exact endpoint/CNAME mismatch observed on Asus on 2026-11-05.
+    let dns = routing_snapshot(
+        &[
+            "151.101.0.84",
+            "151.101.64.84",
+            "151.101.128.84",
+            "151.101.192.84",
+        ],
+        None,
+    );
+    let binding = dns.routing_snapshot_binding(Some("23.197.161.35"));
+    assert_eq!(binding, RoutingSnapshotBinding::Divergent);
+    let assessment = assess_endpoint(&EndpointEvidence {
+        selected_endpoint: Some("23.197.161.35".into()),
+        actual_peer: Some("23.197.161.35:443".into()),
+        routing_snapshot_binding: binding,
+        response_elements: vec![provider_element("akamai")],
+        routing_elements: detect_routing_with_source(&dns.host, &dns.cname_chain),
+        provider_signals: vec![signal("akamai", ProviderEvidenceChannel::H2Transport)],
+        ..EndpointEvidence::default()
+    });
+    assert_eq!(assessment.state, TerminationState::SingleCandidate);
+    assert_eq!(assessment.candidates.len(), 1);
+    assert_eq!(assessment.candidates[0].provider, "akamai");
+    assert_eq!(
+        assessment.candidates[0].support,
+        ProviderSupport::CrossChannelCorroborated
+    );
+    assert_eq!(
+        assessment.candidates[0].originating_channels,
+        [
+            ProviderEvidenceChannel::ResponseMetadata,
+            ProviderEvidenceChannel::H2Transport
+        ]
+    );
+    assert_eq!(
+        assessment.routing_snapshot_binding,
+        RoutingSnapshotBinding::Divergent
+    );
+    assert!(assessment.path_elements.iter().any(|e| {
+        e.role == PathElementRole::EdgeProvider
+            && e.product == "fastly"
+            && e.evidence
+                .contains(&"cname:prod.pinterest.global.map.fastly.net".into())
+    }));
+    assert_eq!(
+        serde_json::to_value(&assessment).expect("serialize assessment")["routing_snapshot_binding"],
+        "divergent"
+    );
+}
+
+#[test]
+fn matching_dns_snapshot_can_corrobate_serving_route() {
+    let dns = routing_snapshot(&["151.101.128.84", "151.101.0.84"], None);
+    let binding = dns.routing_snapshot_binding(Some("151.101.128.84"));
+    assert_eq!(binding, RoutingSnapshotBinding::Matched);
+    let assessment = assess_endpoint(&EndpointEvidence {
+        selected_endpoint: Some("151.101.128.84".into()),
+        routing_snapshot_binding: binding,
+        routing_elements: detect_routing_with_source(&dns.host, &dns.cname_chain),
+        provider_signals: vec![signal("fastly", ProviderEvidenceChannel::H2Transport)],
+        ..EndpointEvidence::default()
+    });
+    assert_eq!(assessment.state, TerminationState::SingleCandidate);
+    assert_eq!(assessment.candidates[0].provider, "fastly");
+    assert_eq!(
+        assessment.candidates[0].support,
+        ProviderSupport::CrossChannelCorroborated
+    );
+    assert_eq!(
+        assessment.candidates[0].originating_channels,
+        [
+            ProviderEvidenceChannel::RoutingDns,
+            ProviderEvidenceChannel::H2Transport
+        ]
+    );
+}
+
+#[test]
+fn dns_snapshot_binding_is_safe_across_missing_peer_error_and_address_families() {
+    let dns = routing_snapshot(&["151.101.0.84"], None);
+    assert_eq!(
+        dns.routing_snapshot_binding(None),
+        RoutingSnapshotBinding::Unverified
+    );
+    assert_eq!(
+        dns.routing_snapshot_binding(Some("not an IP")),
+        RoutingSnapshotBinding::Unverified
+    );
+    assert_eq!(
+        dns.routing_snapshot_binding(Some("151.101.0.84")),
+        RoutingSnapshotBinding::Matched
+    );
+    assert_eq!(
+        dns.routing_snapshot_binding(Some("23.197.161.35")),
+        RoutingSnapshotBinding::Divergent
+    );
+    assert_eq!(
+        routing_snapshot(&[], None).routing_snapshot_binding(Some("23.197.161.35")),
+        RoutingSnapshotBinding::Unverified
+    );
+    assert_eq!(
+        routing_snapshot(&["23.197.161.35"], Some("resolver failed"))
+            .routing_snapshot_binding(Some("23.197.161.35")),
+        RoutingSnapshotBinding::Unverified
+    );
+    assert_eq!(
+        routing_snapshot(&["not-an-ip"], None).routing_snapshot_binding(Some("23.197.161.35")),
+        RoutingSnapshotBinding::Unverified
+    );
+    let v6 = routing_snapshot(&["2a06:98c1:3108::ac40:99cd"], None);
+    assert_eq!(
+        v6.routing_snapshot_binding(Some("2a06:98c1:3108::ac40:99cd")),
+        RoutingSnapshotBinding::Matched
+    );
+    assert_eq!(
+        v6.routing_snapshot_binding(Some("2600:9000:290c:fa00:19:7d10:bd80:93a1")),
+        RoutingSnapshotBinding::Divergent
+    );
+}
+
+#[test]
+fn unknown_dns_binding_keeps_route_evidence_but_never_votes_termination() {
+    let routing = detect_routing_with_source(
+        "d123.cloudfront.net",
+        &["prod.pinterest.global.map.fastly.net".into()],
+    );
+    for binding in [
+        RoutingSnapshotBinding::Divergent,
+        RoutingSnapshotBinding::Unverified,
+    ] {
+        let assessment = assess_endpoint(&EndpointEvidence {
+            routing_snapshot_binding: binding,
+            routing_elements: routing.clone(),
+            provider_signals: vec![signal("fastly", ProviderEvidenceChannel::RoutingDns)],
+            ..EndpointEvidence::default()
+        });
+        assert_eq!(assessment.state, TerminationState::Unresolved);
+        assert!(assessment.candidates.is_empty());
+        assert!(assessment.path_elements.iter().any(|e| {
+            e.product == "aws-cloudfront" && e.evidence == ["host:d123.cloudfront.net"]
+        }));
+        assert!(assessment.path_elements.iter().any(|e| {
+            e.product == "fastly" && e.evidence == ["cname:prod.pinterest.global.map.fastly.net"]
+        }));
+    }
+    let assessment = assess_endpoint(&EndpointEvidence {
+        routing_snapshot_binding: RoutingSnapshotBinding::Matched,
+        routing_elements: routing,
+        ..EndpointEvidence::default()
+    });
+    assert_eq!(assessment.state, TerminationState::MultipleCandidates);
+}
+
+#[test]
+fn real_asus_pinterest_observations_replay_endpoint_binding_end_to_end() {
+    for (raw, binding, provider) in [
+        (
+            include_str!("fixtures/pinterest-snapshot-divergent.json"),
+            RoutingSnapshotBinding::Divergent,
+            "akamai",
+        ),
+        (
+            include_str!("fixtures/pinterest-snapshot-matched.json"),
+            RoutingSnapshotBinding::Matched,
+            "fastly",
+        ),
+    ] {
+        let observation: wireprint::Observation =
+            serde_json::from_str(raw).expect("valid captured observation");
+        let evidence = EndpointEvidence::from(&observation);
+        assert_eq!(evidence.routing_snapshot_binding, binding);
+        let assessment = assess_endpoint(&evidence);
+        assert_eq!(assessment.state, TerminationState::SingleCandidate);
+        assert_eq!(assessment.candidates.len(), 1);
+        assert_eq!(assessment.candidates[0].provider, provider);
+        assert_eq!(assessment.routing_snapshot_binding, binding);
+        assert_eq!(assessment.classifier, wireprint::ENDPOINT_FUSION_VERSION);
+    }
 }

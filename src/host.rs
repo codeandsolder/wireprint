@@ -3,9 +3,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::model::{EndpointAssessment, Observation, ProviderEvidenceChannel};
+use crate::fusion::assess_endpoint;
+use crate::model::{EndpointAssessment, EndpointEvidence, Observation, ProviderEvidenceChannel};
 
-pub const HOST_FUSION_VERSION: &str = "builtin-host-v2";
+pub const HOST_FUSION_VERSION: &str = "builtin-host-v3";
 pub const DEFAULT_HOST_FRESHNESS_WINDOW_MS: u128 = 6 * 60 * 60 * 1000;
 pub const DEFAULT_SUPPORT_BUCKET_MS: u128 = 60 * 60 * 1000;
 
@@ -613,12 +614,16 @@ pub fn aggregate_observations(
 ) -> Vec<HostAssessment> {
     let mut grouped = BTreeMap::<String, Vec<EndpointAssessment>>::new();
     for observation in observations {
-        let Some(assessment) = observation.endpoint_assessment.clone() else {
+        if observation.endpoint_assessment.is_none() {
             continue;
-        };
+        }
         let Some(host) = observation_host(observation) else {
             continue;
         };
+        // Stored assessments may have been created by an older fusion policy.
+        // Recompute from the original observation so a stale DNS vote cannot
+        // resurrect an alternate route into current hostname membership.
+        let assessment = assess_endpoint(&EndpointEvidence::from(observation));
         grouped.entry(host).or_default().push(assessment);
     }
 

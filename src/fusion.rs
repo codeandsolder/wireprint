@@ -2,10 +2,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::model::{
     EndpointAssessment, EndpointEvidence, PathElement, PathElementRole, ProviderCandidate,
-    ProviderEvidenceChannel, ProviderSupport, TerminationState,
+    ProviderEvidenceChannel, ProviderSupport, RoutingSnapshotBinding, TerminationState,
 };
 
-pub const ENDPOINT_FUSION_VERSION: &str = "builtin-endpoint-v2";
+pub const ENDPOINT_FUSION_VERSION: &str = "builtin-endpoint-v3";
 
 impl ProviderEvidenceChannel {
     const fn originates_termination(self) -> bool {
@@ -76,7 +76,9 @@ pub fn assess_endpoint(evidence: &EndpointEvidence) -> EndpointAssessment {
 
     for element in &evidence.routing_elements {
         push_path_element(&mut path_elements, element);
-        if element.role == PathElementRole::EdgeProvider {
+        if element.role == PathElementRole::EdgeProvider
+            && evidence.routing_snapshot_binding == RoutingSnapshotBinding::Matched
+        {
             add_signal(
                 &mut candidates,
                 &element.product,
@@ -88,6 +90,11 @@ pub fn assess_endpoint(evidence: &EndpointEvidence) -> EndpointAssessment {
 
     let mut deferred = Vec::new();
     for signal in &evidence.provider_signals {
+        if signal.channel == ProviderEvidenceChannel::RoutingDns
+            && evidence.routing_snapshot_binding != RoutingSnapshotBinding::Matched
+        {
+            continue;
+        }
         if signal.channel.originates_termination() {
             add_signal(
                 &mut candidates,
@@ -149,6 +156,7 @@ pub fn assess_endpoint(evidence: &EndpointEvidence) -> EndpointAssessment {
         protocol: evidence.protocol.clone(),
         selected_endpoint: evidence.selected_endpoint.clone(),
         actual_peer: evidence.actual_peer.clone(),
+        routing_snapshot_binding: evidence.routing_snapshot_binding,
         state,
         candidates,
         path_elements,

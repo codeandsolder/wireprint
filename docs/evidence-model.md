@@ -25,6 +25,7 @@ A useful request observation has at least these axes:
 - Response metadata can prove multiple path participants without proving their linear hop order.
 - Missing evidence is unknown, not negative evidence.
 - Historical provider evidence cannot resurrect a provider into the current set; it may only corroborate a provider that has fresh originating evidence.
+- Host aggregation recomputes the current endpoint fusion assessment from raw saved observations; it does not trust a stale serialized endpoint assessment from an older classifier.
 - Repeated requests are observations, not votes. Independent support is keyed by channel, protocol, vantage, endpoint and time bucket.
 - Multi-provider/path-split state is preserved rather than collapsed to a numeric winner.
 - ASN/prefix ownership describes the concrete selected/peer network context only. It does not originate or corroborate provider identity; hostname-wide DNS candidates must not be substituted for the actual serving endpoint.
