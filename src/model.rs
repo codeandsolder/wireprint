@@ -195,6 +195,7 @@ pub struct EndpointAssessment {
     pub selected_endpoint: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub actual_peer: Option<String>,
+    #[serde(default)]
     pub routing_snapshot_binding: RoutingSnapshotBinding,
     pub state: TerminationState,
     pub candidates: Vec<ProviderCandidate>,

@@ -430,7 +430,17 @@ fn hostname_aggregation_recomputes_stale_endpoint_dns_votes() {
     old_evidence.routing_snapshot_binding = RoutingSnapshotBinding::Matched;
     let stale = assess_endpoint(&old_evidence);
     assert_eq!(stale.state, TerminationState::MultipleCandidates);
-    observation.endpoint_assessment = Some(stale);
+    // The archived assessment really came from v2: it lacks the new
+    // routing-snapshot binding field. The old cached conclusion is ignored.
+    let mut cached = serde_json::to_value(stale).expect("serialize stale assessment");
+    cached
+        .as_object_mut()
+        .expect("assessment object")
+        .remove("routing_snapshot_binding");
+    let mut serialized = serde_json::to_value(&observation).expect("serialize observation");
+    serialized["endpoint_assessment"] = cached;
+    observation = serde_json::from_value(serialized).expect("deserialize legacy capture");
+    assert!(observation.endpoint_assessment.is_some());
 
     let hosts = aggregate_observations(&[observation], HostAggregationConfig::default());
     assert_eq!(hosts.len(), 1);
