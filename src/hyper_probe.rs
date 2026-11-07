@@ -130,10 +130,6 @@ struct NativeProbeContext<'a> {
     config: &'a ProbeConfig,
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "redirect handling and request failure provenance form one small native-client state machine"
-)]
 async fn probe_one(context: &NativeProbeContext<'_>, target: &str) -> Observation {
     let client = context.client;
     let profile = context.profile;
