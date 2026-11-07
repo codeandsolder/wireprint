@@ -137,8 +137,6 @@ struct NativeProbeContext<'a> {
 async fn probe_one(context: &NativeProbeContext<'_>, target: &str) -> Observation {
     let client = context.client;
     let profile = context.profile;
-    let transport = context.transport;
-    let vantage = context.config.vantage.clone();
     let started = Instant::now();
     let observed_unix_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -148,13 +146,10 @@ async fn probe_one(context: &NativeProbeContext<'_>, target: &str) -> Observatio
         Ok(url) => url,
         Err(error) => {
             return error_observation(
-                profile,
-                transport,
+                context,
                 target,
                 observed_unix_ms,
                 started,
-                vantage,
-                context.config.address_family,
                 error.to_string(),
             );
         }
@@ -173,13 +168,10 @@ async fn probe_one(context: &NativeProbeContext<'_>, target: &str) -> Observatio
             Ok(request) => request,
             Err(error) => {
                 return error_observation(
-                    profile,
-                    transport,
+                    context,
                     target,
                     observed_unix_ms,
                     started,
-                    vantage,
-                    context.config.address_family,
                     error.to_string(),
                 );
             }
@@ -190,25 +182,19 @@ async fn probe_one(context: &NativeProbeContext<'_>, target: &str) -> Observatio
                 Ok(Ok(response)) => response,
                 Ok(Err(error)) => {
                     return error_observation(
-                        profile,
-                        transport,
+                        context,
                         target,
                         observed_unix_ms,
                         started,
-                        vantage,
-                        context.config.address_family,
                         error.to_string(),
                     );
                 }
                 Err(_) => {
                     return error_observation(
-                        profile,
-                        transport,
+                        context,
                         target,
                         observed_unix_ms,
                         started,
-                        vantage,
-                        context.config.address_family,
                         "request timed out after 20 seconds".into(),
                     );
                 }
@@ -411,20 +397,20 @@ async fn finalize_response(
 }
 
 fn error_observation(
-    profile: &RequestProfile,
-    transport: &TransportProfile,
+    context: &NativeProbeContext<'_>,
     target: &str,
     observed_unix_ms: u128,
     started: Instant,
-    vantage: Option<String>,
-    family: AddressFamily,
     error: String,
 ) -> Observation {
+    let profile = context.profile;
+    let transport = context.transport;
+    let vantage = context.config.vantage.clone();
     Observation {
         target: target.into(),
         observed_unix_ms,
         vantage,
-        connection_address_family: family,
+        connection_address_family: context.config.address_family,
         request_profile: profile.name.clone(),
         request_role: profile.role.clone(),
         request_provenance: profile.provenance.clone(),
