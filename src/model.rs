@@ -151,6 +151,9 @@ pub struct EndpointEvidence {
     pub response_elements: Vec<PathElement>,
     #[serde(default)]
     pub routing_elements: Vec<PathElement>,
+    /// Exact provider DNS evidence proven for the selected peer.
+    #[serde(default)]
+    pub routing_bound_evidence: Vec<String>,
     #[serde(default)]
     pub provider_signals: Vec<ProviderSignal>,
     #[serde(default)]
@@ -205,6 +208,26 @@ pub struct EndpointAssessment {
     pub routing_context: Vec<RoutingContext>,
 }
 
+/// An observed DNS CNAME RR with explicit owner and target.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DnsCnameLink {
+    pub owner: String,
+    pub target: String,
+}
+
+/// One independent DNS A or AAAA answer and its unambiguous alias ancestry.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DnsRouteAnswer {
+    pub family: AddressFamily,
+    pub ips: Vec<String>,
+    /// Addresses whose RR owner terminates a provable requested-host chain.
+    pub linked_ips: Vec<String>,
+    pub cname_chain: Vec<String>,
+    pub cname_links: Vec<DnsCnameLink>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DnsProvenance {
     pub classifier: String,
@@ -214,10 +237,9 @@ pub struct DnsProvenance {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub connection_resolution_unix_ms: Option<u128>,
     pub connection_resolution_reused: bool,
+    /// A and AAAA carry distinct result groups; no address/CNAME union voting.
     #[serde(default)]
-    pub cname_chain: Vec<String>,
-    #[serde(default)]
-    pub routing_snapshot_ips: Vec<String>,
+    pub routing_answers: Vec<DnsRouteAnswer>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub routing_snapshot_unix_ms: Option<u128>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -225,7 +247,7 @@ pub struct DnsProvenance {
 }
 
 impl DnsProvenance {
-    /// Does the independent routing snapshot contain the selected endpoint?
+    /// Address membership only: does not certify unrelated CNAMEs.
     #[must_use]
     pub fn routing_snapshot_binding(
         &self,
@@ -234,21 +256,57 @@ impl DnsProvenance {
         let Some(peer) = selected_endpoint.and_then(|ip| ip.parse::<IpAddr>().ok()) else {
             return RoutingSnapshotBinding::Unverified;
         };
-        if self.routing_snapshot_error.is_some() {
-            return RoutingSnapshotBinding::Unverified;
-        }
-        let snapshot_ips = self
-            .routing_snapshot_ips
+        let observed = self
+            .routing_answers
             .iter()
-            .filter_map(|ip| ip.parse::<IpAddr>().ok())
+            .filter(|answer| answer.error.is_none())
+            .flat_map(|answer| &answer.ips)
+            .filter_map(|text| text.parse::<IpAddr>().ok())
             .collect::<Vec<_>>();
-        if snapshot_ips.is_empty() {
+        if observed.is_empty() {
             RoutingSnapshotBinding::Unverified
-        } else if snapshot_ips.contains(&peer) {
+        } else if observed.contains(&peer) {
             RoutingSnapshotBinding::Matched
         } else {
             RoutingSnapshotBinding::Divergent
         }
+    }
+
+    /// Only address-owner-linked alias evidence can vote for termination.
+    #[must_use]
+    pub fn bound_routing_evidence(&self, selected_endpoint: Option<&str>) -> Vec<String> {
+        let Some(peer) = selected_endpoint.and_then(|text| text.parse::<IpAddr>().ok()) else {
+            return Vec::new();
+        };
+        let mut evidence = Vec::new();
+        for answer in &self.routing_answers {
+            if answer.error.is_some() {
+                continue;
+            }
+            if answer
+                .linked_ips
+                .iter()
+                .any(|text| text.parse::<IpAddr>().ok() == Some(peer))
+            {
+                let token = format!("host:{}", self.host);
+                if !evidence.contains(&token) {
+                    evidence.push(token);
+                }
+            }
+            if answer
+                .linked_ips
+                .iter()
+                .any(|text| text.parse::<IpAddr>().ok() == Some(peer))
+            {
+                for name in &answer.cname_chain {
+                    let token = format!("cname:{name}");
+                    if !evidence.contains(&token) {
+                        evidence.push(token);
+                    }
+                }
+            }
+        }
+        evidence
     }
 }
 
@@ -341,6 +399,9 @@ impl From<&Observation> for EndpointEvidence {
                 }),
             response_elements: observation.path_elements.clone(),
             routing_elements: observation.routing_elements.clone(),
+            routing_bound_evidence: observation.dns.as_ref().map_or_default(|dns| {
+                dns.bound_routing_evidence(observation.selected_endpoint.as_deref())
+            }),
             provider_signals: observation.provider_signals.clone(),
             routing_context: observation
                 .routing_context_snapshot

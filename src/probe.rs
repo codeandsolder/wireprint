@@ -23,7 +23,7 @@ use crate::model::{
 };
 use crate::normalize::{NORMALIZER_VERSION, normalize_response_template};
 use crate::path::detect_path_elements;
-use crate::routing::detect_routing_elements;
+use crate::routing::detect_routing_snapshot_elements;
 use crate::routing_context::{
     RoutingContextCollector, enrich_observation as enrich_routing_context,
 };
@@ -363,7 +363,7 @@ fn dns_for_host(
 }
 
 fn routing_elements_for_dns(dns: Option<&DnsProvenance>) -> Vec<PathElement> {
-    dns.map_or_default(|dns| detect_routing_elements(&dns.host, &dns.cname_chain))
+    dns.map_or_default(detect_routing_snapshot_elements)
 }
 
 fn finalize_observation(mut observation: Observation) -> Observation {
