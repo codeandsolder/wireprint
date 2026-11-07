@@ -428,6 +428,14 @@ fn hostname_aggregation_recomputes_stale_endpoint_dns_votes() {
             .expect("captured observation");
     let mut old_evidence = EndpointEvidence::from(&observation);
     old_evidence.routing_snapshot_binding = RoutingSnapshotBinding::Matched;
+    // Model the historic v2/v3 fusion rule, which treated a matched *union*
+    // snapshot as permission for every routing CNAME to originate an edge.
+    // Current v4 fusion requires these exact evidence tokens instead.
+    old_evidence.routing_bound_evidence = old_evidence
+        .routing_elements
+        .iter()
+        .flat_map(|element| element.evidence.iter().cloned())
+        .collect();
     let stale = assess_endpoint(&old_evidence);
     assert_eq!(stale.state, TerminationState::MultipleCandidates);
     // The archived assessment really came from v2: it lacks the new
