@@ -10,6 +10,7 @@ use sha2::{Digest, Sha256};
 use tokio::io::{AsyncRead, AsyncReadExt, BufReader};
 use tokio_util::io::StreamReader;
 
+use crate::address_family::AddressFamily;
 use crate::classify_response;
 use crate::dns::{
     RecordingResolver, RoutingDnsSnapshot, RoutingDnsSnapshotter, build_dns_provenance,
@@ -32,6 +33,7 @@ use crate::transport::{TransportImplementation, TransportProfile};
 pub struct ProbeConfig {
     pub body_bytes: usize,
     pub delay: Duration,
+    pub address_family: AddressFamily,
     pub vantage: Option<String>,
     pub routing_context_collector: Option<RoutingContextCollector>,
 }
@@ -41,6 +43,7 @@ impl Default for ProbeConfig {
         Self {
             body_bytes: 64 * 1024,
             delay: Duration::from_millis(250),
+            address_family: AddressFamily::Auto,
             vantage: None,
             routing_context_collector: None,
         }
@@ -65,7 +68,7 @@ pub async fn probe_batch(
         return crate::hyper_probe::probe_batch_hyper_rustls(profile, transport, targets, config)
             .await;
     }
-    let connection_resolver = RecordingResolver::default();
+    let connection_resolver = RecordingResolver::new(config.address_family);
     let routing_resolver = RoutingDnsSnapshotter::new();
     let builder = wreq::Client::builder()
         .tls_info(true)
@@ -152,6 +155,7 @@ async fn probe_one(context: &WreqProbeContext<'_>, target: &str) -> Observation 
                 target: target.into(),
                 observed_unix_ms,
                 vantage,
+                connection_address_family: context.config.address_family,
                 request_profile: profile.name.clone(),
                 request_role: profile.role.clone(),
                 request_provenance: profile.provenance.clone(),
@@ -302,6 +306,7 @@ async fn probe_one(context: &WreqProbeContext<'_>, target: &str) -> Observation 
         target: target.into(),
         observed_unix_ms,
         vantage,
+        connection_address_family: context.config.address_family,
         request_profile: profile.name.clone(),
         request_role: profile.role.clone(),
         request_provenance: profile.provenance.clone(),

@@ -378,6 +378,7 @@ mod tests {
             target: "https://example.test/".into(),
             observed_unix_ms: 1,
             vantage: None,
+            connection_address_family: crate::address_family::AddressFamily::Auto,
             request_profile: "test".into(),
             request_role: None,
             request_provenance: None,

@@ -5,6 +5,7 @@
 //! The library exposes the classifiers, evidence model, transport profiles, and probe
 //! primitives used by the `wireprint` command-line binary.
 
+pub mod address_family;
 pub mod classify;
 pub mod dns;
 pub mod fusion;
@@ -24,6 +25,7 @@ pub mod tls;
 pub mod tls_probe;
 pub mod transport;
 
+pub use address_family::AddressFamily;
 pub use classify::classify_response;
 pub use dns::DNS_CAPTURE_VERSION;
 pub use fusion::{ENDPOINT_FUSION_VERSION, assess_endpoint};
@@ -36,7 +38,7 @@ pub use h3::{
     H3Setting, QuicStableTransportParameters, QuicTransportParameterWire, QuicTransportStructure,
     QuicVersionInformation, classify_h3_quic, provider_signals as h3_provider_signals,
 };
-pub use h3_probe::{H3AddressFamily, H3ProbeConfig, probe_h3};
+pub use h3_probe::{H3ProbeConfig, probe_h3};
 pub use host::{
     DEFAULT_HOST_FRESHNESS_WINDOW_MS, DEFAULT_SUPPORT_BUCKET_MS, HOST_FUSION_VERSION,
     HostAggregationConfig, HostAssessment, HostFreshnessBasis, HostProviderMembership,
@@ -66,7 +68,7 @@ pub use tls::{
     TLS_MORPHOLOGY_VERSION, TlsExtensionShape, TlsHandshakeMessageShape, TlsMorphologyMatch,
     TlsServerMorphology, TlsSessionTicketShape, provider_signals as tls_provider_signals,
 };
-pub use tls_probe::{TlsAddressFamily, TlsProbeConfig, probe_tls};
+pub use tls_probe::{TlsProbeConfig, probe_tls};
 pub use transport::{
     BuiltinTransport, HyperRustlsProfileKind, PlatformKind, TRANSPORT_SCHEMA_VERSION,
     TransportImplementation, TransportObservation, TransportObservationCompleteness,

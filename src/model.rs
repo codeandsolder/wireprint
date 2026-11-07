@@ -2,6 +2,7 @@ use std::net::IpAddr;
 
 use serde::{Deserialize, Serialize};
 
+use crate::address_family::AddressFamily;
 use crate::h2::H2ServerPreface;
 use crate::h3::H3ServerFingerprint;
 use crate::tls::TlsServerMorphology;
@@ -257,6 +258,8 @@ pub struct Observation {
     pub observed_unix_ms: u128,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vantage: Option<String>,
+    #[serde(default)]
+    pub connection_address_family: AddressFamily,
     pub request_profile: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub request_role: Option<String>,

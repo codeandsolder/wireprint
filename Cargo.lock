@@ -2328,6 +2328,7 @@ dependencies = [
  "sha2",
  "tokio",
  "tokio-util",
+ "tower-service",
  "url",
  "wreq",
  "wreq-util",

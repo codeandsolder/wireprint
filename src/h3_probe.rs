@@ -6,13 +6,12 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
 use boring::ssl::{SslContextBuilder, SslMethod};
-use clap::ValueEnum;
 use foreign_types_shared::ForeignTypeRef;
 use quiche::h3::NameValue;
-use serde::{Deserialize, Serialize};
 use tokio::net::{ToSocketAddrs, UdpSocket};
 use url::Url;
 
+use crate::address_family::AddressFamily;
 use crate::dns::{DNS_CAPTURE_VERSION, RoutingDnsSnapshotter};
 use crate::fusion::assess_endpoint;
 use crate::h3::{H3ServerFingerprint, H3Setting, classify_h3_quic, provider_signals};
@@ -27,18 +26,10 @@ const H3_USER_AGENT: &str = "wireprint-h3-observer/1";
 const MAX_DATAGRAM_SIZE: usize = 65_535;
 const MAX_SEND_DATAGRAM_SIZE: usize = 1_350;
 
-#[derive(Debug, Clone, Copy, ValueEnum, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum H3AddressFamily {
-    Auto,
-    Ipv4,
-    Ipv6,
-}
-
 #[derive(Debug, Clone)]
 pub struct H3ProbeConfig {
     pub timeout: Duration,
-    pub family: H3AddressFamily,
+    pub family: AddressFamily,
     pub vantage: Option<String>,
     pub routing_context_collector: Option<RoutingContextCollector>,
 }
@@ -47,7 +38,7 @@ impl Default for H3ProbeConfig {
     fn default() -> Self {
         Self {
             timeout: Duration::from_secs(8),
-            family: H3AddressFamily::Auto,
+            family: AddressFamily::Auto,
             vantage: None,
             routing_context_collector: None,
         }
@@ -273,6 +264,7 @@ fn success_observation(parts: H3ObservationParts<'_>) -> Observation {
         target: parts.target.to_owned(),
         observed_unix_ms: parts.observed_unix_ms,
         vantage: parts.config.vantage.clone(),
+        connection_address_family: parts.config.family,
         request_profile: "h3-observer".into(),
         request_role: Some("transport-observer".into()),
         request_provenance: Some("wireprint-h3".into()),
@@ -379,17 +371,12 @@ async fn flush_quic(
 
 async fn resolve_candidates(
     target: impl ToSocketAddrs,
-    family: H3AddressFamily,
+    family: AddressFamily,
 ) -> Result<Vec<SocketAddr>> {
     let mut seen = HashSet::new();
     let mut out = Vec::new();
     for address in tokio::net::lookup_host(target).await? {
-        let family_match = match family {
-            H3AddressFamily::Auto => true,
-            H3AddressFamily::Ipv4 => address.is_ipv4(),
-            H3AddressFamily::Ipv6 => address.is_ipv6(),
-        };
-        if family_match && seen.insert(address) {
+        if family.accepts(address) && seen.insert(address) {
             out.push(address);
         }
     }
