@@ -1004,7 +1004,9 @@ pub fn detect_routing_snapshot_elements(dns: &DnsProvenance) -> Vec<PathElement>
             }
             for link in answer.cname_links.iter().filter(|link| link.owner == owner) {
                 frontier.push(link.target.clone());
-                for incoming in detect_routing_elements(&dns.host, &[link.target.clone()]) {
+                for incoming in
+                    detect_routing_elements(&dns.host, std::slice::from_ref(&link.target))
+                {
                     if let Some(existing) = elements.iter_mut().find(|existing| {
                         existing.role == incoming.role
                             && existing.product == incoming.product
