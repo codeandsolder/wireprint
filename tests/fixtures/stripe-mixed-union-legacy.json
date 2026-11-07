@@ -1,0 +1,96 @@
+{
+  "target": "https://m.stripe.network/",
+  "observed_unix_ms": 1794014174265,
+  "vantage": "acer-direct-wreq-ipv4",
+  "connection_address_family": "ipv4",
+  "request_profile": "neutral-family-calibration",
+  "request_profile_headers": [],
+  "transport_profile": "plain",
+  "result": "response",
+  "elapsed_ms": 274,
+  "status": 403,
+  "http_version": "HTTP/2.0",
+  "remote": "151.101.64.176:443",
+  "selected_endpoint": "151.101.64.176",
+  "dns": {
+    "classifier": "builtin-dns-v1",
+    "host": "m.stripe.network",
+    "connection_candidates": [
+      "151.101.64.176",
+      "151.101.128.176",
+      "151.101.192.176",
+      "151.101.0.176"
+    ],
+    "connection_resolution_unix_ms": 1794014174296,
+    "connection_resolution_reused": false,
+    "cname_chain": [
+      "prod-m-tree.stripe.network",
+      "d1tcqh4bio8cty.cloudfront.net"
+    ],
+    "routing_snapshot_ips": [
+      "151.101.64.176",
+      "151.101.128.176",
+      "151.101.192.176",
+      "151.101.0.176",
+      "2600:9000:290c:2a00:19:7d10:bd80:93a1",
+      "2600:9000:290c:da00:19:7d10:bd80:93a1",
+      "2600:9000:290c:f800:19:7d10:bd80:93a1",
+      "2600:9000:290c:9600:19:7d10:bd80:93a1",
+      "2600:9000:290c:600:19:7d10:bd80:93a1",
+      "2600:9000:290c:b000:19:7d10:bd80:93a1",
+      "2600:9000:290c:4e00:19:7d10:bd80:93a1",
+      "2600:9000:290c:1800:19:7d10:bd80:93a1"
+    ],
+    "routing_snapshot_unix_ms": 1794014174266
+  },
+  "response_headers": [],
+  "path_elements": [
+    {
+      "role": "edge_provider",
+      "product": "fastly",
+      "classifier": "builtin-path-v7",
+      "evidence": [
+        "server:fastly"
+      ]
+    },
+    {
+      "role": "cache",
+      "product": "fastly",
+      "classifier": "builtin-path-v7",
+      "evidence": [
+        "header:x-timer-fastly-shape"
+      ]
+    },
+    {
+      "role": "cache",
+      "product": "varnish",
+      "classifier": "builtin-path-v7",
+      "evidence": [
+        "via:varnish"
+      ]
+    }
+  ],
+  "routing_elements": [
+    {
+      "role": "edge_provider",
+      "product": "aws-cloudfront",
+      "classifier": "builtin-routing-v17",
+      "evidence": [
+        "cname:d1tcqh4bio8cty.cloudfront.net"
+      ]
+    }
+  ],
+  "provider_signals": [
+    {
+      "provider": "fastly",
+      "channel": "h2_transport",
+      "classifier": "builtin-h2-preface-v1",
+      "evidence": [
+        "h2-preface:fastly-h2o-edge-current-config",
+        "settings:1=8192;3=100;18550=0",
+        "connection-window:16777216",
+        "control-order:SETTINGS>WINDOW_UPDATE>SETTINGS_ACK"
+      ]
+    }
+  ]
+}

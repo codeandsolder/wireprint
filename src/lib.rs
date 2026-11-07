@@ -46,15 +46,17 @@ pub use host::{
     aggregate_observations,
 };
 pub use model::{
-    DnsProvenance, EndpointAssessment, EndpointEvidence, Header, Observation, Outcome, OutcomeKind,
-    PathElement, PathElementRole, ProfileSet, ProviderCandidate, ProviderEvidenceChannel,
-    ProviderSignal, ProviderSupport, RequestProfile, RoutingContext, RoutingContextSnapshot,
-    RoutingSnapshotBinding, TerminationState,
+    DnsCnameLink, DnsProvenance, DnsRouteAnswer, EndpointAssessment, EndpointEvidence, Header,
+    Observation, Outcome, OutcomeKind, PathElement, PathElementRole, ProfileSet, ProviderCandidate,
+    ProviderEvidenceChannel, ProviderSignal, ProviderSupport, RequestProfile, RoutingContext,
+    RoutingContextSnapshot, RoutingSnapshotBinding, TerminationState,
 };
 pub use normalize::{NORMALIZER_VERSION, normalize_response_template};
 pub use path::{PATH_CLASSIFIER_VERSION, detect_path_elements};
 pub use probe::{ProbeConfig, probe_batch};
-pub use routing::{ROUTING_CLASSIFIER_VERSION, detect_routing_elements};
+pub use routing::{
+    ROUTING_CLASSIFIER_VERSION, detect_routing_elements, detect_routing_snapshot_elements,
+};
 pub use routing_audit::{
     AsnAuditClass, AsnRoutingAudit, HostRoutingAudit, ProviderAsnAudit,
     ROUTING_CONTEXT_AUDIT_VERSION, RoutingAuditSample, RoutingContextAudit, audit_routing_samples,

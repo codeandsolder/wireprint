@@ -123,15 +123,26 @@ bot_management: datadome
 That is more useful than collapsing everything into one `vendor` field, and more defensible than guessing which internal hop emitted every preserved header.
 
 
-### Endpoint-bound DNS snapshot attribution (endpoint-v3)
+### Endpoint-bound per-answer DNS attribution (DNS-v2 / endpoint-v4)
 
-An independent routing DNS snapshot is not necessarily the route used by the
-socket that answered an HTTP/H3/TLS request. The routing_snapshot_binding value
-is matched only when a successful, nonempty routing address set contains the
-evidence-backed selected peer; divergent when the set excludes the peer; and
-unverified when the peer or snapshot cannot be checked. Only matched routing
-edge-provider evidence can originate/corroborate endpoint termination.
-All host:/cname: path elements remain visible as participation or alternate-route
-evidence even when divergent. Response/H2/H3 evidence remains independent,
-TLS is confirmatory-only. Synthetic EndpointEvidence must explicitly assert
+Routing DNS is an independent observation, not necessarily the resolver decision
+used by the socket. DNS-v2 makes explicit A and AAAA queries and preserves each
+answer group's CNAME owner/target records, address RR owners, unambiguous
+requested-host CNAME path, and separately proven terminal addresses.
+A combined A+AAAA address union **cannot** establish that one CNAME chain belongs
+to the selected peer. The endpoint snapshot binding flag reports address membership
+(matched, divergent or unverified); it is *not* enough to originate an edge claim.
+
+Only individual host:/cname: DNS evidence tokens whose source-query
+answer matches the actual selected peer may vote in endpoint-v4. CNAME targets
+require a unique, cycle-free chain from requested host ending at the actual owner
+of that IP record. Ambiguous, disconnected, alternate-family and unmatched
+branches remain visible as route participation but not as socket terminators.
+Non-DNS response/H2/H3 evidence is unaffected; TLS remains corroborating-only.
+Hostname-v4 recomputes endpoint fusion from raw observations, so old cached
+assessments do not reintroduce the mixed-family mistake. Synthetic endpoint
+assessments must explicitly provide routing_bound_evidence: a merely matched
+address flag is no longer sufficient. Older raw DNS snapshots without separate
+answer lineage provide no DNS termination votes, rather than trusting
+their old merged CNAME chain.
 matched when its routing evidence is known to describe that endpoint.
