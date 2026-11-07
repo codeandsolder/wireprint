@@ -7,12 +7,12 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
 use wireprint::{
-    BuiltinTransport, EndpointEvidence, H3AddressFamily, H3ProbeConfig, Header,
+    AddressFamily, BuiltinTransport, EndpointEvidence, H3ProbeConfig, Header,
     HostAggregationConfig, Observation, PATH_CLASSIFIER_VERSION, PlatformKind, ProbeConfig,
-    ProfileSet, RequestProfile, RoutingAuditSample, RoutingContextCollector, TlsAddressFamily,
-    TlsProbeConfig, TransportProfile, TransportSet, aggregate_observations, assess_endpoint,
-    audit_routing_samples, classify_response, detect_path_elements, detect_routing_elements,
-    probe_batch, probe_h3, probe_tls,
+    ProfileSet, RequestProfile, RoutingAuditSample, RoutingContextCollector, TlsProbeConfig,
+    TransportProfile, TransportSet, aggregate_observations, assess_endpoint, audit_routing_samples,
+    classify_response, detect_path_elements, detect_routing_elements, probe_batch, probe_h3,
+    probe_tls,
 };
 
 #[derive(Debug, Parser)]
@@ -72,6 +72,9 @@ struct ProbeArgs {
     body_bytes: usize,
     #[arg(long, default_value_t = 250)]
     delay_ms: u64,
+    /// Select only addresses of this family for actual TCP connections.
+    #[arg(long, value_enum, default_value_t = AddressFamily::Auto)]
+    family: AddressFamily,
     #[arg(long)]
     vantage: Option<String>,
     /// Enrich the selected/peer IP with Team Cymru BGP routing context.
@@ -103,6 +106,9 @@ struct MatrixArgs {
     body_bytes: usize,
     #[arg(long, default_value_t = 250)]
     delay_ms: u64,
+    /// Select only addresses of this family for actual TCP connections.
+    #[arg(long, value_enum, default_value_t = AddressFamily::Auto)]
+    family: AddressFamily,
     #[arg(long, default_value_t = 500)]
     profile_delay_ms: u64,
     #[arg(long)]
@@ -120,8 +126,8 @@ struct H3Args {
     repeat: usize,
     #[arg(long, default_value_t = 8.0)]
     timeout_secs: f64,
-    #[arg(long, value_enum, default_value_t = H3AddressFamily::Auto)]
-    family: H3AddressFamily,
+    #[arg(long, value_enum, default_value_t = AddressFamily::Auto)]
+    family: AddressFamily,
     #[arg(long)]
     vantage: Option<String>,
     /// Enrich the selected/peer IP with Team Cymru BGP routing context.
@@ -139,8 +145,8 @@ struct TlsArgs {
     handshake_timeout_secs: f64,
     #[arg(long, default_value_t = 2500)]
     post_handshake_ms: u64,
-    #[arg(long, value_enum, default_value_t = TlsAddressFamily::Auto)]
-    family: TlsAddressFamily,
+    #[arg(long, value_enum, default_value_t = AddressFamily::Auto)]
+    family: AddressFamily,
     #[arg(long)]
     groups: Option<String>,
     #[arg(long)]
@@ -236,6 +242,7 @@ async fn run_probe(args: ProbeArgs) -> Result<()> {
     let config = ProbeConfig {
         body_bytes: args.body_bytes,
         delay: Duration::from_millis(args.delay_ms),
+        address_family: args.family,
         vantage: args.vantage,
         routing_context_collector: args.routing_context.then(RoutingContextCollector::new),
     };
@@ -266,6 +273,7 @@ async fn run_h3(args: H3Args) -> Result<()> {
                     "{}",
                     serde_json::json!({
                         "target": url,
+                        "connection_address_family": args.family,
                         "result": "error",
                         "error": format!("{error:#}"),
                     })
@@ -300,6 +308,7 @@ async fn run_tls(args: TlsArgs) -> Result<()> {
                     "{}",
                     serde_json::json!({
                         "target": url,
+                        "connection_address_family": args.family,
                         "result": "error",
                         "error": format!("{error:#}"),
                     })
@@ -365,6 +374,7 @@ async fn run_matrix(args: MatrixArgs) -> Result<()> {
     let config = ProbeConfig {
         body_bytes: args.body_bytes,
         delay: Duration::from_millis(args.delay_ms),
+        address_family: args.family,
         vantage: args.vantage.clone(),
         routing_context_collector: args.routing_context.then(RoutingContextCollector::new),
     };

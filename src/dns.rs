@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -7,6 +8,7 @@ use hickory_resolver::{TokioResolver, config::LookupIpStrategy, proto::rr::RData
 use url::Url;
 use wreq::dns::{Addrs, GaiResolver, Name, Resolve, Resolving};
 
+use crate::address_family::AddressFamily;
 use crate::model::DnsProvenance;
 
 pub const DNS_CAPTURE_VERSION: &str = "builtin-dns-v1";
@@ -24,13 +26,22 @@ struct ResolverState {
     latest: HashMap<String, ConnectionResolution>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub(crate) struct RecordingResolver {
     inner: GaiResolver,
+    family: AddressFamily,
     state: Arc<Mutex<ResolverState>>,
 }
 
 impl RecordingResolver {
+    pub(crate) fn new(family: AddressFamily) -> Self {
+        Self {
+            inner: GaiResolver::default(),
+            family,
+            state: Arc::new(Mutex::new(ResolverState::default())),
+        }
+    }
+
     pub(crate) fn cursor(&self) -> u64 {
         self.state
             .lock()
@@ -51,10 +62,18 @@ impl RecordingResolver {
 impl Resolve for RecordingResolver {
     fn resolve(&self, name: Name) -> Resolving {
         let inner = self.inner.clone();
+        let family = self.family;
         let state = Arc::clone(&self.state);
         Box::pin(async move {
             let resolved = inner.resolve(name.clone()).await?;
-            let addrs = resolved.collect::<Vec<_>>();
+            let addrs = family.filter(resolved);
+            if addrs.is_empty() {
+                return Err(io::Error::new(
+                    io::ErrorKind::AddrNotAvailable,
+                    format!("no {family:?} address resolved for {name}"),
+                )
+                .into());
+            }
             let candidates = unique_ips(addrs.iter().map(SocketAddr::ip));
             let observed_unix_ms = unix_ms();
             let mut state = state
@@ -244,6 +263,32 @@ fn unix_ms() -> u128 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn connection_resolver_filters_real_gai_addresses_before_recording() {
+        use wreq::dns::{Name, Resolve};
+
+        let ipv4 = RecordingResolver::new(AddressFamily::Ipv4);
+        let name = Name::from("127.0.0.1");
+        let addresses = ipv4.resolve(name.clone()).await.expect("IPv4 literal");
+        assert!(addresses.into_iter().all(|addr| addr.is_ipv4()));
+        assert_eq!(
+            ipv4.latest("127.0.0.1").expect("recorded").candidates,
+            ["127.0.0.1"]
+        );
+
+        let ipv6 = RecordingResolver::new(AddressFamily::Ipv6);
+        let error = match ipv6.resolve(name).await {
+            Ok(_) => panic!("must reject an IPv4-only literal in IPv6 mode"),
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("no Ipv6 address"));
+        assert!(ipv6.latest("127.0.0.1").is_none());
+
+        let ipv6_addr = ipv6.resolve(Name::from("::1")).await.expect("IPv6 literal");
+        assert!(ipv6_addr.into_iter().all(|addr| addr.is_ipv6()));
+        assert_eq!(ipv6.latest("::1").expect("recorded").candidates, ["::1"]);
+    }
 
     #[test]
     fn selected_endpoint_requires_a_resolver_candidate_match() {

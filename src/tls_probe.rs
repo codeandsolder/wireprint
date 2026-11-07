@@ -5,11 +5,10 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, anyhow, bail};
 use boring::ssl::{SslConnector, SslMethod, SslVersion};
-use clap::ValueEnum;
-use serde::{Deserialize, Serialize};
 use tokio::net::ToSocketAddrs;
 use url::Url;
 
+use crate::address_family::AddressFamily;
 use crate::dns::{DNS_CAPTURE_VERSION, RoutingDnsSnapshotter};
 use crate::fusion::assess_endpoint;
 use crate::model::{DnsProvenance, EndpointEvidence, Observation};
@@ -19,19 +18,11 @@ use crate::routing_context::{
 };
 use crate::tls::{TlsMessageCapture, TlsServerMorphology, provider_signals};
 
-#[derive(Debug, Clone, Copy, ValueEnum, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum TlsAddressFamily {
-    Auto,
-    Ipv4,
-    Ipv6,
-}
-
 #[derive(Debug, Clone)]
 pub struct TlsProbeConfig {
     pub handshake_timeout: Duration,
     pub post_handshake_window: Duration,
-    pub family: TlsAddressFamily,
+    pub family: AddressFamily,
     pub vantage: Option<String>,
     pub groups: Option<String>,
     pub profile_label: Option<String>,
@@ -43,7 +34,7 @@ impl Default for TlsProbeConfig {
         Self {
             handshake_timeout: Duration::from_secs(5),
             post_handshake_window: Duration::from_millis(2_500),
-            family: TlsAddressFamily::Auto,
+            family: AddressFamily::Auto,
             vantage: None,
             groups: None,
             profile_label: None,
@@ -108,6 +99,7 @@ pub async fn probe_tls(target: &str, config: &TlsProbeConfig) -> Result<Observat
         target: target.to_owned(),
         observed_unix_ms,
         vantage: config.vantage.clone(),
+        connection_address_family: config.family,
         request_profile: result.morphology.client_profile.clone(),
         request_role: Some("transport-observer".into()),
         request_provenance: Some("wireprint-tls".into()),
@@ -231,17 +223,12 @@ fn profile_name(config: &TlsProbeConfig) -> String {
 
 async fn resolve_candidates(
     target: impl ToSocketAddrs,
-    family: TlsAddressFamily,
+    family: AddressFamily,
 ) -> Result<Vec<SocketAddr>> {
     let mut seen = HashSet::new();
     let mut out = Vec::new();
     for address in tokio::net::lookup_host(target).await? {
-        let family_match = match family {
-            TlsAddressFamily::Auto => true,
-            TlsAddressFamily::Ipv4 => address.is_ipv4(),
-            TlsAddressFamily::Ipv6 => address.is_ipv6(),
-        };
-        if family_match && seen.insert(address) {
+        if family.accepts(address) && seen.insert(address) {
             out.push(address);
         }
     }

@@ -30,6 +30,8 @@ A useful request observation has at least these axes:
 - Multi-provider/path-split state is preserved rather than collapsed to a numeric winner.
 - ASN/prefix ownership describes the concrete selected/peer network context only. It does not originate or corroborate provider identity; hostname-wide DNS candidates must not be substituted for the actual serving endpoint.
 - `pure_in_sample` routing-audit output is a corpus statistic, not a provider-mapping recommendation. Repeated requests do not improve ASN purity; distinct hostnames are the audit unit.
+- `connection_address_family` (`auto`, `ipv4`, `ipv6`) records the connector address-family policy in each successful or error observation. Only actual dial candidates are family-filtered; the independently captured routing DNS snapshot still includes available A and AAAA records so the selected peer can be checked for consistency.
+- The Wreq and separate Hyper/Rustls HTTP transports both honor `probe --family` and `matrix --family`. Existing TLS and H3 observers use the same shared typed family selector. A strict-family DNS miss is an error, never a silent fallback to a different address family. Historical observations without this field deserialize as `auto`, meaning that no explicit family restriction was imposed.
 - Header order and duplicates are evidence; do not round-trip request profiles through unordered maps.
 
 ## Safety boundary

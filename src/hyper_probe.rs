@@ -1,7 +1,10 @@
 use std::fmt::Write as _;
+use std::future::Future;
 use std::io;
+use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Result, bail};
@@ -14,15 +17,20 @@ use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
 use hyper_util::{
     client::legacy::{
         Client,
-        connect::{HttpConnector, HttpInfo},
+        connect::{
+            HttpConnector, HttpInfo,
+            dns::{GaiResolver, Name},
+        },
     },
     rt::TokioExecutor,
 };
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncRead, AsyncReadExt, BufReader};
 use tokio_util::io::StreamReader;
+use tower_service::Service;
 use url::Url;
 
+use crate::address_family::AddressFamily;
 use crate::classify_response;
 use crate::fusion::assess_endpoint;
 use crate::model::{EndpointEvidence, Header, Observation, RequestProfile};
@@ -32,7 +40,38 @@ use crate::probe::ProbeConfig;
 use crate::routing_context::enrich_observation as enrich_routing_context;
 use crate::transport::{HyperRustlsProfileKind, TransportImplementation, TransportProfile};
 
-type NativeClient = Client<HttpsConnector<HttpConnector>, Empty<Bytes>>;
+#[derive(Clone)]
+struct FamilyGaiResolver {
+    inner: GaiResolver,
+    family: AddressFamily,
+}
+
+impl Service<Name> for FamilyGaiResolver {
+    type Response = std::vec::IntoIter<SocketAddr>;
+    type Error = io::Error;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, name: Name) -> Self::Future {
+        let mut inner = self.inner.clone();
+        let family = self.family;
+        Box::pin(async move {
+            let addrs = family.filter(inner.call(name.clone()).await?);
+            if addrs.is_empty() {
+                return Err(io::Error::new(
+                    io::ErrorKind::AddrNotAvailable,
+                    format!("no {family:?} address resolved for {name}"),
+                ));
+            }
+            Ok(addrs.into_iter())
+        })
+    }
+}
+
+type NativeClient = Client<HttpsConnector<HttpConnector<FamilyGaiResolver>>, Empty<Bytes>>;
 const MAX_REDIRECTS: usize = 10;
 
 pub async fn probe_batch_hyper_rustls(
@@ -55,12 +94,17 @@ pub async fn probe_batch_hyper_rustls(
         ),
     }
 
+    let mut http = HttpConnector::new_with_resolver(FamilyGaiResolver {
+        inner: GaiResolver::new(),
+        family: config.address_family,
+    });
+    http.enforce_http(false);
     let https = HttpsConnectorBuilder::new()
         .with_provider_and_webpki_roots(Arc::new(rustls::crypto::ring::default_provider()))?
         .https_or_http()
         .enable_http1()
         .enable_http2()
-        .build();
+        .wrap_connector(http);
     let client: NativeClient = Client::builder(TokioExecutor::new()).build(https);
     let context = NativeProbeContext {
         client: &client,
@@ -110,6 +154,7 @@ async fn probe_one(context: &NativeProbeContext<'_>, target: &str) -> Observatio
                 observed_unix_ms,
                 started,
                 vantage,
+                context.config.address_family,
                 error.to_string(),
             );
         }
@@ -134,6 +179,7 @@ async fn probe_one(context: &NativeProbeContext<'_>, target: &str) -> Observatio
                     observed_unix_ms,
                     started,
                     vantage,
+                    context.config.address_family,
                     error.to_string(),
                 );
             }
@@ -150,6 +196,7 @@ async fn probe_one(context: &NativeProbeContext<'_>, target: &str) -> Observatio
                         observed_unix_ms,
                         started,
                         vantage,
+                        context.config.address_family,
                         error.to_string(),
                     );
                 }
@@ -161,6 +208,7 @@ async fn probe_one(context: &NativeProbeContext<'_>, target: &str) -> Observatio
                         observed_unix_ms,
                         started,
                         vantage,
+                        context.config.address_family,
                         "request timed out after 20 seconds".into(),
                     );
                 }
@@ -315,6 +363,7 @@ async fn finalize_response(
         target: target.into(),
         observed_unix_ms,
         vantage,
+        connection_address_family: context.config.address_family,
         request_profile: profile.name.clone(),
         request_role: profile.role.clone(),
         request_provenance: profile.provenance.clone(),
@@ -368,12 +417,14 @@ fn error_observation(
     observed_unix_ms: u128,
     started: Instant,
     vantage: Option<String>,
+    family: AddressFamily,
     error: String,
 ) -> Observation {
     Observation {
         target: target.into(),
         observed_unix_ms,
         vantage,
+        connection_address_family: family,
         request_profile: profile.name.clone(),
         request_role: profile.role.clone(),
         request_provenance: profile.provenance.clone(),
@@ -440,6 +491,31 @@ fn is_textual_response(headers: &[Header], body: &[u8]) -> bool {
 mod tests {
     use super::{is_sensitive_redirect_header, same_origin};
     use url::Url;
+
+    #[tokio::test]
+    async fn native_resolver_does_not_fallback_across_families() {
+        use std::str::FromStr;
+
+        use hyper_util::client::legacy::connect::dns::Name;
+        use tower_service::Service;
+
+        let ipv4_name = Name::from_str("127.0.0.1").expect("valid literal");
+        let mut ipv4 = super::FamilyGaiResolver {
+            inner: super::GaiResolver::new(),
+            family: super::AddressFamily::Ipv4,
+        };
+        let v4 = ipv4.call(ipv4_name.clone()).await.expect("IPv4");
+        assert!(v4.into_iter().all(|ip| ip.is_ipv4()));
+
+        let mut ipv6 = super::FamilyGaiResolver {
+            inner: super::GaiResolver::new(),
+            family: super::AddressFamily::Ipv6,
+        };
+        assert!(ipv6.call(ipv4_name).await.is_err());
+        let ipv6_name = Name::from_str("::1").expect("valid literal");
+        let v6 = ipv6.call(ipv6_name).await.expect("IPv6");
+        assert!(v6.into_iter().all(|ip| ip.is_ipv6()));
+    }
 
     #[test]
     fn sensitive_headers_are_not_forwarded_cross_origin() {
