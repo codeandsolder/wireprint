@@ -1,4 +1,4 @@
-use crate::model::{PathElement, PathElementRole};
+use crate::model::{DnsProvenance, PathElement, PathElementRole};
 
 pub const ROUTING_CLASSIFIER_VERSION: &str = "builtin-routing-v17";
 
@@ -985,5 +985,44 @@ pub fn detect_routing_elements(host: &str, cname_chain: &[String]) -> Vec<PathEl
     }
 
     refine_edge_provider_family(&mut elements, "azure-cloud-edge", "azure-front-door");
+    elements
+}
+
+/// Preserve every *reachable* CNAME target from either independent DNS query.
+/// Disconnected RRs are kept in the raw query but cannot claim routing participation.
+#[must_use]
+pub fn detect_routing_snapshot_elements(dns: &DnsProvenance) -> Vec<PathElement> {
+    use std::collections::HashSet;
+
+    let mut elements = detect_routing_elements(&dns.host, &[]);
+    for answer in &dns.routing_answers {
+        let mut frontier = vec![dns.host.clone()];
+        let mut visited = HashSet::new();
+        while let Some(owner) = frontier.pop() {
+            if !visited.insert(owner.clone()) {
+                continue;
+            }
+            for link in answer.cname_links.iter().filter(|link| link.owner == owner) {
+                frontier.push(link.target.clone());
+                for incoming in
+                    detect_routing_elements(&dns.host, std::slice::from_ref(&link.target))
+                {
+                    if let Some(existing) = elements.iter_mut().find(|existing| {
+                        existing.role == incoming.role
+                            && existing.product == incoming.product
+                            && existing.classifier == incoming.classifier
+                    }) {
+                        for evidence in incoming.evidence {
+                            if !existing.evidence.contains(&evidence) {
+                                existing.evidence.push(evidence);
+                            }
+                        }
+                    } else {
+                        elements.push(incoming);
+                    }
+                }
+            }
+        }
+    }
     elements
 }

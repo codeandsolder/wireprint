@@ -12,7 +12,7 @@ use crate::address_family::AddressFamily;
 use crate::dns::{DNS_CAPTURE_VERSION, RoutingDnsSnapshotter};
 use crate::fusion::assess_endpoint;
 use crate::model::{DnsProvenance, EndpointEvidence, Observation};
-use crate::routing::detect_routing_elements;
+use crate::routing::detect_routing_snapshot_elements;
 use crate::routing_context::{
     RoutingContextCollector, enrich_observation as enrich_routing_context,
 };
@@ -75,12 +75,11 @@ pub async fn probe_tls(target: &str, config: &TlsProbeConfig) -> Result<Observat
         connection_candidates,
         connection_resolution_unix_ms: Some(resolution_unix_ms),
         connection_resolution_reused: false,
-        cname_chain: routing.cname_chain,
-        routing_snapshot_ips: routing.ips,
+        routing_answers: routing.answers,
         routing_snapshot_unix_ms: Some(routing.observed_unix_ms),
         routing_snapshot_error: routing.error,
     };
-    let routing_elements = detect_routing_elements(&dns.host, &dns.cname_chain);
+    let routing_elements = detect_routing_snapshot_elements(&dns);
 
     let blocking = BlockingTlsConfig {
         host,

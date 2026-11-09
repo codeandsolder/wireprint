@@ -1,9 +1,33 @@
 use wireprint::{
-    DnsProvenance, EndpointEvidence, PATH_CLASSIFIER_VERSION, PathElement, PathElementRole,
-    ProviderEvidenceChannel, ProviderSignal, ProviderSupport, ROUTING_CLASSIFIER_VERSION,
-    RoutingContext, RoutingSnapshotBinding, TerminationState, assess_endpoint,
-    detect_path_elements, detect_routing_elements as detect_routing_with_source,
+    AddressFamily, DnsCnameLink, DnsProvenance, DnsRouteAnswer, EndpointEvidence,
+    PATH_CLASSIFIER_VERSION, PathElement, PathElementRole, ProviderEvidenceChannel, ProviderSignal,
+    ProviderSupport, ROUTING_CLASSIFIER_VERSION, RoutingContext, RoutingSnapshotBinding,
+    TerminationState, assess_endpoint as assess_endpoint_core, detect_path_elements,
+    detect_routing_elements as detect_routing_with_source,
 };
+
+// Existing synthetic fixtures explicitly posit a matched/verified DNS route.
+// Live observations instead derive exact bound evidence from recorded A/AAAA RRs.
+fn assess_endpoint(evidence: &EndpointEvidence) -> wireprint::EndpointAssessment {
+    let mut verified = evidence.clone();
+    if verified.routing_snapshot_binding == RoutingSnapshotBinding::Matched
+        && verified.routing_bound_evidence.is_empty()
+    {
+        verified.routing_bound_evidence = verified
+            .routing_elements
+            .iter()
+            .flat_map(|element| element.evidence.iter().cloned())
+            .chain(
+                verified
+                    .provider_signals
+                    .iter()
+                    .filter(|signal| signal.channel == ProviderEvidenceChannel::RoutingDns)
+                    .flat_map(|signal| signal.evidence.iter().cloned()),
+            )
+            .collect();
+    }
+    assess_endpoint_core(&verified)
+}
 
 // Synthetic CNAME-target fixture; production callers supply both sources.
 fn detect_routing_elements(cname_targets: &[String]) -> Vec<PathElement> {
@@ -737,19 +761,51 @@ fn freshdesk_cname_and_cloudflare_response_do_not_merge_layers() {
 }
 
 fn routing_snapshot(addresses: &[&str], error: Option<&str>) -> DnsProvenance {
+    let chain = vec![
+        "www.pinterest.com".to_owned(),
+        "www-pinterest-com.gslb.pinterest.com".to_owned(),
+        "www.gslb2.pinterest.net".to_owned(),
+        "prod.pinterest.global.map.fastly.net".to_owned(),
+    ];
+    let mut owner = "ct.pinterest.com".to_owned();
+    let links = chain
+        .iter()
+        .map(|target| {
+            let link = DnsCnameLink {
+                owner: owner.clone(),
+                target: target.clone(),
+            };
+            owner = target.clone();
+            link
+        })
+        .collect::<Vec<_>>();
+    let ips = addresses
+        .iter()
+        .map(|ip| (*ip).to_owned())
+        .collect::<Vec<_>>();
+    let family = if addresses.first().is_some_and(|ip| ip.contains(':')) {
+        AddressFamily::Ipv6
+    } else {
+        AddressFamily::Ipv4
+    };
     DnsProvenance {
-        classifier: "builtin-dns-v1".into(),
+        classifier: "builtin-dns-v2".into(),
         host: "ct.pinterest.com".into(),
         connection_candidates: vec!["23.197.161.35".into()],
         connection_resolution_unix_ms: Some(1793881734257),
         connection_resolution_reused: false,
-        cname_chain: vec![
-            "www.pinterest.com".into(),
-            "www-pinterest-com.gslb.pinterest.com".into(),
-            "www.gslb2.pinterest.net".into(),
-            "prod.pinterest.global.map.fastly.net".into(),
-        ],
-        routing_snapshot_ips: addresses.iter().map(|x| (*x).into()).collect(),
+        routing_answers: vec![DnsRouteAnswer {
+            family,
+            linked_ips: if error.is_none() {
+                ips.clone()
+            } else {
+                Vec::new()
+            },
+            ips,
+            cname_chain: chain,
+            cname_links: links,
+            error: error.map(str::to_owned),
+        }],
         routing_snapshot_unix_ms: Some(1793881734130),
         routing_snapshot_error: error.map(str::to_owned),
     }
@@ -774,7 +830,7 @@ fn parallel_dns_snapshot_divergence_is_not_a_second_termination_candidate() {
         actual_peer: Some("23.197.161.35:443".into()),
         routing_snapshot_binding: binding,
         response_elements: vec![provider_element("akamai")],
-        routing_elements: detect_routing_with_source(&dns.host, &dns.cname_chain),
+        routing_elements: wireprint::detect_routing_snapshot_elements(&dns),
         provider_signals: vec![signal("akamai", ProviderEvidenceChannel::H2Transport)],
         ..EndpointEvidence::default()
     });
@@ -816,7 +872,7 @@ fn matching_dns_snapshot_can_corrobate_serving_route() {
     let assessment = assess_endpoint(&EndpointEvidence {
         selected_endpoint: Some("151.101.128.84".into()),
         routing_snapshot_binding: binding,
-        routing_elements: detect_routing_with_source(&dns.host, &dns.cname_chain),
+        routing_elements: wireprint::detect_routing_snapshot_elements(&dns),
         provider_signals: vec![signal("fastly", ProviderEvidenceChannel::H2Transport)],
         ..EndpointEvidence::default()
     });
@@ -929,11 +985,50 @@ fn real_asus_pinterest_observations_replay_endpoint_binding_end_to_end() {
             serde_json::from_str(raw).expect("valid captured observation");
         let evidence = EndpointEvidence::from(&observation);
         assert_eq!(evidence.routing_snapshot_binding, binding);
-        let assessment = assess_endpoint(&evidence);
+        let assessment = assess_endpoint_core(&evidence);
         assert_eq!(assessment.state, TerminationState::SingleCandidate);
         assert_eq!(assessment.candidates.len(), 1);
         assert_eq!(assessment.candidates[0].provider, provider);
         assert_eq!(assessment.routing_snapshot_binding, binding);
         assert_eq!(assessment.classifier, wireprint::ENDPOINT_FUSION_VERSION);
     }
+}
+
+#[test]
+fn captured_stripe_mixed_union_legacy_snapshot_cannot_vote_for_cloudfront() {
+    // Real Acer IPv4 Wreq capture on 2026-11-07: Fastly peer and H2
+    // response, but old Hickory combined an unrelated CloudFront AAAA alias.
+    // The old *ungrouped* format cannot prove any DNS CNAME-to-peer binding.
+    let observation: wireprint::Observation =
+        serde_json::from_str(include_str!("fixtures/stripe-mixed-union-legacy.json"))
+            .expect("real legacy Stripe observation");
+    assert!(
+        observation
+            .dns
+            .as_ref()
+            .expect("DNS")
+            .routing_answers
+            .is_empty()
+    );
+    let evidence = EndpointEvidence::from(&observation);
+    assert_eq!(
+        evidence.routing_snapshot_binding,
+        RoutingSnapshotBinding::Unverified
+    );
+    assert!(evidence.routing_bound_evidence.is_empty());
+    let assessment = assess_endpoint_core(&evidence);
+    assert_eq!(assessment.state, TerminationState::SingleCandidate);
+    assert_eq!(assessment.candidates.len(), 1);
+    assert_eq!(assessment.candidates[0].provider, "fastly");
+    assert_eq!(
+        assessment.candidates[0].support,
+        ProviderSupport::CrossChannelCorroborated
+    );
+    assert!(
+        assessment
+            .path_elements
+            .iter()
+            .any(|element| element.product == "aws-cloudfront"
+                && element.evidence == ["cname:d1tcqh4bio8cty.cloudfront.net"])
+    );
 }

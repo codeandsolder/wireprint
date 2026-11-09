@@ -2,10 +2,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::model::{
     EndpointAssessment, EndpointEvidence, PathElement, PathElementRole, ProviderCandidate,
-    ProviderEvidenceChannel, ProviderSupport, RoutingSnapshotBinding, TerminationState,
+    ProviderEvidenceChannel, ProviderSupport, TerminationState,
 };
 
-pub const ENDPOINT_FUSION_VERSION: &str = "builtin-endpoint-v3";
+pub const ENDPOINT_FUSION_VERSION: &str = "builtin-endpoint-v4";
 
 impl ProviderEvidenceChannel {
     const fn originates_termination(self) -> bool {
@@ -51,6 +51,32 @@ fn add_signal(
     slot.evidence.extend(evidence);
 }
 
+fn add_routing_elements(
+    candidates: &mut BTreeMap<String, CandidateBuilder>,
+    path_elements: &mut Vec<PathElement>,
+    evidence: &EndpointEvidence,
+) {
+    for element in &evidence.routing_elements {
+        push_path_element(path_elements, element);
+        if element.role == PathElementRole::EdgeProvider {
+            let bound = element
+                .evidence
+                .iter()
+                .filter(|token| evidence.routing_bound_evidence.contains(*token))
+                .cloned()
+                .collect::<Vec<_>>();
+            if !bound.is_empty() {
+                add_signal(
+                    candidates,
+                    &element.product,
+                    ProviderEvidenceChannel::RoutingDns,
+                    bound,
+                );
+            }
+        }
+    }
+}
+
 /// Fuse one concrete endpoint/vantage observation without inventing hop order.
 ///
 /// Response metadata, provider-managed DNS names and H2/H3 provider-family signals
@@ -74,25 +100,20 @@ pub fn assess_endpoint(evidence: &EndpointEvidence) -> EndpointAssessment {
         }
     }
 
-    for element in &evidence.routing_elements {
-        push_path_element(&mut path_elements, element);
-        if element.role == PathElementRole::EdgeProvider
-            && evidence.routing_snapshot_binding == RoutingSnapshotBinding::Matched
-        {
-            add_signal(
-                &mut candidates,
-                &element.product,
-                ProviderEvidenceChannel::RoutingDns,
-                element.evidence.clone(),
-            );
-        }
-    }
+    add_routing_elements(&mut candidates, &mut path_elements, evidence);
 
     let mut deferred = Vec::new();
     for signal in &evidence.provider_signals {
-        if signal.channel == ProviderEvidenceChannel::RoutingDns
-            && evidence.routing_snapshot_binding != RoutingSnapshotBinding::Matched
-        {
+        if signal.channel == ProviderEvidenceChannel::RoutingDns {
+            let bound = signal
+                .evidence
+                .iter()
+                .filter(|token| evidence.routing_bound_evidence.contains(*token))
+                .cloned()
+                .collect::<Vec<_>>();
+            if !bound.is_empty() {
+                add_signal(&mut candidates, &signal.provider, signal.channel, bound);
+            }
             continue;
         }
         if signal.channel.originates_termination() {

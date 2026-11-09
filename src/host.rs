@@ -6,7 +6,7 @@ use url::Url;
 use crate::fusion::assess_endpoint;
 use crate::model::{EndpointAssessment, EndpointEvidence, Observation, ProviderEvidenceChannel};
 
-pub const HOST_FUSION_VERSION: &str = "builtin-host-v3";
+pub const HOST_FUSION_VERSION: &str = "builtin-host-v4";
 pub const DEFAULT_HOST_FRESHNESS_WINDOW_MS: u128 = 6 * 60 * 60 * 1000;
 pub const DEFAULT_SUPPORT_BUCKET_MS: u128 = 60 * 60 * 1000;
 

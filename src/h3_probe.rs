@@ -17,7 +17,7 @@ use crate::fusion::assess_endpoint;
 use crate::h3::{H3ServerFingerprint, H3Setting, classify_h3_quic, provider_signals};
 use crate::model::{DnsProvenance, EndpointEvidence, Header, Observation};
 use crate::path::detect_path_elements;
-use crate::routing::detect_routing_elements;
+use crate::routing::detect_routing_snapshot_elements;
 use crate::routing_context::{
     RoutingContextCollector, enrich_observation as enrich_routing_context,
 };
@@ -91,12 +91,11 @@ pub async fn probe_h3(target: &str, config: &H3ProbeConfig) -> Result<Observatio
         connection_candidates,
         connection_resolution_unix_ms: Some(resolution_unix_ms),
         connection_resolution_reused: false,
-        cname_chain: routing.cname_chain,
-        routing_snapshot_ips: routing.ips,
+        routing_answers: routing.answers,
         routing_snapshot_unix_ms: Some(routing.observed_unix_ms),
         routing_snapshot_error: routing.error,
     };
-    let routing_elements = detect_routing_elements(&dns.host, &dns.cname_chain);
+    let routing_elements = detect_routing_snapshot_elements(&dns);
 
     let bind = match peer {
         SocketAddr::V4(_) => "0.0.0.0:0",

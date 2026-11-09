@@ -12,26 +12,55 @@
   "remote": "23.197.161.35:443",
   "selected_endpoint": "23.197.161.35",
   "dns": {
-    "classifier": "builtin-dns-v1",
+    "classifier": "builtin-dns-v2",
     "host": "ct.pinterest.com",
     "connection_candidates": [
       "23.197.161.35"
     ],
     "connection_resolution_unix_ms": 1793881734257,
     "connection_resolution_reused": false,
-    "cname_chain": [
-      "www.pinterest.com",
-      "www-pinterest-com.gslb.pinterest.com",
-      "www.gslb2.pinterest.net",
-      "prod.pinterest.global.map.fastly.net"
-    ],
-    "routing_snapshot_ips": [
-      "151.101.0.84",
-      "151.101.64.84",
-      "151.101.128.84",
-      "151.101.192.84"
-    ],
-    "routing_snapshot_unix_ms": 1793881734130
+    "routing_snapshot_unix_ms": 1793881734130,
+    "routing_answers": [
+      {
+        "family": "ipv4",
+        "ips": [
+          "151.101.0.84",
+          "151.101.64.84",
+          "151.101.128.84",
+          "151.101.192.84"
+        ],
+        "linked_ips": [
+          "151.101.0.84",
+          "151.101.64.84",
+          "151.101.128.84",
+          "151.101.192.84"
+        ],
+        "cname_chain": [
+          "www.pinterest.com",
+          "www-pinterest-com.gslb.pinterest.com",
+          "www.gslb2.pinterest.net",
+          "prod.pinterest.global.map.fastly.net"
+        ],
+        "cname_links": [
+          {
+            "owner": "ct.pinterest.com",
+            "target": "www.pinterest.com"
+          },
+          {
+            "owner": "www.pinterest.com",
+            "target": "www-pinterest-com.gslb.pinterest.com"
+          },
+          {
+            "owner": "www-pinterest-com.gslb.pinterest.com",
+            "target": "www.gslb2.pinterest.net"
+          },
+          {
+            "owner": "www.gslb2.pinterest.net",
+            "target": "prod.pinterest.global.map.fastly.net"
+          }
+        ]
+      }
+    ]
   },
   "response_headers": [],
   "path_elements": [
