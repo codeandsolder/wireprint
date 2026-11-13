@@ -2,6 +2,8 @@
 //!
 //! Origin-Cf-Ray has no public hop contract. Differences in reported Ray IDs
 //! or location suffixes are not proof of another provider, hop or termination.
+//! On a cache HIT, Origin-Cf-Ray may be preserved from an earlier cache-fill
+//! response; its ID or colo need not describe work done for the current request.
 
 use crate::model::{CfRayHeaderValue, CfRayProvenance, CfRayRelation, Header};
 
@@ -31,6 +33,7 @@ fn parse_value(raw: &str) -> CfRayHeaderValue {
 
 /// Retain distinct HTTP header values; compare only when unambiguous.
 /// This is not path-element classification or an edge-provider vote.
+/// A reported header may be historical cache metadata, not request-local.
 #[must_use]
 pub fn detect_cf_ray_provenance(headers: &[Header]) -> Option<CfRayProvenance> {
     let origin_cf_ray = headers
