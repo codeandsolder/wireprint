@@ -32,6 +32,7 @@ fn parse_value(raw: &str) -> CfRayHeaderValue {
 }
 
 /// Retain distinct HTTP header values; compare only when unambiguous.
+///
 /// This is not path-element classification or an edge-provider vote.
 /// A reported header may be historical cache metadata, not request-local.
 #[must_use]
