@@ -31,6 +31,7 @@ use tower_service::Service;
 use url::Url;
 
 use crate::address_family::AddressFamily;
+use crate::cf_ray::detect_cf_ray_provenance;
 use crate::classify_response;
 use crate::fusion::assess_endpoint;
 use crate::model::{EndpointEvidence, Header, Observation, RequestProfile};
@@ -328,6 +329,7 @@ async fn finalize_response(
 
     let outcome = classify_response(status, &headers, &body);
     let path_elements = detect_path_elements(&headers);
+    let cf_ray_provenance = detect_cf_ray_provenance(&headers);
     let digest = hex_digest(Sha256::digest(&body));
     let textual = is_textual_response(&headers, &body);
     let (template_digest, template_normalizer, body_prefix) = if textual {
@@ -368,6 +370,7 @@ async fn finalize_response(
         selected_endpoint,
         dns: None,
         response_headers: headers,
+        cf_ray_provenance,
         path_elements,
         routing_elements: Vec::new(),
         provider_signals: Vec::new(),
@@ -424,6 +427,7 @@ fn error_observation(
         selected_endpoint: None,
         dns: None,
         response_headers: Vec::new(),
+        cf_ray_provenance: None,
         path_elements: Vec::new(),
         routing_elements: Vec::new(),
         provider_signals: Vec::new(),

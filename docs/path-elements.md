@@ -25,6 +25,14 @@ That distinction matters. A response can preserve evidence from an outer CDN, a 
 
 Each element stores the role, product label, classifier version, and the concrete evidence marker(s) that triggered it.
 
+## Independent CF-Ray header provenance diagnostic
+
+The optional `cf_ray_provenance` field, classified by `builtin-cf-ray-provenance-v1`, is distinct from the path-element and endpoint classifiers. It is emitted by HTTP probes (wreq, Hyper-Rustls, and the HTTP/3 observer) and by `wireprint path --input` replay only when an `Origin-Cf-Ray` response header exists. For an ad-hoc pair, run `wireprint ray --header 'Origin-Cf-Ray:a46f918fcf090d25-FRA' --header 'Cf-Ray:a470db0ecd08526b-PRG'`. An ordinary standalone `Cf-Ray` remains in `response_headers`, without repeating its raw value in a redundant diagnostic.
+
+The struct preserves every observed raw value from the nonstandard `Origin-Cf-Ray` and standard `Cf-Ray` headers. Syntactically parsed Ray ID and three-letter colo code are metadata only, not authenticated identities. One valid value from each header gives one of `identical`, `same_id_different_colo`, `different_id_same_colo`, or `different_id_different_colo`. Missing final-response Ray, duplicates, and unparseable values are reported explicitly rather than guessed. The fields mirror response header names, not a verified origin/front-end hop ordering.
+
+Cloudflare [documents](https://developers.cloudflare.com/fundamentals/reference/http-headers/) that Ray IDs and colo suffixes can be rewritten when Argo routing or tiered caching changes the datacenter that connects to the origin; it also [warns](https://developers.cloudflare.com/fundamentals/reference/cloudflare-ray-id/) that Ray IDs are not guaranteed unique. There is no corresponding public Cloudflare-wide standard for `Origin-Cf-Ray`. In the archived X/Twitter corpus, 3,982 of 3,983 weighted responses with `Origin-Cf-Ray` also expose `Cf-Ray`: 2,387 differ in ID and colo, 450 share ID but differ in colo, 2 differ in ID but share colo, and 1,143 are identical. The diagnostic is intentionally not a new provider vote, cache participant, inferred second hop, or selected-socket POP claim. See the [Ray provenance evidence handoff](https://app.notion.com/p/417f74be90208175a00bfdce2db9de1e).
+
 ## Current explicit markers
 
 The v10 recognizer includes:

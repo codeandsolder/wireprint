@@ -116,6 +116,7 @@ pub async fn probe_tls(target: &str, config: &TlsProbeConfig) -> Result<Observat
         selected_endpoint: Some(selected_peer.ip().to_string()),
         dns: Some(dns),
         response_headers: Vec::new(),
+        cf_ray_provenance: None,
         path_elements: Vec::new(),
         routing_elements,
         provider_signals,

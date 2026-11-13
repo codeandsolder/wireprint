@@ -77,6 +77,37 @@ pub struct PathElement {
     pub evidence: Vec<String>,
 }
 
+/// Comparison of reported HTTP header values, not of verified network hops.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CfRayRelation {
+    Identical,
+    SameIdDifferentColo,
+    DifferentIdSameColo,
+    DifferentIdDifferentColo,
+    MissingResponseRay,
+    MultipleValues,
+    Unparseable,
+}
+
+/// Parsed-looking components do not authenticate the header's author.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CfRayHeaderValue {
+    pub value: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ray_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub colo: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CfRayProvenance {
+    pub classifier: String,
+    pub origin_cf_ray: Vec<CfRayHeaderValue>,
+    pub cf_ray: Vec<CfRayHeaderValue>,
+    pub relation: CfRayRelation,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderEvidenceChannel {
@@ -346,6 +377,8 @@ pub struct Observation {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dns: Option<DnsProvenance>,
     pub response_headers: Vec<Header>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cf_ray_provenance: Option<CfRayProvenance>,
     pub path_elements: Vec<PathElement>,
     #[serde(default)]
     pub routing_elements: Vec<PathElement>,
