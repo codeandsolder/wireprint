@@ -1410,3 +1410,81 @@ fn arc_xp_support_ids_are_platform_evidence_not_cdn_identity() {
         ));
     }
 }
+
+#[test]
+fn bytedance_cache_trace_tag_coexists_with_akamai_without_outer_vote() {
+    let elements = detect_path_elements(&[
+        header("X-Akamai-Request-Id", "931952a"),
+        header("x-tt-trace-tag", "id=16;cdn-cache=hit;type=static"),
+    ]);
+    assert!(has(&elements, PathElementRole::EdgeProvider, "akamai"));
+    assert!(has(&elements, PathElementRole::Cache, "bytedance-cdn"));
+    assert!(!has(
+        &elements,
+        PathElementRole::EdgeProvider,
+        "bytedance-cdn"
+    ));
+    let cdn = elements
+        .iter()
+        .find(|element| element.product == "bytedance-cdn")
+        .unwrap();
+    assert_eq!(cdn.evidence, ["header:x-tt-trace-tag:cdn-cache"]);
+
+    for value in [
+        "id=16;cdn-cache=miss;type=dyn",
+        "id=00; CDN-CACHE = bypass",
+        "cdn-cache=hit",
+    ] {
+        let elements = detect_path_elements(&[header("X-Tt-Trace-Tag", value)]);
+        assert!(has(&elements, PathElementRole::Cache, "bytedance-cdn"));
+    }
+}
+
+#[test]
+fn bytedance_cache_status_is_independent_of_trace_tag_and_preserves_composition() {
+    for value in ["TCP_HIT", "TCP_MISS", "TCP_MISS,TCP_HIT", "NEW_CDN_STATE"] {
+        let elements = detect_path_elements(&[header("X-Bdcdn-Cache-Status", value)]);
+        assert!(has(&elements, PathElementRole::Cache, "bytedance-cdn"));
+        assert!(!has(
+            &elements,
+            PathElementRole::EdgeProvider,
+            "bytedance-cdn"
+        ));
+    }
+
+    let elements = detect_path_elements(&[
+        header("Server", "Byte-nginx"),
+        header("X-Bdcdn-Cache-Status", "TCP_HIT"),
+        header("x-response-cache", "edge_hit"),
+        header("x-tt-trace-tag", "id=5"),
+    ]);
+    assert!(has(&elements, PathElementRole::Cache, "bytedance-cdn"));
+    assert_eq!(
+        elements
+            .iter()
+            .filter(|element| element.product == "bytedance-cdn")
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn unrelated_or_incomplete_bytedance_fields_do_not_imply_cache_participation() {
+    for headers in [
+        vec![header("x-tt-trace-tag", "id=5")],
+        vec![header("x-tt-trace-tag", "id=31")],
+        vec![header("x-tt-trace-tag", "id=16;cdn-cache=")],
+        vec![header("x-tt-trace-tag", "id=16;not-cdn-cache=hit")],
+        vec![header("x-tt-trace-host", "opaque")],
+        vec![header("x-tt-trace-id", "opaque")],
+        vec![header("x-response-cache", "edge_hit")],
+        vec![header("Server", "Byte-nginx")],
+        vec![header("x-bdcdn-cache-status", " ")],
+    ] {
+        assert!(!has(
+            &detect_path_elements(&headers),
+            PathElementRole::Cache,
+            "bytedance-cdn"
+        ));
+    }
+}

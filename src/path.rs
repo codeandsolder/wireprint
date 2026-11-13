@@ -1,6 +1,6 @@
 use crate::model::{Header, PathElement, PathElementRole};
 
-pub const PATH_CLASSIFIER_VERSION: &str = "builtin-path-v8";
+pub const PATH_CLASSIFIER_VERSION: &str = "builtin-path-v9";
 
 fn header_values<'a>(headers: &'a [Header], name: &str) -> impl Iterator<Item = &'a str> {
     headers
@@ -15,6 +15,17 @@ fn has_header(headers: &[Header], name: &str) -> bool {
 
 fn has_nonempty_header(headers: &[Header], name: &str) -> bool {
     header_values(headers, name).any(|value| !value.trim().is_empty())
+}
+
+// X-Tt-Trace-Tag is a reserved ByteDance CDN header, but trace-only tags
+// (such as id=5) do not prove cache participation. Require the named
+// cdn-cache field, without assuming a closed set of cache result values.
+fn bytedance_cdn_cache_tag(value: &str) -> bool {
+    value.split(';').any(|field| {
+        field.trim().split_once('=').is_some_and(|(key, status)| {
+            key.trim().eq_ignore_ascii_case("cdn-cache") && !status.trim().is_empty()
+        })
+    })
 }
 
 fn has_header_prefix(headers: &[Header], prefix: &str) -> bool {
@@ -283,6 +294,23 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             PathElementRole::Cache,
             "alibaba-cloud-cdn",
             evidence,
+        );
+    }
+    // The ByteDance/Volcengine CDN family reserves these response headers.
+    // Cache participation is independent from any Akamai or other outer CDN
+    // that may carry the values unchanged; this is never a TLS edge vote.
+    if has_nonempty_header(headers, "x-bdcdn-cache-status")
+        || header_values(headers, "x-tt-trace-tag").any(bytedance_cdn_cache_tag)
+    {
+        add(
+            &mut elements,
+            PathElementRole::Cache,
+            "bytedance-cdn",
+            if has_nonempty_header(headers, "x-bdcdn-cache-status") {
+                "header:x-bdcdn-cache-status"
+            } else {
+                "header:x-tt-trace-tag:cdn-cache"
+            },
         );
     }
     if has_header(headers, "x-amz-cf-id")
