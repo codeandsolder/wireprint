@@ -1550,3 +1550,131 @@ fn volc_dcdn_banner_and_server_timing_identify_cache_without_trace_tag_cache_fie
         ));
     }
 }
+
+#[test]
+fn future_publishing_internal_headers_preserve_fastly_varnish_and_cache_layers() {
+    let elements = detect_path_elements(&[
+        header("via", "1.1 varnish, 1.1 varnish"),
+        header("x-timer", "S1791420568.860304,VS0,VE11"),
+        header("x-ftr-backend", "varnish-leopard"),
+        header("x-ftr-backend-server", "vanilla-leopard-http-cache-prod-01"),
+        header("x-ftr-balancer", "vanilla-mochi-http-haproxy-prod-2"),
+        header("x-ftr-request-id", "d59b48cf-26f5-400f-9d85-7179cbb0a8d7"),
+        header("x-ftr-cache-status", "MISS HIT"),
+    ]);
+    for (role, product) in [
+        (PathElementRole::ApplicationPlatform, "future-publishing"),
+        (PathElementRole::Cache, "future-publishing"),
+        (PathElementRole::Cache, "varnish"),
+        (PathElementRole::Cache, "fastly"),
+    ] {
+        assert!(
+            has(&elements, role.clone(), product),
+            "missing {role:?} {product}"
+        );
+    }
+    assert!(!has(
+        &elements,
+        PathElementRole::EdgeProvider,
+        "future-publishing"
+    ));
+    assert!(!has(
+        &elements,
+        PathElementRole::LoadBalancer,
+        "future-publishing"
+    ));
+    assert!(!has(&elements, PathElementRole::ReverseProxy, "haproxy"));
+    let platform = elements
+        .iter()
+        .find(|item| {
+            item.product == "future-publishing" && item.role == PathElementRole::ApplicationPlatform
+        })
+        .unwrap();
+    assert_eq!(platform.evidence, ["headers:x-ftr-backend+x-ftr-balancer"]);
+}
+
+#[test]
+fn future_publishing_asset_platform_keeps_cloudfront_as_independent_edge() {
+    let elements = detect_path_elements(&[
+        header("server", "CloudFront"),
+        header("x-amz-cf-id", "opaque"),
+        header("x-amz-cf-pop", "FRA56-P1"),
+        header("x-ftr-backend", "proof-mos-kodiak"),
+        header("x-ftr-balancer", "bulk-proxy-prod-02"),
+        header("x-ftr-request-id", "opaque"),
+        header("x-ftr-backend-server", "sse-prod:kodiak"),
+    ]);
+    assert!(has(
+        &elements,
+        PathElementRole::ApplicationPlatform,
+        "future-publishing"
+    ));
+    assert!(has(
+        &elements,
+        PathElementRole::EdgeProvider,
+        "aws-cloudfront"
+    ));
+    assert!(!has(&elements, PathElementRole::Cache, "future-publishing"));
+    assert!(!has(
+        &elements,
+        PathElementRole::EdgeProvider,
+        "future-publishing"
+    ));
+}
+
+#[test]
+fn future_publishing_cache_status_participation_is_not_a_platform_or_edge_vote() {
+    for status in ["HIT", "MISS", "HIT HIT", "MISS HIT", "HIT MISS", "EXPIRED"] {
+        let elements = detect_path_elements(&[header("X-Ftr-Cache-Status", status)]);
+        assert!(has(&elements, PathElementRole::Cache, "future-publishing"));
+        assert!(!has(
+            &elements,
+            PathElementRole::ApplicationPlatform,
+            "future-publishing"
+        ));
+        assert!(!has(
+            &elements,
+            PathElementRole::EdgeProvider,
+            "future-publishing"
+        ));
+    }
+}
+
+#[test]
+fn future_publishing_backend_only_or_incomplete_headers_are_not_platform_evidence() {
+    for headers in [
+        vec![header(
+            "x-ftr-backend",
+            "5BlfkaG4nsAHuS3GWP2Bf6--F_gargantuan_events",
+        )],
+        vec![header(
+            "x-ftr-balancer",
+            "vanilla-mochi-http-haproxy-prod-1",
+        )],
+        vec![header("x-ftr-request-id", "opaque")],
+        vec![header(
+            "x-ftr-backend-server",
+            "vanilla-leopard-http-cache-prod-01",
+        )],
+        vec![
+            header("x-ftr-backend", "varnish-leopard"),
+            header("x-ftr-balancer", " \t"),
+        ],
+        vec![
+            header("x-ftr-backend", ""),
+            header("x-ftr-balancer", "bulk-proxy-prod-02"),
+        ],
+        vec![
+            header("x-ftr-cache-status", "  "),
+            header("x-ftr-backend", "varnish-leopard"),
+        ],
+    ] {
+        let elements = detect_path_elements(&headers);
+        assert!(!has(
+            &elements,
+            PathElementRole::ApplicationPlatform,
+            "future-publishing"
+        ));
+        assert!(!has(&elements, PathElementRole::Cache, "future-publishing"));
+    }
+}

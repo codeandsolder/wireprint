@@ -1,6 +1,6 @@
 use crate::model::{Header, PathElement, PathElementRole};
 
-pub const PATH_CLASSIFIER_VERSION: &str = "builtin-path-v9";
+pub const PATH_CLASSIFIER_VERSION: &str = "builtin-path-v10";
 
 fn header_values<'a>(headers: &'a [Header], name: &str) -> impl Iterator<Item = &'a str> {
     headers
@@ -703,6 +703,29 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             evidence,
         );
     }
+    // Future's paired infrastructure headers identify platform participation,
+    // but the labels may describe Vanilla, Hawk, assets, or internal routing.
+    // Never infer the client-facing CDN or the implementation of a network
+    // hop from a backend/balancer hostname string.
+    if has_nonempty_header(headers, "x-ftr-backend")
+        && has_nonempty_header(headers, "x-ftr-balancer")
+    {
+        add(
+            &mut elements,
+            PathElementRole::ApplicationPlatform,
+            "future-publishing",
+            "headers:x-ftr-backend+x-ftr-balancer",
+        );
+    }
+    if has_nonempty_header(headers, "x-ftr-cache-status") {
+        add(
+            &mut elements,
+            PathElementRole::Cache,
+            "future-publishing",
+            "header:x-ftr-cache-status",
+        );
+    }
+
     // Arc XP's support IDs identify the publishing platform, not its CDN.
     if has_nonempty_header(headers, "x-arc-request-id")
         || has_nonempty_header(headers, "x-arc-pb-request-id")
