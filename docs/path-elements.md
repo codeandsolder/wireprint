@@ -6,7 +6,7 @@ That distinction matters. A response can preserve evidence from an outer CDN, a 
 
 ## Roles
 
-`builtin-path-v8` currently separates these roles:
+`builtin-path-v9` currently separates these roles:
 
 - `edge_provider` — managed serving/edge layer with explicit provider evidence;
 - `application_platform` — downstream delivery/application platform participation;
@@ -27,14 +27,14 @@ Each element stores the role, product label, classifier version, and the concret
 
 ## Current explicit markers
 
-The v8 recognizer includes:
+The v9 recognizer includes:
 
 - edge/provider: Cloudflare, CloudFront, Akamai, Fastly, F5 Distributed Cloud/Volt, Imperva, Sucuri, BunnyCDN, Google Front End, OpenResty Edge, Vercel, Netlify, Fly.io, Railway, KeyCDN, QUIC.cloud, CDN77, Tencent EdgeOne, Alibaba Cloud edge family;
 - downstream platforms: Vercel, Netlify, Azure Front Door, Render, Railway, Pantheon, Acquia Cloud Platform, Heroku, GitHub, Kinsta, Wix, Arc XP;
 - origin services: Amazon S3, generic S3-compatible object storage, MinIO, Akamai NetStorage, Google Cloud Storage, Azure Blob Storage, Alibaba OSS, Backblaze B2, Tencent COS;
 - API gateways: AWS API Gateway, Kong, Apache APISIX, KrakenD, Tyk, Gravitee;
 - load balancers: AWS Application Load Balancer, AWS Classic Load Balancer, Google Cloud Application Load Balancer, F5 BIG-IP LTM, NetScaler ADC, Azure Application Gateway, Azure/Microsoft ARR affinity family, Cloudflare Load Balancer, Oracle Cloud Load Balancer, OVH IPLB;
-- reverse proxies / caches: Fastly Image Optimizer, Akamai cache, Hostinger CDN cache, LiteSpeed cache/Web ADC, Kinsta site cache, Envoy, nghttpx, HAProxy, Traefik, Varnish, Squid, Apache Traffic Server;
+- reverse proxies / caches: ByteDance/Volcengine CDN family, Fastly Image Optimizer, Akamai cache, Hostinger CDN cache, LiteSpeed cache/Web ADC, Kinsta site cache, Envoy, nghttpx, HAProxy, Traefik, Varnish, Squid, Apache Traffic Server;
 - service mesh: Istio when explicitly exposed as `istio-envoy`, and Linkerd when `l5d-*` response markers are exposed;
 - identity proxies: Google Cloud IAP, Cloudflare Access, OAuth2 Proxy, Authelia, authentik;
 - traffic management: IO River, Cloudflare Waiting Room, Queue-it;
@@ -49,6 +49,8 @@ Path v7 also recognizes an Akamai Global Request Number carried in the observed 
 Path v7 expands response provenance using provider-documented markers found by a wide historical-header census and then validated compositionally rather than from co-occurrence alone. `X-HCDN-Request-ID` identifies Hostinger CDN delivery while `X-HCDN-Cache-Status` is a separate Hostinger cache role. `Akamai-Cache-Status` likewise contributes `cache: akamai` without upgrading itself into an outer-edge claim. Fastly Image Optimizer's documented `Fastly-IO-Info`, `Fastly-Stats`, warning, and error response headers contribute Fastly cache/transform participation; they can coexist with a different outer edge or preserved origin metadata.
 
 The same release broadens downstream and origin provenance. Azure Front Door's reserved `X-MSEdge-Ref` joins `X-Azure-Ref` as application-platform participation only. Current `Via: ... heroku-router` values join legacy `vegur` as Heroku platform evidence. `X-Railway-Request-Id` adds Railway platform evidence without implying TLS termination, while `X-Railway-Edge` remains the stronger edge marker. `X-GitHub-Request-Id` identifies GitHub platform participation. Google Cloud Storage now accepts its documented `X-Guploader-UploadID` and stored-content response headers; Azure Blob accepts `X-MS-Access-Tier`; Alibaba OSS accepts `X-OSS-Request-ID` or `Server: AliyunOSS`. These remain origin-service claims even when Cloudflare, Akamai, Fastly, CDN77, or another delivery layer preserves them.
+
+Path v9 recognizes the broad `cache: bytedance-cdn` family from a nonempty `X-Bdcdn-Cache-Status` response header, from a semicolon-delimited `X-Tt-Trace-Tag` containing a nonempty `cdn-cache` field, or from the paired exact `Server: Volc-DCDN` banner and `Server-Timing` metric named `cdn-cache` (including when preceding metrics contain quoted commas). BytePlus's own documentation reserves both names from customer response-header rules; its origin response-header policy also strips `x-bdcdn-*` fields coming from origins. Volcengine documentation defines `TCP_HIT`/`TCP_MISS` as CDN cache outcomes, while archived responses show both single-hop and comma-separated multi-layer outcomes. The tag's trace-only `id=N` form is insufficient by itself. The Volc-DCDN pairing additionally covers responses where that tag contains only an ID but the CDN explicitly reports `cdn-cache;desc=MISS` through Server-Timing. A generic `Server-Timing: cdn-cache` or lone Volc-DCDN banner is also insufficient, as are generic `X-Response-Cache` and `Server: Byte-nginx` metadata. The family label deliberately covers BytePlus commercial CDN, Volcengine and ByteDance-internal delivery without claiming which offering is active, which hop cached, whether the cache hit occurred at the last edge, or who terminated client TLS. Preserved `X-Akamai-Request-ID` can contribute independent Akamai evidence on the same response.
 
 Path v8 adds three source-backed *non-originating* response roles: OVH IPLB's documented paired `X-IPLB-Request-ID` and `X-IPLB-Instance` identify load-balancer participation; Tencent COS's documented nonempty `X-Cos-Request-Id` or exact `Server: tencent-cos` identifies object-storage origin participation; and Arc XP's documented nonempty `X-Arc-Request-Id` or `X-Arc-Pb-Request-Id` identifies downstream publishing-platform participation. The COS checksum alone, Arc TTL alone and OVH single header alone are insufficient. In particular, an encoded IPLB frontend address is *response metadata*, not the independently observed socket peer or an authenticated origin address. These markers may coexist with Cloudflare, Akamai or APISIX; none proves outer termination.
 
