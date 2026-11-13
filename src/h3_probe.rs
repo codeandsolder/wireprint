@@ -12,6 +12,7 @@ use tokio::net::{ToSocketAddrs, UdpSocket};
 use url::Url;
 
 use crate::address_family::AddressFamily;
+use crate::cf_ray::detect_cf_ray_provenance;
 use crate::dns::{DNS_CAPTURE_VERSION, RoutingDnsSnapshotter};
 use crate::fusion::assess_endpoint;
 use crate::h3::{H3ServerFingerprint, H3Setting, classify_h3_quic, provider_signals};
@@ -259,6 +260,7 @@ struct H3ObservationParts<'a> {
 fn success_observation(parts: H3ObservationParts<'_>) -> Observation {
     let provider_signals = provider_signals(&parts.fingerprint);
     let path_elements = detect_path_elements(&parts.response_headers);
+    let cf_ray_provenance = detect_cf_ray_provenance(&parts.response_headers);
     Observation {
         target: parts.target.to_owned(),
         observed_unix_ms: parts.observed_unix_ms,
@@ -290,6 +292,7 @@ fn success_observation(parts: H3ObservationParts<'_>) -> Observation {
         selected_endpoint: Some(parts.selected_peer.ip().to_string()),
         dns: Some(parts.dns),
         response_headers: parts.response_headers,
+        cf_ray_provenance,
         path_elements,
         routing_elements: parts.routing_elements,
         provider_signals,

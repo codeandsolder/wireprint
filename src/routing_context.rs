@@ -396,6 +396,7 @@ mod tests {
             selected_endpoint: None,
             dns: None,
             response_headers: Vec::new(),
+            cf_ray_provenance: None,
             path_elements: Vec::new(),
             routing_elements: Vec::new(),
             provider_signals: Vec::new(),

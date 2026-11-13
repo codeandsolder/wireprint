@@ -11,8 +11,8 @@ use wireprint::{
     HostAggregationConfig, Observation, PATH_CLASSIFIER_VERSION, PlatformKind, ProbeConfig,
     ProfileSet, RequestProfile, RoutingAuditSample, RoutingContextCollector, TlsProbeConfig,
     TransportProfile, TransportSet, aggregate_observations, assess_endpoint, audit_routing_samples,
-    classify_response, detect_path_elements, detect_routing_elements, probe_batch, probe_h3,
-    probe_tls,
+    classify_response, detect_cf_ray_provenance, detect_path_elements, detect_routing_elements,
+    probe_batch, probe_h3, probe_tls,
 };
 
 #[derive(Debug, Parser)]
@@ -32,6 +32,8 @@ enum Command {
     Classify(ClassifyArgs),
     /// Classify response headers into unordered network-path participation claims.
     Path(PathArgs),
+    /// Compare reported Origin-Cf-Ray and Cf-Ray values without inferring network hops.
+    Ray(RayArgs),
     /// Classify requested hostname and ordered CNAME targets separately.
     Route(RouteArgs),
     /// Fuse one endpoint/vantage evidence document into termination candidates.
@@ -199,6 +201,12 @@ struct PathArgs {
 }
 
 #[derive(Debug, Args)]
+struct RayArgs {
+    #[arg(long = "header", value_name = "NAME:VALUE", required = true)]
+    headers: Vec<String>,
+}
+
+#[derive(Debug, Args)]
 struct RouteArgs {
     /// Requested hostname, distinct from DNS CNAME targets.
     #[arg(long, value_name = "HOSTNAME")]
@@ -221,6 +229,7 @@ async fn main() -> Result<()> {
         Command::Matrix(args) => run_matrix(args).await,
         Command::Classify(args) => run_classify(&args),
         Command::Path(args) => run_path(&args),
+        Command::Ray(args) => run_ray(&args),
         Command::Route(args) => run_route(&args),
         Command::AssessEndpoint(args) => run_assess_endpoint(&args),
         Command::H3(args) => run_h3(args).await,
@@ -486,6 +495,15 @@ fn run_classify(args: &ClassifyArgs) -> Result<()> {
     Ok(())
 }
 
+fn run_ray(args: &RayArgs) -> Result<()> {
+    let headers = parse_headers(&args.headers)?;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&detect_cf_ray_provenance(&headers))?
+    );
+    Ok(())
+}
+
 fn run_path(args: &PathArgs) -> Result<()> {
     let Some(input) = &args.input else {
         let headers = parse_headers(&args.headers)?;
@@ -531,6 +549,12 @@ fn classify_path_replay_row(row: &mut serde_json::Value) -> Result<()> {
         serde_json::Value::String(PATH_CLASSIFIER_VERSION.into()),
     );
     let _ = object.insert("path_elements".into(), serde_json::to_value(elements)?);
+    if let Some(ray) = detect_cf_ray_provenance(&headers) {
+        let _ = object.insert("cf_ray_provenance".into(), serde_json::to_value(ray)?);
+    } else {
+        // Do not preserve stale computed diagnostics after editing replay headers.
+        let _ = object.remove("cf_ray_provenance");
+    }
     Ok(())
 }
 
@@ -661,6 +685,54 @@ mod tests {
         assert!(elements.iter().any(|element| {
             element["role"] == "cache" && element["product"] == "alibaba-cloud-cdn"
         }));
+    }
+
+    #[test]
+    fn path_replay_keeps_ray_provenance_separate_from_provider_roles() {
+        let mut row = serde_json::json!({
+            "host": "video.twimg.com",
+            "headers": [
+                {"name": "Origin-Cf-Ray", "value": "a4f19422ddb5bfe4-FRA"},
+                {"name": "Cf-Ray", "value": "a4f19422ddb5bfe4-WAW"}
+            ]
+        });
+        classify_path_replay_row(&mut row).unwrap();
+        assert_eq!(
+            row["cf_ray_provenance"]["relation"],
+            "same_id_different_colo"
+        );
+        assert_eq!(
+            row["cf_ray_provenance"]["classifier"],
+            wireprint::CF_RAY_PROVENANCE_VERSION
+        );
+        assert_eq!(row["path_classifier"], PATH_CLASSIFIER_VERSION);
+        assert_eq!(row["path_elements"].as_array().unwrap().len(), 1);
+        assert_eq!(row["path_elements"][0]["product"], "cloudflare");
+
+        let _ = row["headers"].as_array_mut().unwrap().remove(0);
+        classify_path_replay_row(&mut row).unwrap();
+        assert!(row.get("cf_ray_provenance").is_none());
+    }
+
+    #[test]
+    fn ray_cli_args_accept_header_pairs_case_insensitively() {
+        let cli = Cli::try_parse_from([
+            "wireprint",
+            "ray",
+            "--header",
+            "origin-cf-ray:a46f918fcf090d25-FRA",
+            "--header",
+            "CF-Ray:a470db0ecd08526b-PRG",
+        ])
+        .unwrap();
+        let Command::Ray(args) = cli.command else {
+            panic!("expected ray command");
+        };
+        let headers = parse_headers(&args.headers).unwrap();
+        assert_eq!(
+            detect_cf_ray_provenance(&headers).unwrap().relation,
+            wireprint::CfRayRelation::DifferentIdDifferentColo
+        );
     }
 
     #[test]

@@ -6,6 +6,7 @@
 //! primitives used by the `wireprint` command-line binary.
 
 pub mod address_family;
+pub mod cf_ray;
 pub mod classify;
 pub mod dns;
 pub mod fusion;
@@ -26,6 +27,7 @@ pub mod tls_probe;
 pub mod transport;
 
 pub use address_family::AddressFamily;
+pub use cf_ray::{CF_RAY_PROVENANCE_VERSION, detect_cf_ray_provenance};
 pub use classify::classify_response;
 pub use dns::DNS_CAPTURE_VERSION;
 pub use fusion::{ENDPOINT_FUSION_VERSION, assess_endpoint};
@@ -46,10 +48,11 @@ pub use host::{
     aggregate_observations,
 };
 pub use model::{
-    DnsCnameLink, DnsProvenance, DnsRouteAnswer, EndpointAssessment, EndpointEvidence, Header,
-    Observation, Outcome, OutcomeKind, PathElement, PathElementRole, ProfileSet, ProviderCandidate,
-    ProviderEvidenceChannel, ProviderSignal, ProviderSupport, RequestProfile, RoutingContext,
-    RoutingContextSnapshot, RoutingSnapshotBinding, TerminationState,
+    CfRayHeaderValue, CfRayProvenance, CfRayRelation, DnsCnameLink, DnsProvenance, DnsRouteAnswer,
+    EndpointAssessment, EndpointEvidence, Header, Observation, Outcome, OutcomeKind, PathElement,
+    PathElementRole, ProfileSet, ProviderCandidate, ProviderEvidenceChannel, ProviderSignal,
+    ProviderSupport, RequestProfile, RoutingContext, RoutingContextSnapshot,
+    RoutingSnapshotBinding, TerminationState,
 };
 pub use normalize::{NORMALIZER_VERSION, normalize_response_template};
 pub use path::{PATH_CLASSIFIER_VERSION, detect_path_elements};
