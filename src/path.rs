@@ -1,6 +1,6 @@
 use crate::model::{Header, PathElement, PathElementRole};
 
-pub const PATH_CLASSIFIER_VERSION: &str = "builtin-path-v7";
+pub const PATH_CLASSIFIER_VERSION: &str = "builtin-path-v8";
 
 fn header_values<'a>(headers: &'a [Header], name: &str) -> impl Iterator<Item = &'a str> {
     headers
@@ -11,6 +11,10 @@ fn header_values<'a>(headers: &'a [Header], name: &str) -> impl Iterator<Item = 
 
 fn has_header(headers: &[Header], name: &str) -> bool {
     header_values(headers, name).next().is_some()
+}
+
+fn has_nonempty_header(headers: &[Header], name: &str) -> bool {
+    header_values(headers, name).any(|value| !value.trim().is_empty())
 }
 
 fn has_header_prefix(headers: &[Header], prefix: &str) -> bool {
@@ -631,6 +635,21 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             evidence,
         );
     }
+    // Arc XP's support IDs identify the publishing platform, not its CDN.
+    if has_nonempty_header(headers, "x-arc-request-id")
+        || has_nonempty_header(headers, "x-arc-pb-request-id")
+    {
+        add(
+            &mut elements,
+            PathElementRole::ApplicationPlatform,
+            "arc-xp",
+            if has_nonempty_header(headers, "x-arc-request-id") {
+                "header:x-arc-request-id"
+            } else {
+                "header:x-arc-pb-request-id"
+            },
+        );
+    }
     if has_cookie(&cookies, "arraffinity") || has_cookie(&cookies, "arraffinitysamesite") {
         add(
             &mut elements,
@@ -828,6 +847,19 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             PathElementRole::LoadBalancer,
             "google-cloud-application-load-balancer",
             "via:1.1-google",
+        );
+    }
+
+    // Both OVH IPLB-generated fields occur in documented OVH responses.
+    // Forwarded headers establish LB participation, never selected peer IP.
+    if has_nonempty_header(headers, "x-iplb-request-id")
+        && has_nonempty_header(headers, "x-iplb-instance")
+    {
+        add(
+            &mut elements,
+            PathElementRole::LoadBalancer,
+            "ovh-iplb",
+            "headers:x-iplb-request-id+x-iplb-instance",
         );
     }
 
@@ -1118,6 +1150,22 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
                 "header:x-oss-request-id"
             } else {
                 "server:aliyunoss"
+            },
+        );
+    }
+    // Tencent COS request IDs survive independent delivery/proxy layers.
+    // Do not confuse Tencent CI's distinct banner with a COS-origin claim.
+    if has_nonempty_header(headers, "x-cos-request-id")
+        || has_header_value(headers, "server", "tencent-cos")
+    {
+        add(
+            &mut elements,
+            PathElementRole::OriginService,
+            "tencent-cos",
+            if has_nonempty_header(headers, "x-cos-request-id") {
+                "header:x-cos-request-id"
+            } else {
+                "server:tencent-cos"
             },
         );
     }

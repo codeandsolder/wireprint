@@ -1276,3 +1276,137 @@ fn intercom_version_header_alone_is_not_response_provenance() {
     )]);
     assert!(!elements.iter().any(|element| element.product == "intercom"));
 }
+
+#[test]
+fn ovh_iplb_pair_is_preserved_load_balancer_evidence_not_outer_edge() {
+    let headers = [
+        header("Server", "cloudflare"),
+        header("CF-Ray", "a40ea4d2-FRA"),
+        header(
+            "X-IPLB-Request-ID",
+            "6CA2F251:3D98_8E2C8CEA:0050_6AABEA91_54BE478:7EDD3",
+        ),
+        header("x-iplb-instance", "62624"),
+    ];
+    let elements = detect_path_elements(&headers);
+    assert!(has(&elements, PathElementRole::EdgeProvider, "cloudflare"));
+    assert!(has(&elements, PathElementRole::LoadBalancer, "ovh-iplb"));
+    assert!(!has(&elements, PathElementRole::EdgeProvider, "ovh-iplb"));
+    let ovh = elements
+        .iter()
+        .find(|element| element.product == "ovh-iplb")
+        .unwrap();
+    assert_eq!(ovh.evidence, ["headers:x-iplb-request-id+x-iplb-instance"]);
+
+    for incomplete in [
+        vec![headers[2].clone()],
+        vec![headers[3].clone()],
+        vec![headers[2].clone(), header("x-iplb-instance", "")],
+        vec![header("x-iplb-request-id", " "), headers[3].clone()],
+    ] {
+        assert!(!has(
+            &detect_path_elements(&incomplete),
+            PathElementRole::LoadBalancer,
+            "ovh-iplb"
+        ));
+    }
+}
+
+#[test]
+fn tencent_cos_request_id_survives_outer_edge_and_api_gateway() {
+    let elements = detect_path_elements(&[
+        header("Server", "APISIX/3.16"),
+        header("cf-ray", "a40ea4d2-FRA"),
+        header(
+            "X-Cos-Request-Id",
+            "NmE5ZTY5ODlfNGEzZDcyNjRfMTYzOGVfMTgzZTM1ZGE=",
+        ),
+        header("x-cos-hash-crc64ecma", "663148330243063913"),
+    ]);
+    assert!(has(&elements, PathElementRole::EdgeProvider, "cloudflare"));
+    assert!(has(&elements, PathElementRole::ApiGateway, "apache-apisix"));
+    assert!(has(
+        &elements,
+        PathElementRole::OriginService,
+        "tencent-cos"
+    ));
+    assert!(!has(
+        &elements,
+        PathElementRole::EdgeProvider,
+        "tencent-cos"
+    ));
+
+    for headers in [
+        vec![header(
+            "X-Cos-Request-Id",
+            "NmE5ZTY5ODlfNGEzZDcyNjRfMTYzOGVfMTgzZTM1ZGE=",
+        )],
+        vec![header("Server", "tencent-cos")],
+    ] {
+        assert!(has(
+            &detect_path_elements(&headers),
+            PathElementRole::OriginService,
+            "tencent-cos"
+        ));
+    }
+    for headers in [
+        vec![header("x-cos-hash-crc64ecma", "663148330243063913")],
+        vec![header("x-cos-request-id", "  ")],
+        vec![header("Server", "tencent-ci")],
+        vec![header("Server", "some-tencent-cos-proxy")],
+    ] {
+        assert!(!has(
+            &detect_path_elements(&headers),
+            PathElementRole::OriginService,
+            "tencent-cos"
+        ));
+    }
+}
+
+#[test]
+fn arc_xp_support_ids_are_platform_evidence_not_cdn_identity() {
+    let elements = detect_path_elements(&[
+        header("Server", "cloudflare"),
+        header("X-Arc-Request-Id", "0.253c5168.1792763786.41f6479"),
+        header(
+            "X-Arc-Pb-Request-Id",
+            "141bc1d8-f357-492e-be4b-ead1f566f983",
+        ),
+        header("X-Arc-TTL", "31536000"),
+    ]);
+    assert!(has(&elements, PathElementRole::EdgeProvider, "cloudflare"));
+    assert!(has(
+        &elements,
+        PathElementRole::ApplicationPlatform,
+        "arc-xp"
+    ));
+    assert_eq!(
+        elements
+            .iter()
+            .filter(|element| element.product == "arc-xp")
+            .count(),
+        1
+    );
+    assert!(!has(&elements, PathElementRole::EdgeProvider, "arc-xp"));
+
+    assert!(has(
+        &detect_path_elements(&[header(
+            "x-arc-pb-request-id",
+            "392a0a3a-20b4-4126-9d14-efe921f5250f"
+        )]),
+        PathElementRole::ApplicationPlatform,
+        "arc-xp"
+    ));
+    for headers in [
+        vec![header("x-arc-ttl", "-1")],
+        vec![header("x-arc-request-id", "")],
+        vec![header("x-arc-pb-request-id", " \t")],
+        vec![header("x-arc-trace-id", "opaque")],
+    ] {
+        assert!(!has(
+            &detect_path_elements(&headers),
+            PathElementRole::ApplicationPlatform,
+            "arc-xp"
+        ));
+    }
+}
