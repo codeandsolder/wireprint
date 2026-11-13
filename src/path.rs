@@ -28,6 +28,40 @@ fn bytedance_cdn_cache_tag(value: &str) -> bool {
     })
 }
 
+// Parse Server-Timing metric boundaries without mistaking commas in quoted
+// descriptions for new metric names.
+fn server_timing_has_metric(value: &str, sought: &str) -> bool {
+    let mut start = 0;
+    let mut quoted = false;
+    let mut escaped = false;
+    for (index, byte) in value.bytes().enumerate() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match byte {
+            b'\\' if quoted => escaped = true,
+            b'"' => quoted = !quoted,
+            b',' if !quoted => {
+                if value[start..index]
+                    .split(';')
+                    .next()
+                    .is_some_and(|metric| metric.trim().eq_ignore_ascii_case(sought))
+                {
+                    return true;
+                }
+                start = index + 1;
+            }
+            _ => {}
+        }
+    }
+    !quoted
+        && value[start..]
+            .split(';')
+            .next()
+            .is_some_and(|metric| metric.trim().eq_ignore_ascii_case(sought))
+}
+
 fn has_header_prefix(headers: &[Header], prefix: &str) -> bool {
     headers
         .iter()
@@ -299,8 +333,12 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
     // The ByteDance/Volcengine CDN family reserves these response headers.
     // Cache participation is independent from any Akamai or other outer CDN
     // that may carry the values unchanged; this is never a TLS edge vote.
+    let volc_dcdn_cache_timing = has_header_value(headers, "server", "Volc-DCDN")
+        && header_values(headers, "server-timing")
+            .any(|value| server_timing_has_metric(value, "cdn-cache"));
     if has_nonempty_header(headers, "x-bdcdn-cache-status")
         || header_values(headers, "x-tt-trace-tag").any(bytedance_cdn_cache_tag)
+        || volc_dcdn_cache_timing
     {
         add(
             &mut elements,
@@ -308,8 +346,10 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             "bytedance-cdn",
             if has_nonempty_header(headers, "x-bdcdn-cache-status") {
                 "header:x-bdcdn-cache-status"
-            } else {
+            } else if header_values(headers, "x-tt-trace-tag").any(bytedance_cdn_cache_tag) {
                 "header:x-tt-trace-tag:cdn-cache"
+            } else {
+                "headers:server=volc-dcdn+server-timing:cdn-cache"
             },
         );
     }

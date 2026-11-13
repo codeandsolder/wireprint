@@ -1488,3 +1488,65 @@ fn unrelated_or_incomplete_bytedance_fields_do_not_imply_cache_participation() {
         ));
     }
 }
+
+#[test]
+fn volc_dcdn_banner_and_server_timing_identify_cache_without_trace_tag_cache_field() {
+    let elements = detect_path_elements(&[
+        header("Server", "Volc-DCDN"),
+        header(
+            "Server-Timing",
+            "inner; dur=513, cdn-cache;desc=MISS, origin;dur=625, edge;dur=0",
+        ),
+        header("X-Tt-Trace-Tag", "id=31"),
+    ]);
+    assert!(has(&elements, PathElementRole::Cache, "bytedance-cdn"));
+    assert!(!has(
+        &elements,
+        PathElementRole::EdgeProvider,
+        "bytedance-cdn"
+    ));
+    let cache = elements
+        .iter()
+        .find(|element| element.product == "bytedance-cdn")
+        .unwrap();
+    assert_eq!(
+        cache.evidence,
+        ["headers:server=volc-dcdn+server-timing:cdn-cache"]
+    );
+
+    let quoted_description = detect_path_elements(&[
+        header("server", "volc-dcdn"),
+        header(
+            "server-timing",
+            r#"edge;desc="inner, proxy";dur=1, CDN-CACHE;desc="HIT";dur=2"#,
+        ),
+    ]);
+    assert!(has(
+        &quoted_description,
+        PathElementRole::Cache,
+        "bytedance-cdn"
+    ));
+
+    for headers in [
+        vec![header("server", "volc-dcdn")],
+        vec![header("server-timing", "cdn-cache;desc=MISS")],
+        vec![
+            header("server", "nginx"),
+            header("server-timing", "cdn-cache;desc=MISS"),
+        ],
+        vec![
+            header("server", "volc-dcdn"),
+            header("server-timing", r#"edge;desc="fake,cdn-cache;desc=HIT""#),
+        ],
+        vec![
+            header("server", "volc-dcdn"),
+            header("server-timing", "other-cdn-cache;desc=MISS"),
+        ],
+    ] {
+        assert!(!has(
+            &detect_path_elements(&headers),
+            PathElementRole::Cache,
+            "bytedance-cdn"
+        ));
+    }
+}
