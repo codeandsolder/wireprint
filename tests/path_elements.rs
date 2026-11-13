@@ -1568,7 +1568,10 @@ fn future_publishing_internal_headers_preserve_fastly_varnish_and_cache_layers()
         (PathElementRole::Cache, "varnish"),
         (PathElementRole::Cache, "fastly"),
     ] {
-        assert!(has(&elements, role, product), "missing {role:?} {product}");
+        assert!(
+            has(&elements, role.clone(), product),
+            "missing {role:?} {product}"
+        );
     }
     assert!(!has(
         &elements,
