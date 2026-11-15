@@ -8,30 +8,27 @@ fn header_values<'a>(headers: &'a [Header], name: &str) -> impl Iterator<Item = 
         .map(|header| header.value.as_str())
 }
 
-#[must_use]
-pub fn classify_response(status: u16, headers: &[Header], body: &[u8]) -> Outcome {
-    let body = String::from_utf8_lossy(body);
-    let lower = body.to_ascii_lowercase();
+// Prefer first-party action markers over generic HTTP status heuristics.
+fn explicit_vendor_challenge(headers: &[Header], body: &[u8], lower: &str) -> Option<Outcome> {
     let mut evidence = Vec::new();
-
     // These response-side action signals are first-party contracts rather
     // than generic vendor-presence or CDN markers. Evaluate them before
     // status-only 401/403/405/429 handling.
     if header_values(headers, "x-amzn-waf-action")
         .any(|value| value.trim().eq_ignore_ascii_case("captcha"))
     {
-        return outcome(
+        return Some(outcome(
             OutcomeKind::Captcha,
             vec!["header:x-amzn-waf-action=captcha".into()],
-        );
+        ));
     }
     if header_values(headers, "x-amzn-waf-action")
         .any(|value| value.trim().eq_ignore_ascii_case("challenge"))
     {
-        return outcome(
+        return Some(outcome(
             OutcomeKind::Challenge,
             vec!["header:x-amzn-waf-action=challenge".into()],
-        );
+        ));
     }
     let cloudflare_challenge_header = header_values(headers, "cf-mitigated")
         .any(|value| value.trim().eq_ignore_ascii_case("challenge"));
@@ -47,13 +44,26 @@ pub fn classify_response(status: u16, headers: &[Header], body: &[u8]) -> Outcom
         if cloudflare_challenge_body {
             evidence.push("body:cf-challenge-bootstrap+platform".into());
         }
-        return outcome(OutcomeKind::Challenge, evidence);
+        return Some(outcome(OutcomeKind::Challenge, evidence));
     }
-    if has_anubis_challenge_scripts(body.as_bytes()) {
-        return outcome(
+    if has_anubis_challenge_scripts(body) {
+        return Some(outcome(
             OutcomeKind::Challenge,
             vec!["body:anubis-version+challenge-scripts".into()],
-        );
+        ));
+    }
+
+    None
+}
+
+#[must_use]
+pub fn classify_response(status: u16, headers: &[Header], body: &[u8]) -> Outcome {
+    let body = String::from_utf8_lossy(body);
+    let lower = body.to_ascii_lowercase();
+    let mut evidence = Vec::new();
+
+    if let Some(action) = explicit_vendor_challenge(headers, body.as_bytes(), &lower) {
+        return action;
     }
 
     let datadome_header =
