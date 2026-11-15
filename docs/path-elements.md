@@ -6,7 +6,7 @@ That distinction matters. A response can preserve evidence from an outer CDN, a 
 
 ## Roles
 
-`builtin-path-v10` currently separates these roles:
+`builtin-path-v11` currently separates these roles:
 
 - `edge_provider` — managed serving/edge layer with explicit provider evidence;
 - `application_platform` — downstream delivery/application platform participation;
@@ -35,6 +35,12 @@ Cloudflare [documents](https://developers.cloudflare.com/fundamentals/reference/
 
 **Cache-time caveat:** `Origin-Cf-Ray` can be a header retained from a previous response, not necessarily generated for the request being observed. A bounded cross-vantage study of public X/Twitter assets reproduced the same `Origin-Cf-Ray` value on **32 separate Cloudflare cache HITs** across two independent IPv4 egress networks, while all 32 final `Cf-Ray` values differed and `Age` increased. Nine noncached `t.co/robots.txt` controls instead emitted fresh matching Ray pairs. The same cached origin value was classified `different_id_different_colo` from the WAW egress and `different_id_same_colo` from the FRA egress solely because the final response suffix changed. Delivery-provider selection also varied across otherwise identical natural-DNS requests (Cloudflare versus Fastly); a pinned-IP control isolated the provider but not the actual anycast POP. This supports interpreting the origin-labelled field as **potentially stale/cache-fill provenance**, rather than an authenticated, current-hop trace. The complete [Ray provenance evidence handoff](https://app.notion.com/p/417f74be90208175a00bfdce2db9de1e) and [cross-vantage control study](https://app.notion.com/p/417f74be9020814b9911cdbc2346359a) separate raw samples, methodology, and remaining uncertainty.
 
+## v11 catalog-derived server implementations and normalized cookies
+
+Path v11 adds seven `server_implementation` labels from case-insensitive, precisely bounded `Server` product tokens: Kestrel, Gunicorn, Tengine, Jetty, Microsoft HTTPAPI, Uvicorn, and lighttpd. The parser accepts a version suffix (for example `gunicorn/19.10.0`) and Jetty's version-as-comment style (`Jetty(12.1.7)`); partial tokens and product names *only inside Server comments* do not match. These are software-implementation claims preserved in the returned response, not additional edge-provider, DNS, or termination votes. Product and vendor candidates requiring more than a concrete Server marker remain separate follow-up work.
+
+Normalized archives may concatenate multiple `Set-Cookie` fields with newline separators. The path recognizer now reads each cookie line as a separate field while preserving the comma in ordinary `Expires=Wed, ...` attributes; on-the-wire HTTP requests still preserve repeated raw fields. This avoids missed security, bot-management, and load-balancer cookie names later in a normalized value, without splitting on commas or promoting cookie provenance into provider termination.
+
 ## Current explicit markers
 
 The v10 recognizer includes:
@@ -48,7 +54,7 @@ The v10 recognizer includes:
 - service mesh: Istio when explicitly exposed as `istio-envoy`, and Linkerd when `l5d-*` response markers are exposed;
 - identity proxies: Google Cloud IAP, Cloudflare Access, OAuth2 Proxy, Authelia, authentik;
 - traffic management: IO River, Cloudflare Waiting Room, Queue-it;
-- server implementations: nginx, OpenResty, Caddy, Apache HTTP Server, Microsoft IIS, LiteSpeed, Google UploadServer, SFFE, GSE;
+- server implementations: nginx, OpenResty, Caddy, Apache HTTP Server, Microsoft IIS, Microsoft HTTPAPI, Kestrel, Gunicorn, Tengine, Jetty, Uvicorn, lighttpd, LiteSpeed, Google UploadServer, SFFE, GSE;
 - WAF/security: AWS WAF (including `aws-waf-token` state), AWS ALB authentication, Cloudflare security/challenge and rate-limiting state, Imperva WAF, F5 BIG-IP ASM, FortiWeb;
 - bot management: Cloudflare Bot Management, Akamai Bot Manager, DataDome, HUMAN/PerimeterX.
 

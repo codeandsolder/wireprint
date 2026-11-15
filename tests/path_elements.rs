@@ -1678,3 +1678,132 @@ fn future_publishing_backend_only_or_incomplete_headers_are_not_platform_evidenc
         assert!(!has(&elements, PathElementRole::Cache, "future-publishing"));
     }
 }
+
+#[test]
+fn catalog_server_products_are_implementation_only() {
+    for (server, product) in [
+        ("Kestrel", "kestrel"),
+        ("kEsTrEl/1.0", "kestrel"),
+        ("gunicorn", "gunicorn"),
+        ("gunicorn/19.10.0", "gunicorn"),
+        ("Tengine/Aserver", "tengine"),
+        ("Jetty(12.1.7)", "jetty"),
+        ("Jetty(9.4.35.v20201120)", "jetty"),
+        ("Microsoft-HTTPAPI/2.0", "microsoft-httpapi"),
+        ("uvicorn", "uvicorn"),
+        ("lighttpd/1.4.79", "lighttpd"),
+    ] {
+        let elements = detect_path_elements(&[header("sErVeR", server)]);
+        assert!(
+            has(&elements, PathElementRole::ServerImplementation, product),
+            "missing {product} from {server}: {elements:?}"
+        );
+        assert!(
+            !elements
+                .iter()
+                .any(|element| element.role == PathElementRole::EdgeProvider),
+            "server implementation alone is not an edge vote: {server}"
+        );
+    }
+}
+
+#[test]
+fn catalog_server_product_parser_handles_multiple_headers_and_comments() {
+    let elements = detect_path_elements(&[
+        header(
+            "Server",
+            "ExampleProxy/2.0 (for Kestrel; not a real server)",
+        ),
+        header("Server", "gunicorn/21.2 Jetty(12.0.3), Uvicorn/0.30"),
+        header("Server", "another-product/1.0\r\nlighttpd/1.4.79"),
+        header("CF-Ray", "abc123-WAW"),
+    ]);
+    for product in ["gunicorn", "jetty", "uvicorn", "lighttpd"] {
+        assert!(has(
+            &elements,
+            PathElementRole::ServerImplementation,
+            product
+        ));
+    }
+    assert!(!has(
+        &elements,
+        PathElementRole::ServerImplementation,
+        "kestrel"
+    ));
+    assert!(has(&elements, PathElementRole::EdgeProvider, "cloudflare"));
+}
+
+#[test]
+fn catalog_server_product_parser_rejects_partial_names_and_malformed_versions() {
+    for server in [
+        "NotKestrel",
+        "kestrelProxy/1.0",
+        "kestrel/",
+        "kestrel/v1/v2",
+        "sample/2 (nested (Kestrel/1.2) comment)",
+        "x-gunicorn/1.0",
+        "powered-by=gunicorn",
+        "JettyServer/1.2",
+        "uVicornish/1.0",
+        "lighttpd-extended",
+        "Microsoft-HTTPAPIextra/2",
+    ] {
+        let elements = detect_path_elements(&[header("Server", server)]);
+        assert!(
+            !elements.iter().any(|element| {
+                element.role == PathElementRole::ServerImplementation
+                    && [
+                        "kestrel",
+                        "gunicorn",
+                        "tengine",
+                        "jetty",
+                        "microsoft-httpapi",
+                        "uvicorn",
+                        "lighttpd",
+                    ]
+                    .contains(&element.product.as_str())
+            }),
+            "false-positive server product from {server}: {elements:?}"
+        );
+    }
+}
+
+#[test]
+fn normalized_multiline_set_cookie_preserves_each_cookie_without_splitting_expires() {
+    let elements = detect_path_elements(&[
+        header(
+            "Set-Cookie",
+            "session=opaque; Expires=Wed, 21 Oct 2027 07:28:00 GMT; Path=/\r\n__cf_bm=opaque; Path=/\n\rdatadome=opaque; Expires=Thu, 22 Oct 2027 07:28:00 GMT",
+        ),
+        header("sEt-CoOkIe", "AWSALB=opaque; Path=/"),
+    ]);
+    assert!(has(
+        &elements,
+        PathElementRole::BotManagement,
+        "cloudflare-bot-management"
+    ));
+    assert!(has(&elements, PathElementRole::BotManagement, "datadome"));
+    assert!(has(
+        &elements,
+        PathElementRole::LoadBalancer,
+        "aws-application-load-balancer"
+    ));
+    assert!(!has(&elements, PathElementRole::Waf, "fortiweb"));
+}
+
+#[test]
+fn normalized_cookie_parser_ignores_cookie_name_lookalikes_in_values() {
+    let elements = detect_path_elements(&[
+        header(
+            "Set-Cookie",
+            "ordinary=__cf_bm=opaque; Expires=Wed, 21 Oct 2027 07:28:00 GMT; Path=/",
+        ),
+        header("Set-Cookie", "ordinary2=datadome; Path=/"),
+    ]);
+    assert!(!has(
+        &elements,
+        PathElementRole::BotManagement,
+        "cloudflare-bot-management"
+    ));
+    assert!(!has(&elements, PathElementRole::BotManagement, "datadome"));
+}
