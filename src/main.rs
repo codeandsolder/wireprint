@@ -821,7 +821,7 @@ mod tests {
             "additional": {"keep": [1,2,3]}
         });
         classify_outcome_replay_row(&mut row).unwrap();
-        assert_eq!(row["outcome"]["classifier"], "builtin-v2");
+        assert_eq!(row["outcome"]["classifier"], "builtin-v3");
         assert_eq!(row["outcome"]["kind"], "captcha");
         assert_eq!(
             row["outcome"]["evidence"][0],

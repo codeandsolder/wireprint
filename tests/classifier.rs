@@ -118,7 +118,7 @@ fn aws_waf_captcha_header_is_a_captcha_even_with_uninformative_body() {
     }];
     let out = classify_response(405, &headers, b"");
     assert_eq!(out.kind, OutcomeKind::Captcha);
-    assert_eq!(out.classifier, "builtin-v2");
+    assert_eq!(out.classifier, "builtin-v3");
     assert_eq!(out.evidence, ["header:x-amzn-waf-action=captcha"]);
 }
 
@@ -238,6 +238,183 @@ fn ordinary_waf_presence_is_not_an_enforcement_event() {
             classify_response(200, &headers, b"<h1>Hello</h1>").kind,
             OutcomeKind::ContentLike,
             "{headers:?}"
+        );
+    }
+}
+
+#[test]
+fn edgeone_captcha_interstitial_is_detected_even_as_http_200() {
+    let body = br#"<html><head><title>Security Verification</title>
+<script src="https://gcaptcha.eo.gtimg.com/TEOCaptchaWidgetV1-global.js"></script>
+</head><body><div id="captcha"></div><footer>Protected by Tencent Cloud EdgeOne</footer></body></html>"#;
+    let result = classify_response(200, &[], body);
+    assert_eq!(result.classifier, "builtin-v3");
+    assert_eq!(result.kind, OutcomeKind::Captcha);
+    assert_eq!(
+        result.evidence,
+        ["body:edgeone-security-verification+captcha-widget"]
+    );
+}
+
+#[test]
+fn edgeone_integration_or_branding_alone_is_not_an_active_captcha() {
+    for body in [
+        "<title>Security Verification</title>",
+        "<script src='https://gcaptcha.eo.gtimg.com/TEOCaptchaWidgetV1-global.js'></script>",
+        "<p>Protected by Tencent Cloud EdgeOne</p>",
+        "<p>Protected by Tencent Cloud EdgeOne</p><h1>Security Verification</h1>",
+        "<script src='/TEOCaptchaWidgetV1-global.js'></script><h1>Security Verification</h1>",
+    ] {
+        assert_eq!(
+            classify_response(200, &[], body.as_bytes()).kind,
+            OutcomeKind::ContentLike,
+            "{body}"
+        );
+    }
+}
+
+#[test]
+fn imperva_browser_interruption_page_is_a_challenge_not_content() {
+    let body = br#"<title>Pardon Our Interruption</title><h1>Pardon Our Interruption</h1>
+<h3>Please stand by</h3><p>As you were browsing something about your browser made
+us think you were a bot. There are a few reasons this might happen:</p>"#;
+    let out = classify_response(200, &[], body);
+    assert_eq!(out.kind, OutcomeKind::Challenge);
+    assert_eq!(out.evidence, ["body:pardon-interruption+bot-browser-check"]);
+}
+
+#[test]
+fn ordinary_imperva_sdk_and_mentions_do_not_create_browser_challenge() {
+    for body in [
+        "<title>Pardon Our Interruption</title><p>Read our article on this error.</p>",
+        "<script src='/_Incapsula_Resource?SWJIYLWA=anything'></script>",
+        "<p>something about your browser made us think you were a bot</p>",
+        "<h1>Pardon Our Interruption</h1><p>A website can challenge visitors.</p>",
+    ] {
+        assert_eq!(
+            classify_response(200, &[], body.as_bytes()).kind,
+            OutcomeKind::ContentLike
+        );
+    }
+}
+
+#[test]
+fn perimeterx_active_press_hold_captcha_requires_denied_document_and_pair() {
+    let body = br#"<title>Loading ...</title>
+        <div class="px-captcha"></div>
+        <span>Press and Hold to verify you're human</span>
+        <script src="/px-files/dt.js"></script>"#;
+    let out = classify_response(403, &[], body);
+    assert_eq!(out.kind, OutcomeKind::Captcha);
+    assert_eq!(out.evidence, ["body:px-captcha+press-hold"]);
+    let accepted = classify_response(200, &[], body);
+    assert_eq!(accepted.kind, OutcomeKind::ContentLike);
+    assert_eq!(
+        classify_response(403, &[], b"<p>Press and hold</p>").kind,
+        OutcomeKind::ExplicitBlock
+    );
+    assert_eq!(
+        classify_response(403, &[], b"<p>px-captcha</p>").kind,
+        OutcomeKind::ExplicitBlock
+    );
+}
+
+#[test]
+fn turnstile_in_denied_verify_human_gate_is_challenge_not_generic_block() {
+    let body = br#"<h1>Verify you are human</h1>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"></script>"#;
+    let out = classify_response(403, &[], body);
+    assert_eq!(out.kind, OutcomeKind::Challenge);
+    assert_eq!(out.evidence, ["body:turnstile+verify-human-gate"]);
+    assert_eq!(
+        classify_response(200, &[], body).kind,
+        OutcomeKind::ContentLike
+    );
+    assert_eq!(
+        classify_response(403, &[], b"<h1>Verify you are human</h1>").kind,
+        OutcomeKind::ExplicitBlock
+    );
+}
+
+#[test]
+fn browser_security_verification_interstitial_is_not_content() {
+    let body = br#"<title>Security Verification</title>
+<h1>Security verification in progress. Please wait while we verify your
+browser to protect against automated access.</h1>
+<h2>Verifying connection...</h2>"#;
+    let out = classify_response(200, &[], body);
+    assert_eq!(out.kind, OutcomeKind::Challenge);
+    assert_eq!(
+        out.evidence,
+        ["body:security-verification+browser-connection"]
+    );
+}
+
+#[test]
+fn generic_security_article_or_title_is_not_browser_interstitial() {
+    for body in [
+        "<title>Security Verification</title>",
+        "<h2>Verifying connection...</h2>",
+        "<h1>Security verification in progress</h1>",
+        "<p>verify your browser to protect against automated access</p>",
+        "<h1>Security verification in progress</h1><p>learn more about bot defenses</p>",
+    ] {
+        assert_eq!(
+            classify_response(200, &[], body.as_bytes()).kind,
+            OutcomeKind::ContentLike
+        );
+    }
+}
+
+#[test]
+fn sucuri_firewall_block_enriches_existing_explicit_block() {
+    let body = b"<title>Sucuri WebSite Firewall - Access Denied</title><h1>Access Denied - Sucuri Website Firewall</h1>";
+    let out = classify_response(403, &[], body);
+    assert_eq!(out.kind, OutcomeKind::ExplicitBlock);
+    assert_eq!(
+        out.evidence,
+        [
+            "status:403",
+            "body:sucuri-website-firewall",
+            "body:access-denied"
+        ]
+    );
+    assert_eq!(
+        classify_response(200, &[], body).kind,
+        OutcomeKind::ContentLike
+    );
+}
+
+#[test]
+fn documented_header_action_remains_more_specific_than_corpus_body_gate() {
+    let headers = [Header {
+        name: "CF-Mitigated".into(),
+        value: "challenge".into(),
+    }];
+    let html = b"<title>Pardon Our Interruption</title><p>something about your browser made us think you were a bot</p>";
+    let out = classify_response(403, &headers, html);
+    assert_eq!(out.kind, OutcomeKind::Challenge);
+    assert_eq!(out.evidence, ["header:cf-mitigated=challenge"]);
+}
+
+#[test]
+fn client_challenge_javascript_gate_requires_context() {
+    let body = br#"<html><head><title>Client Challenge</title></head><body><noscript>
+    <p>JavaScript is disabled in your browser.</p>
+    <p>Please enable JavaScript to proceed.</p>
+    </noscript></body></html>"#;
+    let out = classify_response(200, &[], body);
+    assert_eq!(out.kind, OutcomeKind::Challenge);
+    assert_eq!(out.evidence, ["body:client-challenge+javascript-gate"]);
+    for text in [
+        "<title>Client Challenge</title>",
+        "<p>JavaScript is disabled in your browser. Please enable JavaScript to proceed.</p>",
+        "<title>Client Challenge</title><p>This page needs JavaScript.</p>",
+    ] {
+        assert_eq!(
+            classify_response(200, &[], text.as_bytes()).kind,
+            OutcomeKind::ContentLike,
+            "{text}"
         );
     }
 }

@@ -56,6 +56,103 @@ fn explicit_vendor_challenge(headers: &[Header], body: &[u8], lower: &str) -> Op
     None
 }
 
+/// Match visible template phrases across harmless line wrapping without
+/// requiring one exact whitespace layout. Only invoked for rare gate candidates.
+fn has_normalized_phrase(body: &str, phrase: &str) -> bool {
+    body.contains(phrase)
+        || body
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .contains(phrase)
+}
+
+// Source-backed, first-party document-gate shapes from captured HTML pages.
+// Ordinary CAPTCHA integrations, vendor SDK scripts and security articles do
+// not by themselves indicate a gate. These pairs are deliberately contextual.
+fn corpus_document_gate(status: u16, lower: &str) -> Option<Outcome> {
+    // Tencent Cloud EdgeOne CAPTCHA page: branded interstitial and dedicated
+    // Tencent widget together, not the widget alone on an application form.
+    if lower.contains("teocaptchawidgetv1-global.js")
+        && has_normalized_phrase(lower, "protected by tencent cloud edgeone")
+        && lower.contains("security verification")
+    {
+        return Some(outcome(
+            OutcomeKind::Captcha,
+            vec!["body:edgeone-security-verification+captcha-widget".into()],
+        ));
+    }
+
+    // Several saved first-party documents return HTTP 200 with a full-page
+    // "Client Challenge" requiring JavaScript before any site content.
+    // An application requiring JavaScript is not enough: the three-part
+    // challenge shell is required.
+    if lower.contains("client challenge")
+        && has_normalized_phrase(lower, "javascript is disabled in your browser")
+        && has_normalized_phrase(lower, "please enable javascript to proceed")
+    {
+        return Some(outcome(
+            OutcomeKind::Challenge,
+            vec!["body:client-challenge+javascript-gate".into()],
+        ));
+    }
+
+    // Imperva-style browser check appears with HTTP 200 in the saved corpus.
+    // The title alone is not enough: the page must state that the browser is
+    // being checked for bot-like behavior.
+    if lower.contains("pardon our interruption")
+        && has_normalized_phrase(
+            lower,
+            "something about your browser made us think you were a bot",
+        )
+    {
+        return Some(outcome(
+            OutcomeKind::Challenge,
+            vec!["body:pardon-interruption+bot-browser-check".into()],
+        ));
+    }
+
+    // HUMAN/PerimeterX CAPTCHA template, versus regular JS integrations.
+    if (status == 403 || status == 429)
+        && lower.contains("px-captcha")
+        && (lower.contains("press and hold") || lower.contains("press & hold"))
+    {
+        return Some(outcome(
+            OutcomeKind::Captcha,
+            vec!["body:px-captcha+press-hold".into()],
+        ));
+    }
+
+    // A first-party denied document can itself be a Turnstile verification
+    // gate. The script alone, or a generic 200 application form, is not.
+    if status == 403
+        && has_normalized_phrase(lower, "verify you are human")
+        && lower.contains("challenges.cloudflare.com/turnstile/v0/api.js")
+    {
+        return Some(outcome(
+            OutcomeKind::Challenge,
+            vec!["body:turnstile+verify-human-gate".into()],
+        ));
+    }
+
+    // A provider-agnostic browser-verification interstitial encountered on
+    // a first-party document route; requires all three independent phrases.
+    if has_normalized_phrase(lower, "security verification in progress")
+        && has_normalized_phrase(
+            lower,
+            "verify your browser to protect against automated access",
+        )
+        && has_normalized_phrase(lower, "verifying connection")
+    {
+        return Some(outcome(
+            OutcomeKind::Challenge,
+            vec!["body:security-verification+browser-connection".into()],
+        ));
+    }
+
+    None
+}
+
 #[must_use]
 pub fn classify_response(status: u16, headers: &[Header], body: &[u8]) -> Outcome {
     let body = String::from_utf8_lossy(body);
@@ -63,6 +160,9 @@ pub fn classify_response(status: u16, headers: &[Header], body: &[u8]) -> Outcom
     let mut evidence = Vec::new();
 
     if let Some(action) = explicit_vendor_challenge(headers, body.as_bytes(), &lower) {
+        return action;
+    }
+    if let Some(action) = corpus_document_gate(status, &lower) {
         return action;
     }
 
@@ -108,6 +208,9 @@ pub fn classify_response(status: u16, headers: &[Header], body: &[u8]) -> Outcom
 
     if status == 401 || status == 403 {
         evidence.push(format!("status:{status}"));
+        if lower.contains("sucuri website firewall") && lower.contains("access denied") {
+            evidence.push("body:sucuri-website-firewall".into());
+        }
         for (needle, marker) in [
             (
                 "blocked due to a network policy",
@@ -146,7 +249,7 @@ pub fn classify_response(status: u16, headers: &[Header], body: &[u8]) -> Outcom
 fn outcome(kind: OutcomeKind, evidence: Vec<String>) -> Outcome {
     Outcome {
         kind,
-        classifier: "builtin-v2".into(),
+        classifier: "builtin-v3".into(),
         evidence,
     }
 }
