@@ -6,7 +6,7 @@ That distinction matters. A response can preserve evidence from an outer CDN, a 
 
 ## Roles
 
-`builtin-path-v11` currently separates these roles:
+`builtin-path-v12` currently separates these roles:
 
 - `edge_provider` — managed serving/edge layer with explicit provider evidence;
 - `application_platform` — downstream delivery/application platform participation;
@@ -41,12 +41,22 @@ Path v11 adds seven `server_implementation` labels from case-insensitive, precis
 
 Normalized archives may concatenate multiple `Set-Cookie` fields with newline separators. The path recognizer now reads each cookie line as a separate field while preserving the comma in ordinary `Expires=Wed, ...` attributes; on-the-wire HTTP requests still preserve repeated raw fields. This avoids missed security, bot-management, and load-balancer cookie names later in a normalized value, without splitting on commas or promoting cookie provenance into provider termination.
 
+## v12 security and hosting participants
+
+Path v12 adds product-specific **response participation** without turning it into new termination votes:
+
+- `security_middleware: ddos-guard` from an explicit `Server: ddos-guard` product token or a DDoS-Guard response cookie in the numbered `__ddgN[_...]` family (including observed `__ddg8_`, `__ddg9_`, `__ddg10_`), plus legacy `__ddgid` / `__ddgmark`. When both occur, both independent markers remain attached to the same deduplicated role. This does **not** mean the WAF blocked a request or that DDoS-Guard terminated client TLS. The response-side evidence was identified independently in the [WAFW00F detector](https://github.com/EnableSecurity/wafw00f/blob/master/wafw00f/plugins/ddosguard.py) and the indexed corpus; the current numbered-cookie names are corpus-observed rather than a published DDoS-Guard contract.
+- `application_platform: flywheel` from paired nonempty `X-FW-Serve` and product-bearing `X-FW-Server: Flywheel[/version]`. A lone generic `X-FW-Serve` is not enough, nor is `Server: Flywheel` alone. The pair is seen in responses behind both Flywheel's own server and Cloudflare, so it is deliberately not an edge-provider vote. The exact `X-FW-*` response contract has not been publicly authenticated by Flywheel; the label expresses preserved hosting-platform participation only.
+- `waf: huawei-cloud-waf` from either `HWWAFSESID` or `HWWAFSESTIME` **response** cookie. Both are [documented by Huawei](https://support.huaweicloud.com/intl/en-us/usermanual-waf/waf_01_2154.html) as WAF-generated session markers. They may be set in separate or newline-combined normalized `Set-Cookie` fields; ordinary request `Cookie` fields are not response evidence. Their presence does not prove any specific protection rule actually blocked the observed request.
+
+All three are additional participants in the same unordered path evidence set; existing Cloudflare, Fastly, load-balancer, server implementation and cache roles remain independent.
+
 ## Current explicit markers
 
-The v10 recognizer includes:
+The current recognizer includes:
 
 - edge/provider: Cloudflare, CloudFront, Akamai, Fastly, F5 Distributed Cloud/Volt, Imperva, Sucuri, BunnyCDN, Google Front End, OpenResty Edge, Vercel, Netlify, Fly.io, Railway, KeyCDN, QUIC.cloud, CDN77, Tencent EdgeOne, Alibaba Cloud edge family;
-- downstream platforms: Vercel, Netlify, Azure Front Door, Render, Railway, Pantheon, Acquia Cloud Platform, Heroku, GitHub, Kinsta, Wix, Arc XP, Future Publishing;
+- downstream platforms: Vercel, Netlify, Azure Front Door, Render, Railway, Pantheon, Acquia Cloud Platform, Heroku, GitHub, Kinsta, Wix, Arc XP, Future Publishing, Flywheel;
 - origin services: Amazon S3, generic S3-compatible object storage, MinIO, Akamai NetStorage, Google Cloud Storage, Azure Blob Storage, Alibaba OSS, Backblaze B2, Tencent COS;
 - API gateways: AWS API Gateway, Kong, Apache APISIX, KrakenD, Tyk, Gravitee;
 - load balancers: AWS Application Load Balancer, AWS Classic Load Balancer, Google Cloud Application Load Balancer, F5 BIG-IP LTM, NetScaler ADC, Azure Application Gateway, Azure/Microsoft ARR affinity family, Cloudflare Load Balancer, Oracle Cloud Load Balancer, OVH IPLB;
@@ -55,7 +65,7 @@ The v10 recognizer includes:
 - identity proxies: Google Cloud IAP, Cloudflare Access, OAuth2 Proxy, Authelia, authentik;
 - traffic management: IO River, Cloudflare Waiting Room, Queue-it;
 - server implementations: nginx, OpenResty, Caddy, Apache HTTP Server, Microsoft IIS, Microsoft HTTPAPI, Kestrel, Gunicorn, Tengine, Jetty, Uvicorn, lighttpd, LiteSpeed, Google UploadServer, SFFE, GSE;
-- WAF/security: AWS WAF (including `aws-waf-token` state), AWS ALB authentication, Cloudflare security/challenge and rate-limiting state, Imperva WAF, F5 BIG-IP ASM, FortiWeb;
+- WAF/security: AWS WAF (including `aws-waf-token` state), AWS ALB authentication, Cloudflare security/challenge and rate-limiting state, DDoS-Guard protection middleware, Huawei Cloud WAF, Imperva WAF, F5 BIG-IP ASM, FortiWeb;
 - bot management: Cloudflare Bot Management, Akamai Bot Manager, DataDome, HUMAN/PerimeterX.
 
 Fastly-specific `Fastly-Debug-*`, `fastly-restarts`, `x-fastly-backend-reqs`, explicit Fastly `Via` responses, and `X-Timer` values matching Fastly's documented `S{unixStartTimeSeconds},VS0,VE{durationMilliseconds}` grammar are treated as Fastly cache participation rather than automatically asserting that Fastly was the outer edge. The value-shape check is deliberate: the historical corpus also contains unrelated numeric `X-Timer` values, so the header name alone is not sufficient despite Fastly documenting its own generated form as proprietary. Generic `X-Cache-Hits` is deliberately excluded because Acquia and Pantheon also emit it. The same conservative rule is used for BunnyCDN's `cdn-*` cache metadata. Railway is different: its own documentation defines `X-Railway-Edge` as the POP that received the request and terminated TLS, so that marker supports an edge-provider claim while `X-Railway-Upstream-Zone` remains downstream platform/origin-zone evidence.
