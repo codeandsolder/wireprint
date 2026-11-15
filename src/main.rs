@@ -11,8 +11,8 @@ use wireprint::{
     HostAggregationConfig, Observation, PATH_CLASSIFIER_VERSION, PlatformKind, ProbeConfig,
     ProfileSet, RequestProfile, RoutingAuditSample, RoutingContextCollector, TlsProbeConfig,
     TransportProfile, TransportSet, aggregate_observations, assess_endpoint, audit_routing_samples,
-    classify_response, detect_cf_ray_provenance, detect_path_elements, detect_routing_elements,
-    probe_batch, probe_h3, probe_tls,
+    classify_response, detect_cf_ray_provenance, detect_path_elements_with_body,
+    detect_routing_elements, probe_batch, probe_h3, probe_tls,
 };
 
 #[derive(Debug, Parser)]
@@ -191,13 +191,16 @@ struct PathArgs {
     #[arg(
         long = "header",
         value_name = "NAME:VALUE",
-        required_unless_present = "input",
+        required_unless_present_any = ["input", "body"],
         conflicts_with = "input"
     )]
     headers: Vec<String>,
-    /// Replay JSONL rows containing a `headers` array and preserve their other fields.
+    /// Replay JSONL rows with headers and optional captured `body_prefix`.
     #[arg(long, value_name = "JSONL", conflicts_with = "headers")]
     input: Option<PathBuf>,
+    /// Captured HTTP body file for identifying body-authored challenge pages.
+    #[arg(long, value_name = "FILE", conflicts_with = "input")]
+    body: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
@@ -507,9 +510,13 @@ fn run_ray(args: &RayArgs) -> Result<()> {
 fn run_path(args: &PathArgs) -> Result<()> {
     let Some(input) = &args.input else {
         let headers = parse_headers(&args.headers)?;
+        let body = args.body.as_ref().map_or_else(
+            || Ok(Vec::new()),
+            |file| std::fs::read(file).with_context(|| format!("read {}", file.display())),
+        )?;
         println!(
             "{}",
-            serde_json::to_string_pretty(&detect_path_elements(&headers))?
+            serde_json::to_string_pretty(&detect_path_elements_with_body(&headers, &body))?
         );
         return Ok(());
     };
@@ -543,7 +550,12 @@ fn classify_path_replay_row(row: &mut serde_json::Value) -> Result<()> {
             .clone(),
     )
     .context("path replay `headers` must match the wireprint Header schema")?;
-    let elements = detect_path_elements(&headers);
+    let body = match object.get("body_prefix") {
+        Some(serde_json::Value::String(body)) => body.as_bytes(),
+        None | Some(serde_json::Value::Null) => &[],
+        Some(_) => bail!("path replay `body_prefix` must be a string or null"),
+    };
+    let elements = detect_path_elements_with_body(&headers, body);
     let _ = object.insert(
         "path_classifier".into(),
         serde_json::Value::String(PATH_CLASSIFIER_VERSION.into()),

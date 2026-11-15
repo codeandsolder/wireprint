@@ -6,7 +6,7 @@ That distinction matters. A response can preserve evidence from an outer CDN, a 
 
 ## Roles
 
-`builtin-path-v13` currently separates these roles:
+`builtin-path-v14` currently separates these roles:
 
 - `edge_provider` — managed serving/edge layer with explicit provider evidence;
 - `application_platform` — downstream delivery/application platform participation;
@@ -60,11 +60,23 @@ Path v13 adds four network-path participant labels from narrowly scoped ordinary
 - `security_middleware: variti` requires the distinct `X-VARITI-CCR` response header with its observed `decimal:decimal` value grammar. This response header is associated with Variti across [large independent header surveys](https://webtechsurvey.com/response-header/x-variti-ccr), and Variti documents its [L7 DDoS and bot protection](https://variti.io/anti-bot/). A first-party contract for the `CCR` header's exact semantics was not found. Therefore this rule does **not** assert that its optional WAF is enabled, that a bot challenge occurred, or that protection actively blocked a request.
 - `edge_provider: arvancloud` requires the explicit product token in `Server: ArvanCloud`, as also identified in the [WebAppAnalyzer technology catalog](https://github.com/enthec/webappanalyzer). The label records an ArvanCloud CDN participant, not the verified external peer; a generic `X-Cache: HIT` or a product mention inside a comment is not enough. Endpoint fusion continues to determine actual outer termination from independent observations.
 
+## v14 Azion, Qrator and body-aware Anubis participation
+
+Path v14 adds two ordinary-response vendor markers and an Anubis bot-challenge detector:
+
+- **Azion `edge_provider`** requires the paired **nonempty** `X-Azion-Request-Id` and `X-Azion-Edge-Location` response headers. [Azion explicitly documents both on ordinary responses](https://assets.azion.com/en/documentation/support/diagnostic-headers/), regardless of debug mode. `X-Azion-Edge-Pop` and cache diagnostic headers are **debug-only**, so they are neither necessary nor sufficient here. The role records a managed-edge participant; it does not authenticate the selected network socket or prove any optional Azion firewall/WAF action.
+- **Qrator `bot_management`** requires the exact `qrator_jsid` **response cookie**. [Qrator's own bot-protection instructions](https://docs.qrator.net/connect/bot-protection.html) describe receiving this cookie after browser verification. Its [`X-Qrator-RequestID` and `X-Qrator-IP-Source` headers](https://docs.qrator.net/help-and-support/additional-http-headers.html) are **injected into requests forwarded toward the origin**, not automatically emitted on public responses, so they are explicitly rejected as response fingerprints. The cookie does not imply Qrator ended the client TLS connection, nor prove a particular blocking action.
+- **Anubis `bot_management`** recognizes two families of `Set-Cookie` names: `techaro.lol-anubis-auth` and `techaro.lol-anubis-cookie-verification` (including versioned hyphen-suffixed variants). The [Anubis project](https://github.com/TecharoHQ/anubis/blob/main/web/index.templ) authors its challenge page with JSON script elements having IDs `anubis_version` and `anubis_challenge`. A **pair of actual script tags** in the first 64 KiB of a captured response body adds independent `body:anubis-version+challenge-scripts` evidence, even when cookies are absent. A lone Anubis mention, documentation link, text ID, or only one script tag is not sufficient. Cookie and body evidence deduplicate to one participant.
+
+Normal Wreq and Hyper-Rustls HTTP probes already collect decoded, bounded response bodies. They now invoke `detect_path_elements_with_body(headers, body)`, while the existing `detect_path_elements(headers)` remains an explicitly **header-only** scanner for HTTP/3 (which currently captures response headers but no body) and other callers without a body. The `wireprint path` command accepts optional `--body FILE` with ad hoc headers; JSONL replay also uses the standard optional string `body_prefix` field if present. Both paths use the same body-aware function, so offline replay and ordinary probes agree. Header-only output remains valid when no body exists; the classifier does not invent missing body content, infer WAF blocking, or add HTTP requests to collect it.
+
+**Evidence limits:** these three markers had **zero matching positive signatures** in the archived indexed header corpus at research time, so positive validation requires first-party-authorized synthetic response fixtures. No fabricated historical hits are credited. The 29,834-signature historic path holdout remains a negative/regression control.
+
 ## Current explicit markers
 
 The current recognizer includes:
 
-- edge/provider: ArvanCloud, Cloudflare, CloudFront, Akamai, Fastly, F5 Distributed Cloud/Volt, Imperva, Sucuri, BunnyCDN, Google Front End, OpenResty Edge, Vercel, Netlify, Fly.io, Railway, KeyCDN, QUIC.cloud, CDN77, Tencent EdgeOne, Alibaba Cloud edge family;
+- edge/provider: Azion, ArvanCloud, Cloudflare, CloudFront, Akamai, Fastly, F5 Distributed Cloud/Volt, Imperva, Sucuri, BunnyCDN, Google Front End, OpenResty Edge, Vercel, Netlify, Fly.io, Railway, KeyCDN, QUIC.cloud, CDN77, Tencent EdgeOne, Alibaba Cloud edge family;
 - downstream platforms: Vercel, Netlify, Azure Front Door, Render, Railway, Pantheon, Acquia Cloud Platform, Heroku, GitHub, Kinsta, Wix, Arc XP, Future Publishing, Flywheel;
 - origin services: Amazon S3, generic S3-compatible object storage, MinIO, Akamai NetStorage, Google Cloud Storage, Azure Blob Storage, Alibaba OSS, Backblaze B2, Tencent COS;
 - API gateways: AWS API Gateway, Kong, Apache APISIX, KrakenD, Tyk, Gravitee;
@@ -75,7 +87,7 @@ The current recognizer includes:
 - traffic management: IO River, Cloudflare Waiting Room, Queue-it;
 - server implementations: nginx, OpenResty, Caddy, Apache HTTP Server, Microsoft IIS, Microsoft HTTPAPI, Kestrel, Gunicorn, Tengine, Jetty, Uvicorn, lighttpd, LiteSpeed, Google UploadServer, SFFE, GSE;
 - WAF/security: AWS WAF (including `aws-waf-token` state), AWS ALB authentication, Cloudflare security/challenge and rate-limiting state, DDoS-Guard protection middleware, Variti protection middleware, Huawei Cloud WAF, Imperva WAF, F5 BIG-IP ASM, FortiWeb;
-- bot management: Cloudflare Bot Management, Akamai Bot Manager, DataDome, HUMAN/PerimeterX.
+- bot management: Cloudflare Bot Management, Akamai Bot Manager, DataDome, HUMAN/PerimeterX, Qrator, Anubis (response cookies and bounded body scripts).
 
 Fastly-specific `Fastly-Debug-*`, `fastly-restarts`, `x-fastly-backend-reqs`, explicit Fastly `Via` responses, and `X-Timer` values matching Fastly's documented `S{unixStartTimeSeconds},VS0,VE{durationMilliseconds}` grammar are treated as Fastly cache participation rather than automatically asserting that Fastly was the outer edge. The value-shape check is deliberate: the historical corpus also contains unrelated numeric `X-Timer` values, so the header name alone is not sufficient despite Fastly documenting its own generated form as proprietary. Generic `X-Cache-Hits` is deliberately excluded because Acquia and Pantheon also emit it. The same conservative rule is used for BunnyCDN's `cdn-*` cache metadata. Railway is different: its own documentation defines `X-Railway-Edge` as the POP that received the request and terminated TLS, so that marker supports an edge-provider claim while `X-Railway-Upstream-Zone` remains downstream platform/origin-zone evidence.
 

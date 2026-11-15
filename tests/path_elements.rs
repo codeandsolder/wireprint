@@ -1,4 +1,6 @@
-use wireprint::{Header, PathElement, PathElementRole, detect_path_elements};
+use wireprint::{
+    Header, PathElement, PathElementRole, detect_path_elements, detect_path_elements_with_body,
+};
 
 fn header(name: &str, value: &str) -> Header {
     Header {
@@ -2191,4 +2193,235 @@ fn arvancloud_generic_or_comment_only_banners_do_not_match() {
             "bad server banner: {server}"
         );
     }
+}
+
+#[test]
+fn azion_requires_both_ordinary_diagnostic_headers_and_is_not_waf_evidence() {
+    let elements = detect_path_elements(&[
+        header(
+            "X-Azion-Request-Id",
+            "0123456789abcdef0123456789abcdef-1234",
+        ),
+        header("x-azion-edge-location", "WAW"),
+        header("Server", "cloudflare"),
+        header("cf-ray", "abcd0000-WAW"),
+    ]);
+    assert!(has(&elements, PathElementRole::EdgeProvider, "azion"));
+    assert!(has(&elements, PathElementRole::EdgeProvider, "cloudflare"));
+    assert!(!has(&elements, PathElementRole::Waf, "azion"));
+    assert!(!has(&elements, PathElementRole::Cache, "azion"));
+    let marker = elements.iter().find(|p| p.product == "azion").unwrap();
+    assert_eq!(
+        marker.evidence,
+        ["headers:x-azion-request-id+x-azion-edge-location"]
+    );
+}
+
+#[test]
+fn azion_partial_debug_or_empty_headers_are_not_evidence() {
+    for headers in [
+        vec![header("x-azion-request-id", "opaque")],
+        vec![header("x-azion-edge-location", "WAW")],
+        vec![header("x-azion-edge-pop", "WAW")],
+        vec![header("server", "Azion")],
+        vec![
+            header("x-azion-request-id", " "),
+            header("x-azion-edge-location", "WAW"),
+        ],
+        vec![
+            header("x-azion-request-id", "opaque"),
+            header("x-azion-edge-location", " \t"),
+        ],
+        vec![header("x-cache", "HIT"), header("x-azion-edge-pop", "WAW")],
+    ] {
+        assert!(
+            !has(
+                &detect_path_elements(&headers),
+                PathElementRole::EdgeProvider,
+                "azion"
+            ),
+            "Azion false-positive from {headers:?}"
+        );
+    }
+    assert!(has(
+        &detect_path_elements(&[
+            header("x-azion-request-id", "opaque-nonhex"),
+            header("x-azion-edge-location", "non-standard-site-code"),
+        ]),
+        PathElementRole::EdgeProvider,
+        "azion"
+    ));
+}
+
+#[test]
+fn qrator_tracking_cookie_identifies_bot_management_without_edge_claim() {
+    let elements = detect_path_elements(&[
+        header(
+            "Set-Cookie",
+            "session=opaque; Expires=Wed, 21 Oct 2027 07:28:00 GMT",
+        ),
+        header("Set-Cookie", "qrator_jsid=opaque; Path=/; Secure"),
+        header("Cf-Ray", "abcdef12-PRG"),
+    ]);
+    assert!(has(&elements, PathElementRole::BotManagement, "qrator"));
+    assert!(has(&elements, PathElementRole::EdgeProvider, "cloudflare"));
+    assert!(!has(&elements, PathElementRole::EdgeProvider, "qrator"));
+    assert!(!has(&elements, PathElementRole::Waf, "qrator"));
+    assert_eq!(
+        elements
+            .iter()
+            .find(|p| p.product == "qrator")
+            .unwrap()
+            .evidence,
+        ["cookie:qrator_jsid"]
+    );
+}
+
+#[test]
+fn qrator_origin_bound_headers_request_cookies_and_lookalikes_are_excluded() {
+    for headers in [
+        vec![header(
+            "X-Qrator-RequestID",
+            "f4b16a6bf0bcc8bebc394a2824d5d569",
+        )],
+        vec![header("X-Qrator-IP-Source", "198.51.100.3")],
+        vec![header("Cookie", "qrator_jsid=opaque")],
+        vec![header("Set-Cookie", "fake=qrator_jsid=opaque; Path=/")],
+        vec![header("Set-Cookie", "qrator_jsid_other=opaque; Path=/")],
+        vec![header("Server", "QRATOR")],
+    ] {
+        assert!(
+            !has(
+                &detect_path_elements(&headers),
+                PathElementRole::BotManagement,
+                "qrator"
+            ),
+            "Qrator false-positive from {headers:?}"
+        );
+    }
+}
+
+#[test]
+fn anubis_auth_and_verification_response_cookies_are_independent() {
+    let elements = detect_path_elements(&[header(
+        "Set-Cookie",
+        "techaro.lol-anubis-auth=; Path=/; Max-Age=0; SameSite=Lax\r\ntecharo.lol-anubis-cookie-verification=opaque; Path=/",
+    )]);
+    assert!(has(&elements, PathElementRole::BotManagement, "anubis"));
+    assert_eq!(
+        elements
+            .iter()
+            .find(|p| p.product == "anubis")
+            .unwrap()
+            .evidence,
+        [
+            "cookie:techaro.lol-anubis-auth*",
+            "cookie:techaro.lol-anubis-cookie-verification*",
+        ]
+    );
+    for cookie in [
+        "techaro.lol-anubis-auth",
+        "techaro.lol-anubis-auth-variant",
+        "techaro.lol-anubis-cookie-verification",
+        "techaro.lol-anubis-cookie-verification-variant",
+    ] {
+        let elements = detect_path_elements(&[header(
+            "Set-Cookie",
+            &format!("{cookie}=opaque; Path=/; Secure"),
+        )]);
+        assert!(has(&elements, PathElementRole::BotManagement, "anubis"));
+    }
+}
+
+#[test]
+fn anubis_body_challenge_detected_without_cookie_or_new_network_request() {
+    let body = br#"<html><head>
+    <script type='application/json' id='anubis_version'>"1.28.0"</script>
+    <script id="anubis_challenge" type="application/json">{"difficulty":5}</script>
+    </head><body><h1>Making sure you're not a bot</h1></body></html>"#;
+    let elements =
+        detect_path_elements_with_body(&[header("Content-Type", "text/html; charset=utf-8")], body);
+    assert!(has(&elements, PathElementRole::BotManagement, "anubis"));
+    assert_eq!(
+        elements
+            .iter()
+            .find(|p| p.product == "anubis")
+            .unwrap()
+            .evidence,
+        ["body:anubis-version+challenge-scripts"]
+    );
+}
+
+#[test]
+fn anubis_cookie_and_body_evidence_are_merged_without_new_edge_role() {
+    let body = br#"<script id="anubis_version" type="application/json">"1.28"</script>
+    <script id="anubis_challenge" type="application/json">{}</script>"#;
+    let elements = detect_path_elements_with_body(
+        &[
+            header("Cf-Ray", "abcdef12-WAW"),
+            header("Set-Cookie", "techaro.lol-anubis-auth=; Path=/"),
+        ],
+        body,
+    );
+    assert!(has(&elements, PathElementRole::BotManagement, "anubis"));
+    assert!(has(&elements, PathElementRole::EdgeProvider, "cloudflare"));
+    assert!(!has(&elements, PathElementRole::EdgeProvider, "anubis"));
+    assert_eq!(
+        elements
+            .iter()
+            .find(|p| p.product == "anubis")
+            .unwrap()
+            .evidence,
+        [
+            "cookie:techaro.lol-anubis-auth*",
+            "body:anubis-version+challenge-scripts",
+        ]
+    );
+}
+
+#[test]
+fn anubis_stray_body_strings_do_not_identify_challenge() {
+    for body in [
+        "<html><a href='https://github.com/TecharoHQ/anubis'>Anubis</a></html>",
+        "<html><script id=\"anubis_challenge\"></script></html>",
+        "<html><script id=\"anubis_version\"></script></html>",
+        "<html><p id=\"anubis_challenge\">id=\"anubis_version\"</p></html>",
+        "<html><script id=\"anubis_challenge\"></script><pre>id=\"anubis_version\"</pre></html>",
+        "",
+    ] {
+        let elements = detect_path_elements_with_body(&[], body.as_bytes());
+        assert!(
+            !has(&elements, PathElementRole::BotManagement, "anubis"),
+            "false-positive Anubis body: {body}"
+        );
+    }
+    for headers in [
+        vec![header("Cookie", "techaro.lol-anubis-auth=opaque")],
+        vec![header("Set-Cookie", "login=techaro.lol-anubis-auth=opaque")],
+        vec![header("Set-Cookie", "techaro.lol-anubis-authentic=opaque")],
+    ] {
+        assert!(!has(
+            &detect_path_elements(&headers),
+            PathElementRole::BotManagement,
+            "anubis"
+        ));
+    }
+}
+
+#[test]
+fn anubis_body_scan_is_bounded_and_pure_header_scanner_ignores_body() {
+    let body = format!(
+        "{}<script id=\"anubis_version\"></script><script id=\"anubis_challenge\"></script>",
+        "x".repeat(64 * 1024)
+    );
+    assert!(!has(
+        &detect_path_elements_with_body(&[], body.as_bytes()),
+        PathElementRole::BotManagement,
+        "anubis"
+    ));
+    assert!(!has(
+        &detect_path_elements(&[]),
+        PathElementRole::BotManagement,
+        "anubis"
+    ));
 }

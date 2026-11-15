@@ -36,7 +36,7 @@ use crate::classify_response;
 use crate::fusion::assess_endpoint;
 use crate::model::{EndpointEvidence, Header, Observation, RequestProfile};
 use crate::normalize::{NORMALIZER_VERSION, normalize_response_template};
-use crate::path::detect_path_elements;
+use crate::path::detect_path_elements_with_body;
 use crate::probe::ProbeConfig;
 use crate::routing_context::enrich_observation as enrich_routing_context;
 use crate::transport::{HyperRustlsProfileKind, TransportImplementation, TransportProfile};
@@ -328,7 +328,7 @@ async fn finalize_response(
     }
 
     let outcome = classify_response(status, &headers, &body);
-    let path_elements = detect_path_elements(&headers);
+    let path_elements = detect_path_elements_with_body(&headers, &body);
     let cf_ray_provenance = detect_cf_ray_provenance(&headers);
     let digest = hex_digest(Sha256::digest(&body));
     let textual = is_textual_response(&headers, &body);

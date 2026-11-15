@@ -23,7 +23,7 @@ use crate::model::{
     DnsProvenance, EndpointEvidence, Header, Observation, PathElement, RequestProfile,
 };
 use crate::normalize::{NORMALIZER_VERSION, normalize_response_template};
-use crate::path::detect_path_elements;
+use crate::path::detect_path_elements_with_body;
 use crate::routing::detect_routing_snapshot_elements;
 use crate::routing_context::{
     RoutingContextCollector, enrich_observation as enrich_routing_context,
@@ -290,7 +290,7 @@ async fn probe_one(context: &WreqProbeContext<'_>, target: &str) -> Observation 
     }
 
     let outcome = classify_response(status, &headers, &body);
-    let path_elements = detect_path_elements(&headers);
+    let path_elements = detect_path_elements_with_body(&headers, &body);
     let cf_ray_provenance = detect_cf_ray_provenance(&headers);
     let digest = hex_digest(Sha256::digest(&body));
     let textual = is_textual_response(&headers, &body);
