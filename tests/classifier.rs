@@ -118,7 +118,7 @@ fn aws_waf_captcha_header_is_a_captcha_even_with_uninformative_body() {
     }];
     let out = classify_response(405, &headers, b"");
     assert_eq!(out.kind, OutcomeKind::Captcha);
-    assert_eq!(out.classifier, "builtin-v3");
+    assert_eq!(out.classifier, "builtin-v4");
     assert_eq!(out.evidence, ["header:x-amzn-waf-action=captcha"]);
 }
 
@@ -248,7 +248,7 @@ fn edgeone_captcha_interstitial_is_detected_even_as_http_200() {
 <script src="https://gcaptcha.eo.gtimg.com/TEOCaptchaWidgetV1-global.js"></script>
 </head><body><div id="captcha"></div><footer>Protected by Tencent Cloud EdgeOne</footer></body></html>"#;
     let result = classify_response(200, &[], body);
-    assert_eq!(result.classifier, "builtin-v3");
+    assert_eq!(result.classifier, "builtin-v4");
     assert_eq!(result.kind, OutcomeKind::Captcha);
     assert_eq!(
         result.evidence,
@@ -415,6 +415,83 @@ fn client_challenge_javascript_gate_requires_context() {
             classify_response(200, &[], text.as_bytes()).kind,
             OutcomeKind::ContentLike,
             "{text}"
+        );
+    }
+}
+
+#[test]
+fn hcdn_reserved_js_challenge_and_browser_check_are_joint_evidence() {
+    let body = br#"<html><head><title>Checking your browser before accessing. Just a moment...</title></head>
+<body><h1>Checking your browser before accessing</h1><p>Please wait for up to 5 seconds...</p>
+<script src="/hcdn-cgi/jschallenge"></script></body></html>"#;
+    for status in [200, 403] {
+        let out = classify_response(status, &[], body);
+        assert_eq!(out.kind, OutcomeKind::Challenge, "{status}");
+        assert_eq!(out.classifier, "builtin-v4");
+        assert_eq!(out.evidence, ["body:hcdn-jschallenge+browser-check"]);
+    }
+}
+
+#[test]
+fn hcdn_brand_script_and_browser_wording_alone_are_not_gate_evidence() {
+    for body in [
+        "<script src='/hcdn-cgi/jschallenge'></script>",
+        "<h1>Checking your browser before accessing</h1>",
+        "<h1>Why is the hcdn-cgi JS Challenge shown to browsers?</h1>",
+        "<p>This page documents a browser protection mechanism.</p>",
+    ] {
+        assert_eq!(
+            classify_response(200, &[], body.as_bytes()).kind,
+            OutcomeKind::ContentLike,
+            "{body}"
+        );
+    }
+    let headers = [Header {
+        name: "Server".into(),
+        value: "hcdn".into(),
+    }];
+    assert_eq!(
+        classify_response(200, &headers, b"ordinary content").kind,
+        OutcomeKind::ContentLike
+    );
+}
+
+#[test]
+fn custom_security_verification_javascript_robot_check_is_challenge() {
+    let body = br#"<html><title>Security Verification</title>
+<h1>JavaScript is disabled</h1>
+<p>In order to continue, we need to verify that you are not a robot.</p>
+<p>This requires JavaScript. Enable JavaScript and then reload the page.</p></html>"#;
+    let out = classify_response(405, &[], body);
+    assert_eq!(out.kind, OutcomeKind::Challenge);
+    assert_eq!(out.classifier, "builtin-v4");
+    assert_eq!(
+        out.evidence,
+        ["body:security-verification+javascript-robot-check"]
+    );
+    let headers = [Header {
+        name: "X-Amzn-Waf-Action".into(),
+        value: "captcha".into(),
+    }];
+    let overridden = classify_response(405, &headers, body);
+    assert_eq!(overridden.kind, OutcomeKind::Captcha);
+    assert_eq!(overridden.evidence, ["header:x-amzn-waf-action=captcha"]);
+}
+
+#[test]
+fn generic_security_verification_and_javascript_requirements_are_not_challenge() {
+    for body in [
+        "<title>Security Verification</title><p>Complete our form.</p>",
+        "<p>Verify that you are not a robot.</p>",
+        "<p>This requires JavaScript. Enable JavaScript and then reload the page.</p>",
+        "<title>Security Verification</title><p>This requires JavaScript.</p>",
+        "<title>Security Verification</title><p>Verify that you are not a robot.</p>",
+        "<title>Security Verification</title><p>Verify that you are not a robot.</p><p>Enable JavaScript to continue.</p>",
+    ] {
+        assert_eq!(
+            classify_response(200, &[], body.as_bytes()).kind,
+            OutcomeKind::ContentLike,
+            "{body}"
         );
     }
 }
