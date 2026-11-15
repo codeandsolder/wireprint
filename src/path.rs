@@ -1,6 +1,6 @@
 use crate::model::{Header, PathElement, PathElementRole};
 
-pub const PATH_CLASSIFIER_VERSION: &str = "builtin-path-v11";
+pub const PATH_CLASSIFIER_VERSION: &str = "builtin-path-v12";
 
 fn header_values<'a>(headers: &'a [Header], name: &str) -> impl Iterator<Item = &'a str> {
     headers
@@ -155,11 +155,11 @@ fn cookie_names(headers: &[Header]) -> Vec<String> {
         .collect()
 }
 
-// Parse product tokens, including optional versions and Jetty-style comments.
-// Ignore tokens inside RFC Server comments: "(served by Kestrel)" is not a
-// product assertion. Multiple products and comma-combined fields are supported.
-fn server_has_product(headers: &[Header], product: &str) -> bool {
-    header_values(headers, "server").any(|value| {
+// Parse product tokens in a Server-shaped header, with optional versions
+// and Jetty-style comments. Ignore product names inside RFC comments.
+// Multiple products and comma-combined values are supported.
+fn header_has_product(headers: &[Header], header_name: &str, product: &str) -> bool {
+    header_values(headers, header_name).any(|value| {
         let mut comment_depth = 0u32;
         let mut escaped = false;
         let mut token_start = None;
@@ -199,6 +199,32 @@ fn server_has_product(headers: &[Header], product: &str) -> bool {
         }
         false
     })
+}
+
+fn server_has_product(headers: &[Header], product: &str) -> bool {
+    header_has_product(headers, "server", product)
+}
+
+fn looks_like_ddos_guard_cookie(name: &str) -> bool {
+    let Some(suffix) = name.strip_prefix("__ddg") else {
+        return false;
+    };
+    // Legacy __ddgid / __ddgmark and numbered DDoS-Guard families, including
+    // current __ddg8_ / __ddg9_ / __ddg10_ captures. Do not accept arbitrary
+    // __ddg-prefixed application names.
+    if matches!(suffix, "id" | "mark") {
+        return true;
+    }
+    let digit_count = suffix.bytes().take_while(u8::is_ascii_digit).count();
+    if digit_count == 0 {
+        return false;
+    }
+    let tail = &suffix[digit_count..];
+    tail.is_empty()
+        || tail.strip_prefix('_').is_some_and(|rest| {
+            rest.bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        })
 }
 
 fn add(
@@ -773,6 +799,20 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             PathElementRole::Cache,
             "future-publishing",
             "header:x-ftr-cache-status",
+        );
+    }
+
+    // Flywheel's managed WordPress platform can sit behind Cloudflare or
+    // Fastly. Require a product-bearing backend banner and a separate serving
+    // header; neither is an outer-edge identity claim.
+    if header_has_product(headers, "x-fw-server", "flywheel")
+        && has_nonempty_header(headers, "x-fw-serve")
+    {
+        add(
+            &mut elements,
+            PathElementRole::ApplicationPlatform,
+            "flywheel",
+            "headers:x-fw-server+x-fw-serve",
         );
     }
 
@@ -1420,6 +1460,46 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
     }
 
     // Security and bot-management middleware.
+    // A DDoS-Guard reverse-proxy banner or product-scoped session cookie
+    // establishes security-layer participation, not a triggered WAF rule or
+    // a verified client-facing TLS endpoint.
+    if server_has_product(headers, "ddos-guard") {
+        add(
+            &mut elements,
+            PathElementRole::SecurityMiddleware,
+            "ddos-guard",
+            "server:ddos-guard",
+        );
+    }
+    if cookies
+        .iter()
+        .any(|cookie| looks_like_ddos_guard_cookie(cookie))
+    {
+        add(
+            &mut elements,
+            PathElementRole::SecurityMiddleware,
+            "ddos-guard",
+            "cookie:__ddg-family",
+        );
+    }
+    // Huawei WAF documents both response-session cookies independently;
+    // the presence of either is WAF participation, not proof of a block.
+    if has_cookie(&cookies, "hwwafsesid") {
+        add(
+            &mut elements,
+            PathElementRole::Waf,
+            "huawei-cloud-waf",
+            "cookie:HWWAFSESID",
+        );
+    }
+    if has_cookie(&cookies, "hwwafsestime") {
+        add(
+            &mut elements,
+            PathElementRole::Waf,
+            "huawei-cloud-waf",
+            "cookie:HWWAFSESTIME",
+        );
+    }
     if has_cookie_prefix(&cookies, "awselbauthsessioncookie") {
         add(
             &mut elements,

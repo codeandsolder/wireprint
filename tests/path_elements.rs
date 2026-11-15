@@ -1807,3 +1807,182 @@ fn normalized_cookie_parser_ignores_cookie_name_lookalikes_in_values() {
     ));
     assert!(!has(&elements, PathElementRole::BotManagement, "datadome"));
 }
+
+#[test]
+fn ddos_guard_proxy_and_cookie_family_are_security_participation_not_edge() {
+    let elements = detect_path_elements(&[
+        header("Server", "ddos-guard"),
+        header("Set-Cookie", "__ddg8_=opaque; Path=/; Secure"),
+        header("Set-Cookie", "__ddg9_=opaque; Path=/"),
+        header("Set-Cookie", "__ddg10_=opaque; Path=/"),
+    ]);
+    let guard = elements
+        .iter()
+        .find(|element| {
+            element.role == PathElementRole::SecurityMiddleware && element.product == "ddos-guard"
+        })
+        .unwrap();
+    assert_eq!(guard.evidence, ["server:ddos-guard", "cookie:__ddg-family"]);
+    assert!(!elements.iter().any(|element| {
+        element.product == "ddos-guard" && element.role == PathElementRole::EdgeProvider
+    }));
+    assert!(!has(&elements, PathElementRole::Waf, "ddos-guard"));
+}
+
+#[test]
+fn ddos_guard_recognizes_banner_and_cookie_independently_with_explicit_grammar() {
+    for server in ["DDOS-GUARD", "ddos-guard/2.0", "proxy/1 ddos-guard"] {
+        let elements = detect_path_elements(&[header("Server", server)]);
+        assert!(has(
+            &elements,
+            PathElementRole::SecurityMiddleware,
+            "ddos-guard"
+        ));
+    }
+    for cookie in [
+        "__ddg1",
+        "__ddg2_",
+        "__ddg8_",
+        "__ddg9_",
+        "__ddg10_",
+        "__ddg123_token",
+        "__ddgid",
+        "__ddgmark",
+    ] {
+        let elements =
+            detect_path_elements(&[header("Set-Cookie", &format!("{cookie}=opaque; Path=/"))]);
+        assert!(
+            has(&elements, PathElementRole::SecurityMiddleware, "ddos-guard"),
+            "not detected: {cookie}"
+        );
+        assert!(!has(&elements, PathElementRole::EdgeProvider, "ddos-guard"));
+    }
+}
+
+#[test]
+fn ddos_guard_lookalikes_do_not_assert_protection() {
+    for (name, value) in [
+        ("Server", "not-ddos-guard"),
+        ("Server", "ddos-guardian"),
+        ("Server", "example/1 (ddos-guard)"),
+        ("Set-Cookie", "__ddg=opaque; Path=/"),
+        ("Set-Cookie", "__ddgfoo=opaque; Path=/"),
+        ("Set-Cookie", "__ddg9evil=opaque; Path=/"),
+        ("Set-Cookie", "session=__ddg8_=opaque; Path=/"),
+        ("Cookie", "__ddg8_=opaque"),
+    ] {
+        let elements = detect_path_elements(&[header(name, value)]);
+        assert!(
+            !has(&elements, PathElementRole::SecurityMiddleware, "ddos-guard"),
+            "false-positive {name}: {value}"
+        );
+    }
+}
+
+#[test]
+fn flywheel_platform_is_distinct_from_outer_cloudflare_and_fastly() {
+    let elements = detect_path_elements(&[
+        header("Server", "cloudflare"),
+        header("Cf-Ray", "a4f19422ddb5bfe4-WAW"),
+        header("X-FW-Serve", "TRUE"),
+        header("X-FW-Server", "Flywheel/5.1.0"),
+        header("Via", "1.1 varnish"),
+        header("X-Timer", "S1791420568.860304,VS0,VE11"),
+    ]);
+    assert!(has(
+        &elements,
+        PathElementRole::ApplicationPlatform,
+        "flywheel"
+    ));
+    assert!(has(&elements, PathElementRole::EdgeProvider, "cloudflare"));
+    assert!(has(&elements, PathElementRole::Cache, "varnish"));
+    assert!(has(&elements, PathElementRole::Cache, "fastly"));
+    assert!(!has(&elements, PathElementRole::EdgeProvider, "flywheel"));
+}
+
+#[test]
+fn flywheel_requires_both_product_specific_and_serving_headers() {
+    for headers in [
+        vec![header("x-fw-serve", "TRUE")],
+        vec![header("x-fw-server", "Flywheel/5.1.0")],
+        vec![header("Server", "Flywheel/5.1.0")],
+        vec![
+            header("x-fw-server", "Flywheel/5.1.0"),
+            header("x-fw-serve", "   "),
+        ],
+        vec![
+            header("x-fw-server", "NotFlywheel/5.1.0"),
+            header("x-fw-serve", "TRUE"),
+        ],
+        vec![
+            header("x-fw-server", "example/1.0 (Flywheel/5.1.0)"),
+            header("x-fw-serve", "TRUE"),
+        ],
+        vec![
+            header("x-fw-server", "Flywheel/"),
+            header("x-fw-serve", "TRUE"),
+        ],
+    ] {
+        let elements = detect_path_elements(&headers);
+        assert!(
+            !has(&elements, PathElementRole::ApplicationPlatform, "flywheel"),
+            "unverified platform: {headers:?}"
+        );
+    }
+    for product in ["Flywheel/5.1.0", "flywheel/6.0", "FLYWHEEL"] {
+        let elements =
+            detect_path_elements(&[header("X-FW-Server", product), header("X-FW-Serve", "TRUE")]);
+        assert!(has(
+            &elements,
+            PathElementRole::ApplicationPlatform,
+            "flywheel"
+        ));
+    }
+}
+
+#[test]
+fn huawei_cloud_waf_documented_response_cookies_are_independent() {
+    for cookie in ["HWWAFSESID", "HWWAFSESTIME"] {
+        let elements =
+            detect_path_elements(&[header("Set-Cookie", &format!("{cookie}=opaque; Path=/"))]);
+        assert!(has(&elements, PathElementRole::Waf, "huawei-cloud-waf"));
+        assert!(!has(
+            &elements,
+            PathElementRole::EdgeProvider,
+            "huawei-cloud-waf"
+        ));
+    }
+    let elements = detect_path_elements(&[
+        header(
+            "set-cookie",
+            "HWWAFSESTIME=opaque; Path=/\nHWWAFSESID=opaque; Path=/",
+        ),
+        header("server", "elb"),
+    ]);
+    let waf = elements
+        .iter()
+        .find(|element| {
+            element.role == PathElementRole::Waf && element.product == "huawei-cloud-waf"
+        })
+        .unwrap();
+    assert_eq!(waf.evidence, ["cookie:HWWAFSESID", "cookie:HWWAFSESTIME"]);
+    assert!(!has(
+        &elements,
+        PathElementRole::EdgeProvider,
+        "huawei-cloud-waf"
+    ));
+}
+
+#[test]
+fn huawei_waf_cookie_values_and_request_cookies_are_not_response_evidence() {
+    for (name, value) in [
+        ("Set-Cookie", "session=HWWAFSESID=opaque; Path=/"),
+        ("Set-Cookie", "HWWAFSESID_fake=opaque; Path=/"),
+        ("Set-Cookie", "ordinary=HWWAFSESTIME; Path=/"),
+        ("Server", "elb"),
+        ("Cookie", "HWWAFSESID=opaque; HWWAFSESTIME=opaque"),
+    ] {
+        let elements = detect_path_elements(&[header(name, value)]);
+        assert!(!has(&elements, PathElementRole::Waf, "huawei-cloud-waf"));
+    }
+}
