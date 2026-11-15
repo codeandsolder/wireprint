@@ -67,6 +67,39 @@ fn has_normalized_phrase(body: &str, phrase: &str) -> bool {
             .contains(phrase)
 }
 
+// Additional browser verification interstitials from preserved main-frame HTML.
+// These are action classifications, not claims about the TLS peer or a vendor.
+fn archived_browser_gate(lower: &str) -> Option<Outcome> {
+    // Hostinger CDN can issue this script challenge under its reserved path.
+    // The ordinary CDN header, a documentation article or the script URL
+    // alone must never be treated as a completed response-side challenge.
+    if lower.contains("/hcdn-cgi/jschallenge")
+        && has_normalized_phrase(lower, "checking your browser before accessing")
+    {
+        return Some(outcome(
+            OutcomeKind::Challenge,
+            vec!["body:hcdn-jschallenge+browser-check".into()],
+        ));
+    }
+
+    // An observed HTTP 405 first-party page also requires browser-side JS
+    // verification without a vendor-authenticated X-Amzn-Waf-Action header.
+    // Do not attribute it to AWS WAF or claim that a CAPTCHA puzzle occurred.
+    if lower.contains("security verification")
+        && (has_normalized_phrase(lower, "verify that you are not a robot")
+            || has_normalized_phrase(lower, "verify that you're not a robot"))
+        && has_normalized_phrase(lower, "this requires javascript")
+        && has_normalized_phrase(lower, "enable javascript and then reload the page")
+    {
+        return Some(outcome(
+            OutcomeKind::Challenge,
+            vec!["body:security-verification+javascript-robot-check".into()],
+        ));
+    }
+
+    None
+}
+
 // Source-backed, first-party document-gate shapes from captured HTML pages.
 // Ordinary CAPTCHA integrations, vendor SDK scripts and security articles do
 // not by themselves indicate a gate. These pairs are deliberately contextual.
@@ -162,6 +195,9 @@ pub fn classify_response(status: u16, headers: &[Header], body: &[u8]) -> Outcom
     if let Some(action) = explicit_vendor_challenge(headers, body.as_bytes(), &lower) {
         return action;
     }
+    if let Some(action) = archived_browser_gate(&lower) {
+        return action;
+    }
     if let Some(action) = corpus_document_gate(status, &lower) {
         return action;
     }
@@ -249,7 +285,7 @@ pub fn classify_response(status: u16, headers: &[Header], body: &[u8]) -> Outcom
 fn outcome(kind: OutcomeKind, evidence: Vec<String>) -> Outcome {
     Outcome {
         kind,
-        classifier: "builtin-v3".into(),
+        classifier: "builtin-v4".into(),
         evidence,
     }
 }
