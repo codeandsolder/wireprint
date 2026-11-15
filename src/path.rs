@@ -1,6 +1,6 @@
 use crate::model::{Header, PathElement, PathElementRole};
 
-pub const PATH_CLASSIFIER_VERSION: &str = "builtin-path-v10";
+pub const PATH_CLASSIFIER_VERSION: &str = "builtin-path-v11";
 
 fn header_values<'a>(headers: &'a [Header], name: &str) -> impl Iterator<Item = &'a str> {
     headers
@@ -143,12 +143,62 @@ fn looks_like_fastly_x_timer(value: &str) -> bool {
     varnish_end.bytes().all(|byte| byte.is_ascii_digit())
 }
 
+// A normalized archive may have joined several Set-Cookie header fields with
+// newlines. Do not split on commas: Expires dates contain them.
 fn cookie_names(headers: &[Header]) -> Vec<String> {
     header_values(headers, "set-cookie")
-        .filter_map(|value| value.split(';').next())
+        .flat_map(|value| value.split(['\r', '\n']))
+        .filter_map(|line| line.split(';').next())
         .filter_map(|pair| pair.split_once('='))
         .map(|(name, _)| name.trim().to_ascii_lowercase())
+        .filter(|name| !name.is_empty())
         .collect()
+}
+
+// Parse product tokens, including optional versions and Jetty-style comments.
+// Ignore tokens inside RFC Server comments: "(served by Kestrel)" is not a
+// product assertion. Multiple products and comma-combined fields are supported.
+fn server_has_product(headers: &[Header], product: &str) -> bool {
+    header_values(headers, "server").any(|value| {
+        let mut comment_depth = 0u32;
+        let mut escaped = false;
+        let mut token_start = None;
+        for (idx, byte) in value.bytes().chain(std::iter::once(b' ')).enumerate() {
+            if comment_depth > 0 {
+                if escaped {
+                    escaped = false;
+                } else {
+                    match byte {
+                        b'\\' => escaped = true,
+                        b'(' => comment_depth += 1,
+                        b')' => comment_depth -= 1,
+                        _ => {}
+                    }
+                }
+                continue;
+            }
+            if matches!(byte, b' ' | b'\t' | b'\r' | b'\n' | b',' | b'(') {
+                if let Some(start) = token_start.take() {
+                    let token = &value[start..idx];
+                    let (name, version) = token
+                        .split_once('/')
+                        .map_or((token, None), |(name, version)| (name, Some(version)));
+                    if name.eq_ignore_ascii_case(product)
+                        && version
+                            .is_none_or(|version| !version.is_empty() && !version.contains('/'))
+                    {
+                        return true;
+                    }
+                }
+                if byte == b'(' {
+                    comment_depth = 1;
+                }
+            } else if token_start.is_none() {
+                token_start = Some(idx);
+            }
+        }
+        false
+    })
 }
 
 fn add(
@@ -992,6 +1042,26 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             "linkerd",
             evidence,
         );
+    }
+    // Version-bearing Server products remain implementation evidence even
+    // when an outer CDN preserves the header from a downstream service.
+    for (product, label) in [
+        ("kestrel", "kestrel"),
+        ("gunicorn", "gunicorn"),
+        ("tengine", "tengine"),
+        ("jetty", "jetty"),
+        ("microsoft-httpapi", "microsoft-httpapi"),
+        ("uvicorn", "uvicorn"),
+        ("lighttpd", "lighttpd"),
+    ] {
+        if server_has_product(headers, product) {
+            add(
+                &mut elements,
+                PathElementRole::ServerImplementation,
+                label,
+                format!("server:{product}"),
+            );
+        }
     }
     if server.starts_with("nginx") {
         add(
