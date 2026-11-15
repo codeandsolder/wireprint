@@ -1,6 +1,6 @@
 use crate::model::{Header, PathElement, PathElementRole};
 
-pub const PATH_CLASSIFIER_VERSION: &str = "builtin-path-v13";
+pub const PATH_CLASSIFIER_VERSION: &str = "builtin-path-v14";
 
 fn header_values<'a>(headers: &'a [Header], name: &str) -> impl Iterator<Item = &'a str> {
     headers
@@ -310,6 +310,41 @@ fn looks_like_variti_ccr(value: &str) -> bool {
         && stage.bytes().all(|byte| byte.is_ascii_digit())
 }
 
+// The Anubis challenge is authored as two JSON script elements in its HTML
+// template. A link mentioning Anubis, or a single ID in a documentation page,
+// is not enough to identify an active challenge. The scan is bounded even if
+// the caller supplies an unusually large response body.
+fn has_anubis_challenge_scripts(body: &[u8]) -> bool {
+    use std::sync::OnceLock;
+
+    use regex::Regex;
+
+    static SCRIPT: OnceLock<Option<Regex>> = OnceLock::new();
+    let Some(script) = SCRIPT.get_or_init(|| {
+        Regex::new(
+            r#"(?is)<script\b[^>]{0,1024}\bid\s*=\s*["'](anubis_version|anubis_challenge)["'][^>]*>"#,
+        )
+        .ok()
+    }) else {
+        return false;
+    };
+    let limit = body.len().min(64 * 1024);
+    let text = String::from_utf8_lossy(&body[..limit]);
+    let mut version = false;
+    let mut challenge = false;
+    for captures in script.captures_iter(&text) {
+        match captures.get(1).map(|id| id.as_str().to_ascii_lowercase()) {
+            Some(id) if id == "anubis_version" => version = true,
+            Some(id) if id == "anubis_challenge" => challenge = true,
+            _ => {}
+        }
+        if version && challenge {
+            return true;
+        }
+    }
+    false
+}
+
 fn add(
     elements: &mut Vec<PathElement>,
     role: PathElementRole,
@@ -389,6 +424,19 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             PathElementRole::Cache,
             "cloudflare",
             "header:cf-cache-status",
+        );
+    }
+    // Azion explicitly documents both headers on ordinary delivery responses.
+    // Debug-only X-Azion-Edge-Pop is NOT required; neither the provider
+    // response nor its location code authenticates the selected socket peer.
+    if has_nonempty_header(headers, "x-azion-request-id")
+        && has_nonempty_header(headers, "x-azion-edge-location")
+    {
+        add(
+            &mut elements,
+            PathElementRole::EdgeProvider,
+            "azion",
+            "headers:x-azion-request-id+x-azion-edge-location",
         );
     }
     // ArvanCloud's product-specific Server banner is provider participation.
@@ -1671,6 +1719,39 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             },
         );
     }
+    // Qrator's bot-protection dashboard explicitly defines the tracking
+    // cookie; Qrator's X-Qrator-* headers instead go toward the origin and
+    // must NOT be used as response evidence.
+    if has_cookie(&cookies, "qrator_jsid") {
+        add(
+            &mut elements,
+            PathElementRole::BotManagement,
+            "qrator",
+            "cookie:qrator_jsid",
+        );
+    }
+    // Anubis emits versioned clearance/verification cookies on challenged
+    // clients. A body-only challenge is detected separately below.
+    if has_cookie(&cookies, "techaro.lol-anubis-auth")
+        || has_cookie_prefix(&cookies, "techaro.lol-anubis-auth-")
+    {
+        add(
+            &mut elements,
+            PathElementRole::BotManagement,
+            "anubis",
+            "cookie:techaro.lol-anubis-auth*",
+        );
+    }
+    if has_cookie(&cookies, "techaro.lol-anubis-cookie-verification")
+        || has_cookie_prefix(&cookies, "techaro.lol-anubis-cookie-verification-")
+    {
+        add(
+            &mut elements,
+            PathElementRole::BotManagement,
+            "anubis",
+            "cookie:techaro.lol-anubis-cookie-verification*",
+        );
+    }
     if has_cookie(&cookies, "__cf_bm") {
         add(
             &mut elements,
@@ -1745,5 +1826,25 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
         );
     }
 
+    elements
+}
+
+/// Recognize response participation from headers **and** a captured body.
+///
+/// Unlike the header-only scanner, this additionally recognizes Anubis
+/// challenge pages from the two script tags authored by Anubis itself.
+/// Only the first 64 KiB is inspected. HTTP/3's header-only observer should
+/// continue to use `detect_path_elements`.
+#[must_use]
+pub fn detect_path_elements_with_body(headers: &[Header], body: &[u8]) -> Vec<PathElement> {
+    let mut elements = detect_path_elements(headers);
+    if has_anubis_challenge_scripts(body) {
+        add(
+            &mut elements,
+            PathElementRole::BotManagement,
+            "anubis",
+            "body:anubis-version+challenge-scripts",
+        );
+    }
     elements
 }

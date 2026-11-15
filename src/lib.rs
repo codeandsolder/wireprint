@@ -55,7 +55,7 @@ pub use model::{
     RoutingSnapshotBinding, TerminationState,
 };
 pub use normalize::{NORMALIZER_VERSION, normalize_response_template};
-pub use path::{PATH_CLASSIFIER_VERSION, detect_path_elements};
+pub use path::{PATH_CLASSIFIER_VERSION, detect_path_elements, detect_path_elements_with_body};
 pub use probe::{ProbeConfig, probe_batch};
 pub use routing::{
     ROUTING_CLASSIFIER_VERSION, detect_routing_elements, detect_routing_snapshot_elements,
