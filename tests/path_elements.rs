@@ -1986,3 +1986,209 @@ fn huawei_waf_cookie_values_and_request_cookies_are_not_response_evidence() {
         assert!(!has(&elements, PathElementRole::Waf, "huawei-cloud-waf"));
     }
 }
+
+#[test]
+fn gcore_requires_two_shaped_cdn_node_headers() {
+    let elements = detect_path_elements(&[
+        header("Server", "nginx"),
+        header("X-ID", "wa2-hw-edge-gc8"),
+        header("X-ID-FE", "wa2-hw-edge-gc9"),
+        header("Cache", "HIT"),
+    ]);
+    assert!(has(&elements, PathElementRole::Cache, "gcore"));
+    assert!(!has(&elements, PathElementRole::EdgeProvider, "gcore"));
+    assert!(!has(&elements, PathElementRole::Waf, "gcore"));
+}
+
+#[test]
+fn gcore_participation_survives_cloudflare_without_claiming_outer_edge() {
+    let elements = detect_path_elements(&[
+        header("Server", "cloudflare"),
+        header("Cf-Ray", "a4f1497bcf0b5779-WAW"),
+        header("X-ID", "am3-hw-edge-gpig-gc96"),
+        header("X-ID-FE", "wa2-hw-edge-gc9"),
+        header("X-ID-SHIELD", "am3-hw-edge-gc38"),
+    ]);
+    assert!(has(&elements, PathElementRole::Cache, "gcore"));
+    assert!(has(&elements, PathElementRole::EdgeProvider, "cloudflare"));
+    assert!(!has(&elements, PathElementRole::EdgeProvider, "gcore"));
+}
+
+#[test]
+fn gcore_generic_request_ids_and_incomplete_nodes_are_not_cdn_evidence() {
+    for headers in [
+        vec![header("X-ID", "-5479647df4-qq48q")],
+        vec![
+            header("X-ID", "-5479647df4-qq48q"),
+            header("X-ID-FE", "anything"),
+        ],
+        vec![header("X-ID", "wa2-hw-edge-gc8")],
+        vec![header("X-ID-FE", "wa2-hw-edge-gc9")],
+        vec![
+            header("X-ID", "wa2-hw-edge-gc8"),
+            header("X-ID-FE", "wa2-edge-gc9"),
+        ],
+        vec![
+            header("X-ID", "wa2-hw-edge-gc8"),
+            header("X-ID-FE", "wa2-hw-edge-gc9evil"),
+        ],
+        vec![header("X-ID", "wa2-hw-edge-gc8"), header("X-ID-FE", "")],
+        vec![header("Server", "gcore")],
+        vec![header("Cache", "HIT")],
+    ] {
+        let elements = detect_path_elements(&headers);
+        assert!(
+            !has(&elements, PathElementRole::Cache, "gcore"),
+            "generic or incomplete Gcore marker: {headers:?}"
+        );
+    }
+}
+
+#[test]
+fn cachefly_layer_headers_identify_cache_participation() {
+    for (x_cf1, stage) in [
+        ("29674:fK.waw1:co:1724626766:cacheN.waw1-01:H", "M"),
+        ("28347:fA.waw1:cf:nom:cacheN.waw1-01:M", "H"),
+        ("46806:fK.waw1:co:nots:cacheN.waw1-01:H", "M"),
+    ] {
+        let elements = detect_path_elements(&[
+            header("X-CF1", x_cf1),
+            header("X-CF2", stage),
+            header("Server", "CFS 1124"),
+        ]);
+        assert!(has(&elements, PathElementRole::Cache, "cachefly"));
+        assert!(!has(&elements, PathElementRole::EdgeProvider, "cachefly"));
+    }
+}
+
+#[test]
+fn cachefly_can_be_downstream_of_cloudflare_or_cloudfront() {
+    let elements = detect_path_elements(&[
+        header("Server", "cloudflare"),
+        header("Cf-Ray", "a470ef4e19dbcae5-DUS"),
+        header("X-CF1", "44057:fJ.fra2:co:1772819389:cacheN.fra2-01:H"),
+        header("X-CF2", "H"),
+        header("X-CF3", "M"),
+        header("X-Amz-Cf-Id", "opaque-request-id"),
+    ]);
+    assert!(has(&elements, PathElementRole::Cache, "cachefly"));
+    assert!(has(&elements, PathElementRole::EdgeProvider, "cloudflare"));
+    assert!(has(
+        &elements,
+        PathElementRole::EdgeProvider,
+        "aws-cloudfront"
+    ));
+    assert!(!has(&elements, PathElementRole::EdgeProvider, "cachefly"));
+}
+
+#[test]
+fn cachefly_lone_or_unshaped_cache_headers_do_not_claim_product() {
+    for headers in [
+        vec![header(
+            "X-CF1",
+            "44057:fJ.fra2:co:1772819389:cacheN.fra2-01:H",
+        )],
+        vec![header("X-CF2", "H")],
+        vec![header("Server", "CFS 1124")],
+        vec![header("X-CF1", "arbitrary"), header("X-CF2", "H")],
+        vec![
+            header("X-CF1", "44057:fJ.fra2:co:1772819389:cacheN.fra2-01:H"),
+            header("X-CF2", "unknown"),
+        ],
+        vec![
+            header(
+                "X-CF1",
+                "44057:fJ.fra2:co:1772819389:cacheN.fra2-01:H:extra",
+            ),
+            header("X-CF2", "H"),
+        ],
+        vec![
+            header("X-CF1", "44057:fJ.fra2:co:1772819389:cdn.fra2-01:H"),
+            header("X-CF2", "H"),
+        ],
+    ] {
+        let elements = detect_path_elements(&headers);
+        assert!(
+            !has(&elements, PathElementRole::Cache, "cachefly"),
+            "generic/unshaped cache marker: {headers:?}"
+        );
+    }
+}
+
+#[test]
+fn variti_protection_header_is_middleware_not_assumed_waf_or_bot_enforcement() {
+    for value in ["83600264:3", "83599975:12", "83636233:13"] {
+        let elements =
+            detect_path_elements(&[header("Server", "nginx"), header("X-VARITI-CCR", value)]);
+        assert!(has(
+            &elements,
+            PathElementRole::SecurityMiddleware,
+            "variti"
+        ));
+        assert!(!has(&elements, PathElementRole::Waf, "variti"));
+        assert!(!has(&elements, PathElementRole::BotManagement, "variti"));
+        assert!(!has(&elements, PathElementRole::EdgeProvider, "variti"));
+    }
+}
+
+#[test]
+fn variti_header_needs_vendor_specific_numeric_pair() {
+    for value in [
+        "",
+        " ",
+        "unknown",
+        "0",
+        ":42",
+        "83600264:",
+        "83600264:3:4",
+        "83600264:-1",
+        "foo:3",
+    ] {
+        let elements = detect_path_elements(&[header("X-VARITI-CCR", value)]);
+        assert!(
+            !has(&elements, PathElementRole::SecurityMiddleware, "variti"),
+            "malformed value: {value:?}"
+        );
+    }
+    assert!(!has(
+        &detect_path_elements(&[header("X-Tilda-Server", "15")]),
+        PathElementRole::SecurityMiddleware,
+        "variti"
+    ));
+}
+
+#[test]
+fn arvancloud_server_product_identifies_cdn_participation() {
+    let elements =
+        detect_path_elements(&[header("Server", "ArvanCloud"), header("X-Cache", "HIT")]);
+    assert!(has(&elements, PathElementRole::EdgeProvider, "arvancloud"));
+    assert!(!has(&elements, PathElementRole::Waf, "arvancloud"));
+    assert!(!has(&elements, PathElementRole::Cache, "arvancloud"));
+    for banner in ["ARVANCLOUD", "ArvanCloud/1.0", "nginx/1.25 ArvanCloud"] {
+        assert!(has(
+            &detect_path_elements(&[header("Server", banner)]),
+            PathElementRole::EdgeProvider,
+            "arvancloud"
+        ));
+    }
+}
+
+#[test]
+fn arvancloud_generic_or_comment_only_banners_do_not_match() {
+    for server in [
+        "notArvanCloud",
+        "arvancloud-proxy",
+        "OtherProxy/1.0 (powered by ArvanCloud)",
+        "ArvanCloud/",
+        "ArvanCloud/1.0/2.0",
+    ] {
+        assert!(
+            !has(
+                &detect_path_elements(&[header("Server", server)]),
+                PathElementRole::EdgeProvider,
+                "arvancloud"
+            ),
+            "bad server banner: {server}"
+        );
+    }
+}

@@ -6,7 +6,7 @@ That distinction matters. A response can preserve evidence from an outer CDN, a 
 
 ## Roles
 
-`builtin-path-v12` currently separates these roles:
+`builtin-path-v13` currently separates these roles:
 
 - `edge_provider` — managed serving/edge layer with explicit provider evidence;
 - `application_platform` — downstream delivery/application platform participation;
@@ -51,21 +51,30 @@ Path v12 adds product-specific **response participation** without turning it int
 
 All three are additional participants in the same unordered path evidence set; existing Cloudflare, Fastly, load-balancer, server implementation and cache roles remain independent.
 
+## v13 Gcore, CacheFly, Variti and ArvanCloud response fingerprints
+
+Path v13 adds four network-path participant labels from narrowly scoped ordinary response evidence. These are **product participation**, not proof of which endpoint terminated TLS or which rule blocked a request.
+
+- `cache: gcore` requires **both** `X-ID` and `X-ID-FE` containing recognizable Gcore CDN node values (such as `wa2-hw-edge-gc9` or `am3-hw-edge-gpig-gc96`). A generic `X-ID` is insufficient: the indexed archive also has unrelated application IDs with no `X-ID-FE`. The headers are observed on Gcore-owned properties and other CDN-delivered responses; Gcore's [support documentation](https://support.gcore.com/hc/en-us/articles/16360559584785-Content-unavailability-issues) separately documents its `X-Cached-Since` cache metadata, but does **not** publish a formal `X-ID`/`X-ID-FE` field contract. The label describes CDN cache/proxy participation, never a cache HIT or proven outer edge.
+- `cache: cachefly` requires a valid first-layer `X-CF1` cache-node trace plus the `X-CF2` status header (`H`, `M` or `-`). CacheFly's own [analytics documentation](https://kb.cachefly.com/kb/guide/en/advanced-analytics-logs-0yEKLoHNnq/Steps/5054147) identifies its first four cache layers with `CacheXCF1`–`CacheXCF4` statuses. The indexed responses retain this pair through other delivery layers, including Cloudflare and CloudFront. Neither generic `X-Cache`, a lone `X-CF1`, nor `Server: CFS` is sufficient. Node semantics are not used to fabricate ordered hops.
+- `security_middleware: variti` requires the distinct `X-VARITI-CCR` response header with its observed `decimal:decimal` value grammar. This response header is associated with Variti across [large independent header surveys](https://webtechsurvey.com/response-header/x-variti-ccr), and Variti documents its [L7 DDoS and bot protection](https://variti.io/anti-bot/). A first-party contract for the `CCR` header's exact semantics was not found. Therefore this rule does **not** assert that its optional WAF is enabled, that a bot challenge occurred, or that protection actively blocked a request.
+- `edge_provider: arvancloud` requires the explicit product token in `Server: ArvanCloud`, as also identified in the [WebAppAnalyzer technology catalog](https://github.com/enthec/webappanalyzer). The label records an ArvanCloud CDN participant, not the verified external peer; a generic `X-Cache: HIT` or a product mention inside a comment is not enough. Endpoint fusion continues to determine actual outer termination from independent observations.
+
 ## Current explicit markers
 
 The current recognizer includes:
 
-- edge/provider: Cloudflare, CloudFront, Akamai, Fastly, F5 Distributed Cloud/Volt, Imperva, Sucuri, BunnyCDN, Google Front End, OpenResty Edge, Vercel, Netlify, Fly.io, Railway, KeyCDN, QUIC.cloud, CDN77, Tencent EdgeOne, Alibaba Cloud edge family;
+- edge/provider: ArvanCloud, Cloudflare, CloudFront, Akamai, Fastly, F5 Distributed Cloud/Volt, Imperva, Sucuri, BunnyCDN, Google Front End, OpenResty Edge, Vercel, Netlify, Fly.io, Railway, KeyCDN, QUIC.cloud, CDN77, Tencent EdgeOne, Alibaba Cloud edge family;
 - downstream platforms: Vercel, Netlify, Azure Front Door, Render, Railway, Pantheon, Acquia Cloud Platform, Heroku, GitHub, Kinsta, Wix, Arc XP, Future Publishing, Flywheel;
 - origin services: Amazon S3, generic S3-compatible object storage, MinIO, Akamai NetStorage, Google Cloud Storage, Azure Blob Storage, Alibaba OSS, Backblaze B2, Tencent COS;
 - API gateways: AWS API Gateway, Kong, Apache APISIX, KrakenD, Tyk, Gravitee;
 - load balancers: AWS Application Load Balancer, AWS Classic Load Balancer, Google Cloud Application Load Balancer, F5 BIG-IP LTM, NetScaler ADC, Azure Application Gateway, Azure/Microsoft ARR affinity family, Cloudflare Load Balancer, Oracle Cloud Load Balancer, OVH IPLB;
-- reverse proxies / caches: ByteDance/Volcengine CDN family, Future Publishing cache, Fastly Image Optimizer, Akamai cache, Hostinger CDN cache, LiteSpeed cache/Web ADC, Kinsta site cache, Envoy, nghttpx, HAProxy, Traefik, Varnish, Squid, Apache Traffic Server;
+- reverse proxies / caches: Gcore CDN, CacheFly CDN, ByteDance/Volcengine CDN family, Future Publishing cache, Fastly Image Optimizer, Akamai cache, Hostinger CDN cache, LiteSpeed cache/Web ADC, Kinsta site cache, Envoy, nghttpx, HAProxy, Traefik, Varnish, Squid, Apache Traffic Server;
 - service mesh: Istio when explicitly exposed as `istio-envoy`, and Linkerd when `l5d-*` response markers are exposed;
 - identity proxies: Google Cloud IAP, Cloudflare Access, OAuth2 Proxy, Authelia, authentik;
 - traffic management: IO River, Cloudflare Waiting Room, Queue-it;
 - server implementations: nginx, OpenResty, Caddy, Apache HTTP Server, Microsoft IIS, Microsoft HTTPAPI, Kestrel, Gunicorn, Tengine, Jetty, Uvicorn, lighttpd, LiteSpeed, Google UploadServer, SFFE, GSE;
-- WAF/security: AWS WAF (including `aws-waf-token` state), AWS ALB authentication, Cloudflare security/challenge and rate-limiting state, DDoS-Guard protection middleware, Huawei Cloud WAF, Imperva WAF, F5 BIG-IP ASM, FortiWeb;
+- WAF/security: AWS WAF (including `aws-waf-token` state), AWS ALB authentication, Cloudflare security/challenge and rate-limiting state, DDoS-Guard protection middleware, Variti protection middleware, Huawei Cloud WAF, Imperva WAF, F5 BIG-IP ASM, FortiWeb;
 - bot management: Cloudflare Bot Management, Akamai Bot Manager, DataDome, HUMAN/PerimeterX.
 
 Fastly-specific `Fastly-Debug-*`, `fastly-restarts`, `x-fastly-backend-reqs`, explicit Fastly `Via` responses, and `X-Timer` values matching Fastly's documented `S{unixStartTimeSeconds},VS0,VE{durationMilliseconds}` grammar are treated as Fastly cache participation rather than automatically asserting that Fastly was the outer edge. The value-shape check is deliberate: the historical corpus also contains unrelated numeric `X-Timer` values, so the header name alone is not sufficient despite Fastly documenting its own generated form as proprietary. Generic `X-Cache-Hits` is deliberately excluded because Acquia and Pantheon also emit it. The same conservative rule is used for BunnyCDN's `cdn-*` cache metadata. Railway is different: its own documentation defines `X-Railway-Edge` as the POP that received the request and terminated TLS, so that marker supports an edge-provider claim while `X-Railway-Upstream-Zone` remains downstream platform/origin-zone evidence.
