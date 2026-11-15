@@ -1,6 +1,6 @@
 use crate::model::{Header, PathElement, PathElementRole};
 
-pub const PATH_CLASSIFIER_VERSION: &str = "builtin-path-v12";
+pub const PATH_CLASSIFIER_VERSION: &str = "builtin-path-v13";
 
 fn header_values<'a>(headers: &'a [Header], name: &str) -> impl Iterator<Item = &'a str> {
     headers
@@ -227,6 +227,89 @@ fn looks_like_ddos_guard_cookie(name: &str) -> bool {
         })
 }
 
+// Gcore uses CDN node identifiers such as wa2-hw-edge-gc9 and
+// am3-hw-edge-gpig-gc96. X-ID alone is generic (and collides with
+// application services), so detection requires both shaped node headers.
+fn looks_like_gcore_node(value: &str) -> bool {
+    let Some((region, node)) = value.trim().split_once("-hw-edge-") else {
+        return false;
+    };
+    if region.is_empty()
+        || !region
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+    {
+        return false;
+    }
+    let digits = if let Some(digits) = node.strip_prefix("gc") {
+        digits
+    } else if let Some((flavor, digits)) = node.rsplit_once("-gc") {
+        if flavor.is_empty()
+            || !flavor
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        {
+            return false;
+        }
+        digits
+    } else {
+        return false;
+    };
+    (1..=3).contains(&digits.len()) && digits.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+// CacheFly's X-CF1 exposes a first-layer node and cache state; X-CF2 is a
+// separate stage. Require both and a recognizable CacheFly node grammar.
+fn looks_like_cachefly_x_cf1(value: &str) -> bool {
+    let mut parts = value.trim().split(':');
+    let (Some(id), Some(frontend), Some(stage), Some(epoch), Some(cache), Some(status)) = (
+        parts.next(),
+        parts.next(),
+        parts.next(),
+        parts.next(),
+        parts.next(),
+        parts.next(),
+    ) else {
+        return false;
+    };
+    parts.next().is_none()
+        && !id.is_empty()
+        && id.bytes().all(|byte| byte.is_ascii_digit())
+        && frontend.starts_with('f')
+        && frontend.contains('.')
+        && frontend
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-'))
+        && !stage.is_empty()
+        && stage.bytes().all(|byte| byte.is_ascii_alphabetic())
+        && !epoch.is_empty()
+        && epoch
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        && cache.starts_with("cache")
+        && cache.contains('.')
+        && cache
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-'))
+        && matches!(status, "H" | "M" | "B" | "-")
+}
+
+fn looks_like_cachefly_stage(value: &str) -> bool {
+    matches!(value.trim(), "H" | "M" | "-")
+}
+
+// The proprietary header is associated with Variti in independent response
+// surveys. Its decimal:decimal shape is a stronger signal than mere presence.
+fn looks_like_variti_ccr(value: &str) -> bool {
+    let Some((request, stage)) = value.trim().split_once(':') else {
+        return false;
+    };
+    !request.is_empty()
+        && !stage.is_empty()
+        && request.bytes().all(|byte| byte.is_ascii_digit())
+        && stage.bytes().all(|byte| byte.is_ascii_digit())
+}
+
 fn add(
     elements: &mut Vec<PathElement>,
     role: PathElementRole,
@@ -308,6 +391,16 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             "header:cf-cache-status",
         );
     }
+    // ArvanCloud's product-specific Server banner is provider participation.
+    // Endpoint fusion must still establish the actual client-facing peer.
+    if server_has_product(headers, "arvancloud") {
+        add(
+            &mut elements,
+            PathElementRole::EdgeProvider,
+            "arvancloud",
+            "server:arvancloud",
+        );
+    }
     if server.contains("keycdn-engine") {
         add(
             &mut elements,
@@ -378,6 +471,30 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             PathElementRole::Cache,
             "tencent-edgeone",
             "header:eo-cache-status",
+        );
+    }
+    // Vendor-shaped Gcore node identities are independent of Cache: HIT/MISS.
+    // These may also survive another public CDN layer (including Cloudflare).
+    if header_values(headers, "x-id-fe").any(looks_like_gcore_node)
+        && header_values(headers, "x-id").any(looks_like_gcore_node)
+    {
+        add(
+            &mut elements,
+            PathElementRole::Cache,
+            "gcore",
+            "headers:x-id+x-id-fe-gcore-nodes",
+        );
+    }
+    // CacheFly documents multiple cache layers. Neither an X-CF1 node
+    // name nor a generic cache status alone establishes the outer edge.
+    if header_values(headers, "x-cf1").any(looks_like_cachefly_x_cf1)
+        && header_values(headers, "x-cf2").any(looks_like_cachefly_stage)
+    {
+        add(
+            &mut elements,
+            PathElementRole::Cache,
+            "cachefly",
+            "headers:x-cf1+x-cf2-cachefly-shape",
         );
     }
     if has_header(headers, "eagleid") {
@@ -1480,6 +1597,16 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
             PathElementRole::SecurityMiddleware,
             "ddos-guard",
             "cookie:__ddg-family",
+        );
+    }
+    // Variti's response CCR marker identifies the protection service,
+    // but does not prove a bot was blocked or the optional WAF was active.
+    if header_values(headers, "x-variti-ccr").any(looks_like_variti_ccr) {
+        add(
+            &mut elements,
+            PathElementRole::SecurityMiddleware,
+            "variti",
+            "header:x-variti-ccr-decimal-pair",
         );
     }
     // Huawei WAF documents both response-session cookies independently;
