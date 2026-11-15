@@ -314,7 +314,7 @@ fn looks_like_variti_ccr(value: &str) -> bool {
 // template. A link mentioning Anubis, or a single ID in a documentation page,
 // is not enough to identify an active challenge. The scan is bounded even if
 // the caller supplies an unusually large response body.
-fn has_anubis_challenge_scripts(body: &[u8]) -> bool {
+pub(crate) fn has_anubis_challenge_scripts(body: &[u8]) -> bool {
     use std::sync::OnceLock;
 
     use regex::Regex;

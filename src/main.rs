@@ -179,11 +179,16 @@ struct AuditRoutingContextArgs {
 
 #[derive(Debug, Args)]
 struct ClassifyArgs {
-    body: PathBuf,
-    #[arg(long)]
-    status: u16,
-    #[arg(long = "header", value_name = "NAME:VALUE")]
+    /// Saved HTTP response body for ad-hoc classification.
+    #[arg(required_unless_present = "input", conflicts_with = "input")]
+    body: Option<PathBuf>,
+    #[arg(long, required_unless_present = "input", conflicts_with = "input")]
+    status: Option<u16>,
+    #[arg(long = "header", value_name = "NAME:VALUE", conflicts_with = "input")]
     headers: Vec<String>,
+    /// Replay JSONL rows with status, headers, and optional `body_prefix`.
+    #[arg(long, value_name = "JSONL", conflicts_with_all = ["body", "status", "headers"])]
+    input: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
@@ -488,13 +493,64 @@ fn read_transport_set(path: &Path) -> Result<TransportSet> {
 }
 
 fn run_classify(args: &ClassifyArgs) -> Result<()> {
-    let body =
-        std::fs::read(&args.body).with_context(|| format!("read {}", args.body.display()))?;
+    if let Some(input) = &args.input {
+        let reader =
+            BufReader::new(File::open(input).with_context(|| format!("open {}", input.display()))?);
+        for (index, line) in reader.lines().enumerate() {
+            let line_number = index + 1;
+            let line =
+                line.with_context(|| format!("read {} line {line_number}", input.display()))?;
+            if line.trim().is_empty() {
+                continue;
+            }
+            let mut row: serde_json::Value = serde_json::from_str(&line)
+                .with_context(|| format!("parse {} line {line_number}", input.display()))?;
+            classify_outcome_replay_row(&mut row)
+                .with_context(|| format!("classify {} line {line_number}", input.display()))?;
+            println!("{}", serde_json::to_string(&row)?);
+        }
+        return Ok(());
+    }
+
+    let body_path = args
+        .body
+        .as_ref()
+        .context("classify requires a body file or --input")?;
+    let status = args
+        .status
+        .context("classify requires --status or --input")?;
+    let body = std::fs::read(body_path).with_context(|| format!("read {}", body_path.display()))?;
     let headers = parse_headers(&args.headers)?;
     println!(
         "{}",
-        serde_json::to_string_pretty(&classify_response(args.status, &headers, &body))?
+        serde_json::to_string_pretty(&classify_response(status, &headers, &body))?
     );
+    Ok(())
+}
+
+fn classify_outcome_replay_row(row: &mut serde_json::Value) -> Result<()> {
+    let object = row
+        .as_object_mut()
+        .context("outcome replay row must be a JSON object")?;
+    let headers: Vec<Header> = serde_json::from_value(
+        object
+            .get("headers")
+            .context("outcome replay row must contain a `headers` array")?
+            .clone(),
+    )
+    .context("outcome replay `headers` must match the Header schema")?;
+    let status = object
+        .get("status")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|value| u16::try_from(value).ok())
+        .context("outcome replay `status` must be a valid HTTP status integer")?;
+    let body = match object.get("body_prefix") {
+        Some(serde_json::Value::String(text)) => text.as_bytes(),
+        Some(serde_json::Value::Null) | None => &[],
+        Some(_) => bail!("outcome replay `body_prefix` must be a string or null"),
+    };
+    let outcome = classify_response(status, &headers, body);
+    let _ = object.insert("outcome".into(), serde_json::to_value(outcome)?);
     Ok(())
 }
 
@@ -752,5 +808,55 @@ mod tests {
         let mut row = serde_json::json!({"source_file": "capture.har"});
         let error = classify_path_replay_row(&mut row).unwrap_err();
         assert!(error.to_string().contains("headers"));
+    }
+
+    #[test]
+    fn outcome_replay_preserves_source_and_replaces_stale_classification() {
+        let mut row = serde_json::json!({
+            "case": "aws-captcha",
+            "status": 405,
+            "headers": [{"name": "X-Amzn-Waf-Action", "value": "captcha"}],
+            "body_prefix": null,
+            "outcome": {"kind":"content_like","classifier":"stale","evidence":[]},
+            "additional": {"keep": [1,2,3]}
+        });
+        classify_outcome_replay_row(&mut row).unwrap();
+        assert_eq!(row["outcome"]["classifier"], "builtin-v2");
+        assert_eq!(row["outcome"]["kind"], "captcha");
+        assert_eq!(
+            row["outcome"]["evidence"][0],
+            "header:x-amzn-waf-action=captcha"
+        );
+        assert_eq!(row["additional"], serde_json::json!({"keep": [1,2,3]}));
+        assert_eq!(row["case"], "aws-captcha");
+    }
+
+    #[test]
+    fn outcome_replay_uses_body_prefix_without_fabricating_headers() {
+        let mut row = serde_json::json!({
+            "status": 200,
+            "headers": [],
+            "body_prefix": r#"<script id="anubis_version">1</script><script id="anubis_challenge">2</script>"#
+        });
+        classify_outcome_replay_row(&mut row).unwrap();
+        assert_eq!(row["outcome"]["kind"], "challenge");
+        assert_eq!(
+            row["outcome"]["evidence"][0],
+            "body:anubis-version+challenge-scripts"
+        );
+    }
+
+    #[test]
+    fn outcome_replay_rejects_invalid_header_body_and_status_fields() {
+        for mut row in [
+            serde_json::json!({"status": "403", "headers": []}),
+            serde_json::json!({"status": -1, "headers": []}),
+            serde_json::json!({"status": 65536, "headers": []}),
+            serde_json::json!({"status": 403, "headers": "not-an-array"}),
+            serde_json::json!({"status": 403, "headers": [], "body_prefix": 12}),
+            serde_json::json!({"status": 403, "headers": [], "body_prefix": []}),
+        ] {
+            assert!(classify_outcome_replay_row(&mut row).is_err(), "{row}");
+        }
     }
 }
