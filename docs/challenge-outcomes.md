@@ -1,4 +1,4 @@
-# Response challenge outcomes (builtin-v4)
+# Response challenge outcomes (builtin-v5)
 
 `classify_response(status, headers, body)` determines the **observed response action**, separately from the unordered network-path participant recognizer (`builtin-path-v14`). These are different questions: a Cloudflare, DataDome, AWS WAF, or Anubis cookie does not by itself prove a challenge was issued.
 
@@ -43,6 +43,26 @@ Two additional actual **root-frame** archived HTML interstitials were inspected 
 
 Both detectors require paired body evidence. Source-reviewed 200 success pages containing only generic JS requirements, hcdn branding, a script path mentioned in documentation, or ordinary security forms are negative controls. The original HTML body bytes stay in the archive; a reproducible fixture manifest records exact capture IDs and SHA-256 hashes.
 
+## Dedicated reCAPTCHA browser-verification documents (builtin-v5)
+
+The archived NIH PubMed and PMC captures include genuine first-party root-frame
+HTTP 200 documents containing the Google-authored title
+`Checking your browser - reCAPTCHA`, the reserved document base
+`https://www.google.com/recaptcha/challengepage/`, and the
+`RecaptchaChallengePageUi` bootstrap. Their visible message states the
+browser is being checked before it can access the requested page.
+
+Wireprint treats this complete **three-part document shell** as an active
+`challenge` (evidence `body:recaptcha-challengepage+browser-check`),
+not a demonstrated interactive `captcha` puzzle. Ordinary embedded
+reCAPTCHA forms, script references, documentation, title-only pages and
+incomplete marker combinations are negative controls. Authenticated
+response-action headers continue to take precedence.
+
+The two original document bodies and their SHA-256 identifiers remain in
+the preserved browser archive. A targeted independently checked source
+manifest and reproducible replay script live outside this repository.
+
 ## Corpus replay
 
 `wireprint classify BODY_FILE --status STATUS [--header NAME:VALUE ...]` performs one ad hoc classification. To replay thousands of **existing** observations, use:
@@ -51,6 +71,6 @@ Both detectors require paired body evidence. Source-reviewed 200 success pages c
 wireprint classify --input response-rows.jsonl > response-classified.jsonl
 ```
 
-Each input row must be a JSON object with `status` (integer HTTP status), `headers` (Wireprint header array), and optional `body_prefix` (captured text or null). Output retains all original fields and replaces or writes `outcome` with `kind`, `classifier`, and `evidence`. Invalid types are rejected; an omitted body is **not invented**. Unlike the path classifier, the outcome classifier version is `builtin-v4`.
+Each input row must be a JSON object with `status` (integer HTTP status), `headers` (Wireprint header array), and optional `body_prefix` (captured text or null). Output retains all original fields and replaces or writes `outcome` with `kind`, `classifier`, and `evidence`. Invalid types are rejected; an omitted body is **not invented**. Unlike the path classifier, the outcome classifier version is `builtin-v5`.
 
 The archived normalized response-header index has independently verified weighted counts of 749 `CF-Mitigated: challenge`, 21 `X-Amzn-Waf-Action: challenge`, 10 `X-Amzn-Waf-Action: captcha`, and 69 `X-DataDome: protected`. These are response signatures, **not** numbers of distinct hosts or proven user sessions. Full methodology, positive and negative controls, and corpus-replay details live on the focused Notion research page, not in this durable high-level reference.

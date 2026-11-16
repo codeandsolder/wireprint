@@ -1,5 +1,6 @@
 use crate::model::{Header, Outcome, OutcomeKind};
 use crate::path::has_anubis_challenge_scripts;
+use regex::Regex;
 
 fn header_values<'a>(headers: &'a [Header], name: &str) -> impl Iterator<Item = &'a str> {
     headers
@@ -94,6 +95,29 @@ fn archived_browser_gate(lower: &str) -> Option<Outcome> {
         return Some(outcome(
             OutcomeKind::Challenge,
             vec!["body:security-verification+javascript-robot-check".into()],
+        ));
+    }
+
+    // Google reCAPTCHA has a dedicated browser-verification document. Two
+    // real NCBI root-frame responses contain its title, reserved document
+    // base and RecaptchaChallengePageUi bootstrap. An embedded reCAPTCHA
+    // widget on an ordinary site has none of this complete shell.
+    // Requiring the three independent markers prevents false classification
+    // of normal forms and articles. The regexes are evaluated only after
+    // the rare product bootstrap marker is observed.
+    if lower.contains("recaptchachallengepageui")
+        && Regex::new(
+            r"(?s)<title(?:\s[^>]*)?>\s*checking\s+your\s+browser\s*-\s*recaptcha\s*</title>",
+        )
+        .is_ok_and(|title| title.is_match(lower))
+        && Regex::new(
+            r#"<base\s+[^>]*\bhref\s*=\s*["']https://www\.google\.com/recaptcha/challengepage/["']"#,
+        )
+        .is_ok_and(|base| base.is_match(lower))
+    {
+        return Some(outcome(
+            OutcomeKind::Challenge,
+            vec!["body:recaptcha-challengepage+browser-check".into()],
         ));
     }
 
@@ -285,7 +309,7 @@ pub fn classify_response(status: u16, headers: &[Header], body: &[u8]) -> Outcom
 fn outcome(kind: OutcomeKind, evidence: Vec<String>) -> Outcome {
     Outcome {
         kind,
-        classifier: "builtin-v4".into(),
+        classifier: "builtin-v5".into(),
         evidence,
     }
 }
