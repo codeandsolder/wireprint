@@ -118,7 +118,7 @@ fn aws_waf_captcha_header_is_a_captcha_even_with_uninformative_body() {
     }];
     let out = classify_response(405, &headers, b"");
     assert_eq!(out.kind, OutcomeKind::Captcha);
-    assert_eq!(out.classifier, "builtin-v4");
+    assert_eq!(out.classifier, "builtin-v5");
     assert_eq!(out.evidence, ["header:x-amzn-waf-action=captcha"]);
 }
 
@@ -248,7 +248,7 @@ fn edgeone_captcha_interstitial_is_detected_even_as_http_200() {
 <script src="https://gcaptcha.eo.gtimg.com/TEOCaptchaWidgetV1-global.js"></script>
 </head><body><div id="captcha"></div><footer>Protected by Tencent Cloud EdgeOne</footer></body></html>"#;
     let result = classify_response(200, &[], body);
-    assert_eq!(result.classifier, "builtin-v4");
+    assert_eq!(result.classifier, "builtin-v5");
     assert_eq!(result.kind, OutcomeKind::Captcha);
     assert_eq!(
         result.evidence,
@@ -427,7 +427,7 @@ fn hcdn_reserved_js_challenge_and_browser_check_are_joint_evidence() {
     for status in [200, 403] {
         let out = classify_response(status, &[], body);
         assert_eq!(out.kind, OutcomeKind::Challenge, "{status}");
-        assert_eq!(out.classifier, "builtin-v4");
+        assert_eq!(out.classifier, "builtin-v5");
         assert_eq!(out.evidence, ["body:hcdn-jschallenge+browser-check"]);
     }
 }
@@ -464,7 +464,7 @@ fn custom_security_verification_javascript_robot_check_is_challenge() {
 <p>This requires JavaScript. Enable JavaScript and then reload the page.</p></html>"#;
     let out = classify_response(405, &[], body);
     assert_eq!(out.kind, OutcomeKind::Challenge);
-    assert_eq!(out.classifier, "builtin-v4");
+    assert_eq!(out.classifier, "builtin-v5");
     assert_eq!(
         out.evidence,
         ["body:security-verification+javascript-robot-check"]
@@ -494,4 +494,63 @@ fn generic_security_verification_and_javascript_requirements_are_not_challenge()
             "{body}"
         );
     }
+}
+
+#[test]
+fn recaptcha_browser_verification_document_is_challenge_not_captcha() {
+    // Reproduces the three independent markers in archived NIH PubMed/PMC
+    // first-party root-frame HTTP 200 documents, not an embedded widget.
+    let html = br#"<html><head>
+        <base href='https://www.google.com/recaptcha/challengepage/'>
+        <title> Checking your
+            browser - reCAPTCHA </title>
+        <script>window['ppConfig'] = {productName: 'RecaptchaChallengePageUi'};</script>
+        </head><body>
+        Checking your browser before accessing pubmed.ncbi.nlm.nih.gov ...
+        <script src="https://www.google.com/recaptcha/enterprise.js"></script>
+        </body></html>"#;
+    for status in [200, 403] {
+        let outcome = classify_response(status, &[], html);
+        assert_eq!(outcome.kind, OutcomeKind::Challenge);
+        assert_eq!(outcome.classifier, "builtin-v5");
+        assert_eq!(
+            outcome.evidence,
+            ["body:recaptcha-challengepage+browser-check"]
+        );
+    }
+}
+
+#[test]
+fn recaptcha_widget_docs_or_partial_browser_document_are_not_gate() {
+    let normal_widget = r#"<form><div class="g-recaptcha"></div>
+        <script src="https://www.google.com/recaptcha/enterprise.js"></script></form>"#;
+    let samples = [
+        normal_widget,
+        "<title>Checking your browser - reCAPTCHA</title>",
+        "<base href='https://www.google.com/recaptcha/challengepage/'>",
+        "<script>RecaptchaChallengePageUi</script>",
+        "<title>Checking your browser - reCAPTCHA</title><script>RecaptchaChallengePageUi</script>",
+        "<base href='https://www.google.com/recaptcha/challengepage/'><script>RecaptchaChallengePageUi</script>",
+        "<title>Checking your browser - reCAPTCHA</title><base href='https://www.google.com/recaptcha/challengepage/'>",
+        "<article>Checking your browser - reCAPTCHA and RecaptchaChallengePageUi are documented at https://www.google.com/recaptcha/challengepage/</article>",
+    ];
+    for sample in samples {
+        assert_eq!(
+            classify_response(200, &[], sample.as_bytes()).kind,
+            OutcomeKind::ContentLike,
+            "{sample}"
+        );
+    }
+}
+
+#[test]
+fn first_party_action_header_precedes_recaptcha_body_interpretation() {
+    let headers = [Header {
+        name: "X-Amzn-Waf-Action".into(),
+        value: "captcha".into(),
+    }];
+    let body = br#"<title>Checking your browser - reCAPTCHA</title><base href="https://www.google.com/recaptcha/challengepage/"><script>RecaptchaChallengePageUi</script>"#;
+    let out = classify_response(200, &headers, body);
+    assert_eq!(out.kind, OutcomeKind::Captcha);
+    assert_eq!(out.evidence, ["header:x-amzn-waf-action=captcha"]);
 }
