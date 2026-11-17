@@ -1,4 +1,4 @@
-# Response challenge outcomes (builtin-v5)
+# Response challenge outcomes (builtin-v6)
 
 `classify_response(status, headers, body)` determines the **observed response action**, separately from the unordered network-path participant recognizer (`builtin-path-v14`). These are different questions: a Cloudflare, DataDome, AWS WAF, or Anubis cookie does not by itself prove a challenge was issued.
 
@@ -63,6 +63,42 @@ The two original document bodies and their SHA-256 identifiers remain in
 the preserved browser archive. A targeted independently checked source
 manifest and reproducible replay script live outside this repository.
 
+## DataDome presence versus enforced response (builtin-v6)
+
+`X-DataDome: protected` is a presence/protection header, **not a CAPTCHA
+action header**. It can accompany ordinary content, device verification,
+or an interactive CAPTCHA. This is documented in DataDome's
+[Protection API](https://docs.datadome.co/reference/validate-request),
+[response-page taxonomy](https://docs.datadome.co/docs/response-pages)
+and [Device Check](https://docs.datadome.co/docs/device-check) reference.
+
+A source-backed complete first-party challenge document must have the
+visible `Please enable JS and disable any ad blocker` message and a bounded
+inline `dd` runtime object pointing at a `captcha-delivery.com` challenge
+host. Its runtime type determines the actual response:
+
+| Type | Observed action | Evidence |
+| --- | --- | --- |
+| `rt:'i'` | `challenge` (device/browser check) | `body:datadome-device-check` |
+| `rt:'c'` | `captcha` | `body:datadome-captcha` |
+
+The archived first-party body reduction contains **10 normal HTTP 200
+responses** carrying the DataDome header, **44 denied device checks**
+(401/403, `rt:'i'`), and **2 CAPTCHA responses** (403, `rt:'c'`).
+Separate 200 responses served by `geo.captcha-delivery.com` as
+challenge-service subdocuments do not automatically describe the outcome
+of the first-party page. Header-only observations fall through to the
+ordinary status-based classifier rather than fabricating an action.
+Generic vendor script references, captions or `captcha-delivery.com`
+mentions do not prove enforcement. Explicit AWS and Cloudflare action
+headers still win.
+
+The previous normalized header-only replay labeled **all 69**
+`X-DataDome: protected` signatures as CAPTCHA, including **22 HTTP 200**
+signatures. The revised independent replay instead treats these as
+presence controls. Detailed source audit, SHA-bound cases and replay
+oracle: separate Notion outcome-v6 study.
+
 ## Corpus replay
 
 `wireprint classify BODY_FILE --status STATUS [--header NAME:VALUE ...]` performs one ad hoc classification. To replay thousands of **existing** observations, use:
@@ -71,6 +107,6 @@ manifest and reproducible replay script live outside this repository.
 wireprint classify --input response-rows.jsonl > response-classified.jsonl
 ```
 
-Each input row must be a JSON object with `status` (integer HTTP status), `headers` (Wireprint header array), and optional `body_prefix` (captured text or null). Output retains all original fields and replaces or writes `outcome` with `kind`, `classifier`, and `evidence`. Invalid types are rejected; an omitted body is **not invented**. Unlike the path classifier, the outcome classifier version is `builtin-v5`.
+Each input row must be a JSON object with `status` (integer HTTP status), `headers` (Wireprint header array), and optional `body_prefix` (captured text or null). Output retains all original fields and replaces or writes `outcome` with `kind`, `classifier`, and `evidence`. Invalid types are rejected; an omitted body is **not invented**. Unlike the path classifier, the outcome classifier version is `builtin-v6`.
 
 The archived normalized response-header index has independently verified weighted counts of 749 `CF-Mitigated: challenge`, 21 `X-Amzn-Waf-Action: challenge`, 10 `X-Amzn-Waf-Action: captcha`, and 69 `X-DataDome: protected`. These are response signatures, **not** numbers of distinct hosts or proven user sessions. Full methodology, positive and negative controls, and corpus-replay details live on the focused Notion research page, not in this durable high-level reference.

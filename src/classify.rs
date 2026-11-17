@@ -1,6 +1,7 @@
 use crate::model::{Header, Outcome, OutcomeKind};
 use crate::path::has_anubis_challenge_scripts;
 use regex::Regex;
+use std::sync::LazyLock;
 
 fn header_values<'a>(headers: &'a [Header], name: &str) -> impl Iterator<Item = &'a str> {
     headers
@@ -124,6 +125,49 @@ fn archived_browser_gate(lower: &str) -> Option<Outcome> {
     None
 }
 
+// DataDome's 'protected' response header identifies protection participation,
+// not an applied CAPTCHA action. Its original first-party response documents
+// carry an inline dd runtime descriptor: 'i' means noninteractive device check
+// and 'c' means CAPTCHA. Require the script/object, challenge host and visible
+// browser-check shell together; an ordinary page may include DataDome headers
+// or SDK references without challenging the client.
+fn datadome_document_action(lower: &str) -> Option<Outcome> {
+    if !lower.contains("captcha-delivery.com")
+        || !lower.contains("<script")
+        || !has_normalized_phrase(lower, "please enable js and disable any ad blocker")
+    {
+        return None;
+    }
+
+    // JS object literals use either quote style, often unquoted keys. Only
+    // parse a small bounded inline descriptor, never minified vendor scripts.
+    static DD_DESCRIPTOR: LazyLock<Option<Regex>> =
+        LazyLock::new(|| Regex::new(r"(?s)\b(?:var|let|const)\s+dd\s*=\s*\{([^}]{0,4096})\}").ok());
+    static DD_HOST: LazyLock<Option<Regex>> = LazyLock::new(|| {
+        Regex::new(
+            r#"(?m)(?:^|,)\s*['"]?host['"]?\s*:\s*['"](?:[a-z0-9-]+\.)*captcha-delivery\.com['"]"#,
+        )
+        .ok()
+    });
+    static DD_RUNTIME: LazyLock<Option<Regex>> =
+        LazyLock::new(|| Regex::new(r#"(?m)(?:^|,)\s*['"]?rt['"]?\s*:\s*['"]([a-z])['"]"#).ok());
+    let fields = DD_DESCRIPTOR.as_ref()?.captures(lower)?.get(1)?.as_str();
+    if !DD_HOST.as_ref()?.is_match(fields) {
+        return None;
+    }
+    match DD_RUNTIME.as_ref()?.captures(fields)?.get(1)?.as_str() {
+        "i" => Some(outcome(
+            OutcomeKind::Challenge,
+            vec!["body:datadome-device-check".into()],
+        )),
+        "c" => Some(outcome(
+            OutcomeKind::Captcha,
+            vec!["body:datadome-captcha".into()],
+        )),
+        _ => None,
+    }
+}
+
 // Source-backed, first-party document-gate shapes from captured HTML pages.
 // Ordinary CAPTCHA integrations, vendor SDK scripts and security articles do
 // not by themselves indicate a gate. These pairs are deliberately contextual.
@@ -226,21 +270,8 @@ pub fn classify_response(status: u16, headers: &[Header], body: &[u8]) -> Outcom
         return action;
     }
 
-    let datadome_header =
-        header_values(headers, "x-datadome").any(|value| value.eq_ignore_ascii_case("protected"));
-    let datadome_body = lower.contains("captcha-delivery.com")
-        || lower.contains("please enable js and disable any ad blocker");
-    if datadome_header || datadome_body {
-        if datadome_header {
-            evidence.push("header:x-datadome=protected".into());
-        }
-        if lower.contains("captcha-delivery.com") {
-            evidence.push("body:captcha-delivery.com".into());
-        }
-        if lower.contains("please enable js and disable any ad blocker") {
-            evidence.push("body:enable-js-disable-adblock".into());
-        }
-        return outcome(OutcomeKind::Captcha, evidence);
+    if let Some(action) = datadome_document_action(&lower) {
+        return action;
     }
 
     let reddit_js_gate = lower.contains("js_challenge") && lower.contains("jsc_token");
@@ -309,7 +340,7 @@ pub fn classify_response(status: u16, headers: &[Header], body: &[u8]) -> Outcom
 fn outcome(kind: OutcomeKind, evidence: Vec<String>) -> Outcome {
     Outcome {
         kind,
-        classifier: "builtin-v5".into(),
+        classifier: "builtin-v6".into(),
         evidence,
     }
 }
