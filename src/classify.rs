@@ -125,6 +125,19 @@ fn archived_browser_gate(lower: &str) -> Option<Outcome> {
     None
 }
 
+// JS object literals use either quote style, often unquoted keys. Only
+// parse a small bounded inline descriptor, never minified vendor scripts.
+static DD_DESCRIPTOR: LazyLock<Option<Regex>> =
+    LazyLock::new(|| Regex::new(r"(?s)\b(?:var|let|const)\s+dd\s*=\s*\{([^}]{0,4096})\}").ok());
+static DD_HOST: LazyLock<Option<Regex>> = LazyLock::new(|| {
+    Regex::new(
+        r#"(?m)(?:^|,)\s*['"]?host['"]?\s*:\s*['"](?:[a-z0-9-]+\.)*captcha-delivery\.com['"]"#,
+    )
+    .ok()
+});
+static DD_RUNTIME: LazyLock<Option<Regex>> =
+    LazyLock::new(|| Regex::new(r#"(?m)(?:^|,)\s*['"]?rt['"]?\s*:\s*['"]([a-z])['"]"#).ok());
+
 // DataDome's 'protected' response header identifies protection participation,
 // not an applied CAPTCHA action. Its original first-party response documents
 // carry an inline dd runtime descriptor: 'i' means noninteractive device check
@@ -139,18 +152,6 @@ fn datadome_document_action(lower: &str) -> Option<Outcome> {
         return None;
     }
 
-    // JS object literals use either quote style, often unquoted keys. Only
-    // parse a small bounded inline descriptor, never minified vendor scripts.
-    static DD_DESCRIPTOR: LazyLock<Option<Regex>> =
-        LazyLock::new(|| Regex::new(r"(?s)\b(?:var|let|const)\s+dd\s*=\s*\{([^}]{0,4096})\}").ok());
-    static DD_HOST: LazyLock<Option<Regex>> = LazyLock::new(|| {
-        Regex::new(
-            r#"(?m)(?:^|,)\s*['"]?host['"]?\s*:\s*['"](?:[a-z0-9-]+\.)*captcha-delivery\.com['"]"#,
-        )
-        .ok()
-    });
-    static DD_RUNTIME: LazyLock<Option<Regex>> =
-        LazyLock::new(|| Regex::new(r#"(?m)(?:^|,)\s*['"]?rt['"]?\s*:\s*['"]([a-z])['"]"#).ok());
     let fields = DD_DESCRIPTOR.as_ref()?.captures(lower)?.get(1)?.as_str();
     if !DD_HOST.as_ref()?.is_match(fields) {
         return None;
