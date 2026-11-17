@@ -138,6 +138,41 @@ static DD_HOST: LazyLock<Option<Regex>> = LazyLock::new(|| {
 static DD_RUNTIME: LazyLock<Option<Regex>> =
     LazyLock::new(|| Regex::new(r#"(?m)(?:^|,)\s*['"]?rt['"]?\s*:\s*['"]([a-z])['"]"#).ok());
 
+// DataDome challenge-service documents carry a dedicated body role. Their
+// observed HTTP 200 or /captcha/ route must not be interpreted as content or
+// an interactive CAPTCHA without evidence from the response HTML.
+static DD_SERVICE_BODY_CLASS: LazyLock<Option<Regex>> = LazyLock::new(|| {
+    Regex::new(r#"(?is)<body\b[^>]{0,2048}\sclass\s*=\s*['"]([^'"]{0,512})['"]"#).ok()
+});
+
+fn datadome_service_document_action(lower: &str) -> Option<Outcome> {
+    if !lower.contains("dd-response-page--") {
+        return None;
+    }
+    let classes = DD_SERVICE_BODY_CLASS
+        .as_ref()?
+        .captures(lower)?
+        .get(1)?
+        .as_str();
+    let mut roles = classes.split_whitespace().filter_map(|class| match class {
+        "dd-response-page--device-check" => Some(OutcomeKind::Challenge),
+        "dd-response-page--hard-block" => Some(OutcomeKind::ExplicitBlock),
+        "dd-response-page--captcha" => Some(OutcomeKind::Captcha),
+        _ => None,
+    });
+    let kind = roles.next()?;
+    if roles.any(|other| other != kind) {
+        return None;
+    }
+    let evidence = match kind {
+        OutcomeKind::Challenge => "body:datadome-service-device-check",
+        OutcomeKind::ExplicitBlock => "body:datadome-service-hard-block",
+        OutcomeKind::Captcha => "body:datadome-service-captcha",
+        _ => return None,
+    };
+    Some(outcome(kind, vec![evidence.into()]))
+}
+
 // DataDome's 'protected' response header identifies protection participation,
 // not an applied CAPTCHA action. Its original first-party response documents
 // carry an inline dd runtime descriptor: 'i' means noninteractive device check
@@ -271,6 +306,9 @@ pub fn classify_response(status: u16, headers: &[Header], body: &[u8]) -> Outcom
         return action;
     }
 
+    if let Some(action) = datadome_service_document_action(&lower) {
+        return action;
+    }
     if let Some(action) = datadome_document_action(&lower) {
         return action;
     }
@@ -341,7 +379,7 @@ pub fn classify_response(status: u16, headers: &[Header], body: &[u8]) -> Outcom
 fn outcome(kind: OutcomeKind, evidence: Vec<String>) -> Outcome {
     Outcome {
         kind,
-        classifier: "builtin-v6".into(),
+        classifier: "builtin-v7".into(),
         evidence,
     }
 }

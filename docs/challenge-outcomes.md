@@ -1,4 +1,4 @@
-# Response challenge outcomes (builtin-v6)
+# Response challenge outcomes (builtin-v7)
 
 `classify_response(status, headers, body)` determines the **observed response action**, separately from the unordered network-path participant recognizer (`builtin-path-v14`). These are different questions: a Cloudflare, DataDome, AWS WAF, or Anubis cookie does not by itself prove a challenge was issued.
 
@@ -100,6 +100,27 @@ signatures. The revised independent replay instead treats these as
 presence controls. Detailed source audit, SHA-bound cases and replay
 oracle: separate Notion outcome-v6 study.
 
+## DataDome challenge-service documents (builtin-v7)
+
+The historical browser corpus contains 90 separate HTTP 200 responses from
+`geo.captcha-delivery.com`. The server-side URL does **not** determine
+whether the served response is a hard block, CAPTCHA or noninteractive
+device check:
+
+| Service URL | Actual HTML `body` class | Original documents | Outcome |
+| --- | --- | ---: | --- |
+| `/interstitial/` | `dd-response-page--device-check` | 48 | `challenge` |
+| `/captcha/` | `dd-response-page--hard-block` | 39 | `explicit_block` |
+| `/captcha/` | `dd-response-page--captcha` | 3 | `captcha` |
+
+v7 uses a bounded **actual HTML body class attribute**, not a loose
+text mention, HTTP status, route suffix, or ordinary embedded SDK.
+Conflicting classes fail to establish an action. This is the action
+of the **observed challenge-service response**; it does not assign
+an outcome to any other first-party root document. The independent
+source-backed source/replay manifest for the 90 cases and the previous
+v6 suite is documented separately in Notion.
+
 ## Corpus replay
 
 `wireprint classify BODY_FILE --status STATUS [--header NAME:VALUE ...]` performs one ad hoc classification. To replay thousands of **existing** observations, use:
@@ -108,6 +129,6 @@ oracle: separate Notion outcome-v6 study.
 wireprint classify --input response-rows.jsonl > response-classified.jsonl
 ```
 
-Each input row must be a JSON object with `status` (integer HTTP status), `headers` (Wireprint header array), and optional `body_prefix` (captured text or null). Output retains all original fields and replaces or writes `outcome` with `kind`, `classifier`, and `evidence`. Invalid types are rejected; an omitted body is **not invented**. Unlike the path classifier, the outcome classifier version is `builtin-v6`.
+Each input row must be a JSON object with `status` (integer HTTP status), `headers` (Wireprint header array), and optional `body_prefix` (captured text or null). Output retains all original fields and replaces or writes `outcome` with `kind`, `classifier`, and `evidence`. Invalid types are rejected; an omitted body is **not invented**. Unlike the path classifier, the outcome classifier version is `builtin-v7`.
 
 The archived normalized response-header index has independently verified weighted counts of 749 `CF-Mitigated: challenge`, 21 `X-Amzn-Waf-Action: challenge`, 10 `X-Amzn-Waf-Action: captcha`, and 69 `X-DataDome: protected` **presence** signatures. These are weighted response-signature counts, **not** numbers of distinct hosts, enforced CAPTCHA actions or proven user sessions. Full methodology, positive and negative controls, and corpus-replay details live on the focused Notion research page, not in this durable high-level reference.
