@@ -155,9 +155,9 @@ The bundled AI-retriever **request** profiles are research inputs and do not aut
 Two regression fixtures capture the original failure mode:
 
 - a Reddit HTTP `200` containing `js_challenge=1` and `jsc_token` is classified as `challenge`, not content;
-- a DataDome `403` with `x-datadome: protected` / `captcha-delivery.com` is classified as `captcha`, not merely “403”.
+- a DataDome `403` with a complete inline `rt:'i'` browser-check shell is `challenge`, while `rt:'c'` is `captcha`; its `x-datadome: protected` header alone never establishes either action.
 
-The classifier is intentionally conservative and versioned (`builtin-v5`; see [challenge outcome evidence](docs/challenge-outcomes.md)). Raw status, headers and captured body prefix remain in the observation so a newer classifier can re-evaluate old data. Each textual capture also gets both a raw prefix SHA-256 and a versioned normalized-template SHA-256 (`template-v1`) so nonce/token churn does not hide identical challenge shells.
+The classifier is intentionally conservative and versioned (`builtin-v6`; see [challenge outcome evidence](docs/challenge-outcomes.md)). Raw status, headers and captured body prefix remain in the observation so a newer classifier can re-evaluate old data. Each textual capture also gets both a raw prefix SHA-256 and a versioned normalized-template SHA-256 (`template-v1`) so nonce/token churn does not hide identical challenge shells.
 
 ## Evidence model
 

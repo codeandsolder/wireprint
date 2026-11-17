@@ -35,11 +35,7 @@ fn datadome_header_and_body_are_captcha() {
     }];
     let out = classify_response(403, &headers, &fixture("datadome-captcha.html"));
     assert_eq!(out.kind, OutcomeKind::Captcha);
-    assert!(
-        out.evidence
-            .iter()
-            .any(|value| value.contains("x-datadome"))
-    );
+    assert_eq!(out.evidence, ["body:datadome-captcha"]);
 }
 
 #[test]
@@ -118,7 +114,7 @@ fn aws_waf_captcha_header_is_a_captcha_even_with_uninformative_body() {
     }];
     let out = classify_response(405, &headers, b"");
     assert_eq!(out.kind, OutcomeKind::Captcha);
-    assert_eq!(out.classifier, "builtin-v5");
+    assert_eq!(out.classifier, "builtin-v6");
     assert_eq!(out.evidence, ["header:x-amzn-waf-action=captcha"]);
 }
 
@@ -248,7 +244,7 @@ fn edgeone_captcha_interstitial_is_detected_even_as_http_200() {
 <script src="https://gcaptcha.eo.gtimg.com/TEOCaptchaWidgetV1-global.js"></script>
 </head><body><div id="captcha"></div><footer>Protected by Tencent Cloud EdgeOne</footer></body></html>"#;
     let result = classify_response(200, &[], body);
-    assert_eq!(result.classifier, "builtin-v5");
+    assert_eq!(result.classifier, "builtin-v6");
     assert_eq!(result.kind, OutcomeKind::Captcha);
     assert_eq!(
         result.evidence,
@@ -427,7 +423,7 @@ fn hcdn_reserved_js_challenge_and_browser_check_are_joint_evidence() {
     for status in [200, 403] {
         let out = classify_response(status, &[], body);
         assert_eq!(out.kind, OutcomeKind::Challenge, "{status}");
-        assert_eq!(out.classifier, "builtin-v5");
+        assert_eq!(out.classifier, "builtin-v6");
         assert_eq!(out.evidence, ["body:hcdn-jschallenge+browser-check"]);
     }
 }
@@ -464,7 +460,7 @@ fn custom_security_verification_javascript_robot_check_is_challenge() {
 <p>This requires JavaScript. Enable JavaScript and then reload the page.</p></html>"#;
     let out = classify_response(405, &[], body);
     assert_eq!(out.kind, OutcomeKind::Challenge);
-    assert_eq!(out.classifier, "builtin-v5");
+    assert_eq!(out.classifier, "builtin-v6");
     assert_eq!(
         out.evidence,
         ["body:security-verification+javascript-robot-check"]
@@ -512,7 +508,7 @@ fn recaptcha_browser_verification_document_is_challenge_not_captcha() {
     for status in [200, 403] {
         let outcome = classify_response(status, &[], html);
         assert_eq!(outcome.kind, OutcomeKind::Challenge);
-        assert_eq!(outcome.classifier, "builtin-v5");
+        assert_eq!(outcome.classifier, "builtin-v6");
         assert_eq!(
             outcome.evidence,
             ["body:recaptcha-challengepage+browser-check"]
@@ -553,4 +549,91 @@ fn first_party_action_header_precedes_recaptcha_body_interpretation() {
     let out = classify_response(200, &headers, body);
     assert_eq!(out.kind, OutcomeKind::Captcha);
     assert_eq!(out.evidence, ["header:x-amzn-waf-action=captcha"]);
+}
+
+#[test]
+fn datadome_presence_header_does_not_determine_enforcement_outcome() {
+    let headers = [Header {
+        name: "X-DataDome".into(),
+        value: "protected".into(),
+    }];
+    for status in [200, 201, 204] {
+        let out = classify_response(status, &headers, b"<html>Ordinary page</html>");
+        assert_eq!(out.kind, OutcomeKind::ContentLike);
+        assert_eq!(out.evidence, [format!("status:{status}")]);
+        assert_eq!(out.classifier, "builtin-v6");
+    }
+    for status in [401, 403] {
+        let out = classify_response(status, &headers, b"<html>Access denied</html>");
+        assert_eq!(out.kind, OutcomeKind::ExplicitBlock);
+        assert_eq!(
+            out.evidence,
+            [format!("status:{status}"), "body:access-denied".into()]
+        );
+    }
+}
+
+#[test]
+fn datadome_device_check_and_captcha_are_different_actions() {
+    let header = [Header {
+        name: "X-DataDome".into(),
+        value: "protected".into(),
+    }];
+    for (runtime, expected, marker) in [
+        ("i", OutcomeKind::Challenge, "body:datadome-device-check"),
+        ("c", OutcomeKind::Captcha, "body:datadome-captcha"),
+    ] {
+        let body = format!(
+            r#"<html><p id="cmsg">Please enable JS and disable any ad blocker</p>
+<script>var dd={{'cid':'c','host':'geo.captcha-delivery.com',
+'rt':'{runtime}','hsh':'abc'}};</script></html>"#
+        );
+        for status in [200, 401, 403] {
+            let out = classify_response(status, &header, body.as_bytes());
+            assert_eq!(out.kind, expected, "{runtime} {status}");
+            assert_eq!(out.evidence, [marker], "{runtime} {status}");
+            assert_eq!(out.classifier, "builtin-v6");
+        }
+    }
+    let variants = [
+        r#"<p>Please enable JS and disable any ad blocker</p><script>const dd = { "host" : "geo.captcha-delivery.com", "rt" : "i" };</script>"#,
+        r#"<p>Please enable JS and disable any ad blocker</p><script>let dd = {rt:"i",host:"geo.captcha-delivery.com"};</script>"#,
+    ];
+    for body in variants {
+        assert_eq!(
+            classify_response(403, &[], body.as_bytes()).kind,
+            OutcomeKind::Challenge
+        );
+    }
+}
+
+#[test]
+fn datadome_sdk_article_and_incomplete_shells_are_not_active_challenges() {
+    let bodies = [
+        r#"<article>Why does captcha-delivery.com appear in a network log?</article>"#,
+        r#"<script src="https://ct.captcha-delivery.com/tags.js"></script>"#,
+        r#"<p>Please enable JS and disable any ad blocker</p>"#,
+        r#"<script>var dd={'rt':'i','host':'geo.captcha-delivery.com'};</script>"#,
+        r#"<script>var dd={'rt':'i','host':'other.example'};</script><p>Please enable JS and disable any ad blocker</p>"#,
+        r#"<script>var dd={'rt':'x','host':'geo.captcha-delivery.com'};</script><p>Please enable JS and disable any ad blocker</p>"#,
+        r#"<script>var dd={'rt':'i','host':'evilcaptcha-delivery.com'};</script><p>Please enable JS and disable any ad blocker</p>"#,
+        r#"<script>const ddd={'rt':'i','host':'geo.captcha-delivery.com'};</script><p>Please enable JS and disable any ad blocker</p>"#,
+    ];
+    for body in bodies {
+        let result = classify_response(200, &[], body.as_bytes());
+        assert_eq!(result.kind, OutcomeKind::ContentLike, "{body}");
+        assert_eq!(result.evidence, ["status:200"], "{body}");
+    }
+}
+
+#[test]
+fn authenticated_vendor_action_precedes_datadome_document_gate() {
+    let headers = [Header {
+        name: "X-Amzn-Waf-Action".into(),
+        value: "captcha".into(),
+    }];
+    let body = br#"<p>Please enable JS and disable any ad blocker</p><script>var dd={'rt':'i','host':'geo.captcha-delivery.com'};</script>"#;
+    let result = classify_response(405, &headers, body);
+    assert_eq!(result.kind, OutcomeKind::Captcha);
+    assert_eq!(result.evidence, ["header:x-amzn-waf-action=captcha"]);
 }
