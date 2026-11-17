@@ -35,11 +35,7 @@ fn datadome_header_and_body_are_captcha() {
     }];
     let out = classify_response(403, &headers, &fixture("datadome-captcha.html"));
     assert_eq!(out.kind, OutcomeKind::Captcha);
-    assert!(
-        out.evidence
-            .iter()
-            .any(|value| value.contains("x-datadome"))
-    );
+    assert_eq!(out.evidence, ["body:datadome-captcha"]);
 }
 
 #[test]

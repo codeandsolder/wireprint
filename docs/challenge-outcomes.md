@@ -11,7 +11,8 @@
 | `challenge` | `X-Amzn-Waf-Action: challenge` | [AWS WAF explicitly identifies challenge responses](https://docs.aws.amazon.com/waf/latest/developerguide/waf-captcha-and-challenge-actions.html), usually status 202. |
 | `captcha` | `X-Amzn-Waf-Action: captcha` | [AWS WAF specifies this CAPTCHA response action](https://docs.aws.amazon.com/waf/latest/developerguide/waf-captcha-and-challenge-actions.html), usually status 405. |
 | `challenge` | Both `<script id="anubis_version">` and `<script id="anubis_challenge">` in the captured body | Anubis-authored page structure; only actual script tags count. A cookie alone identifies participation, not an active challenge. |
-| `captcha` | DataDome `X-DataDome: protected` or recognized captive CAPTCHA body | Existing v1 behavior preserved. |
+| `challenge` | DataDome first-party browser-check shell with `var dd` runtime `rt:'i'` | Device verification, not automatically an interactive CAPTCHA. `X-DataDome: protected` alone is neutral. |
+| `captcha` | DataDome first-party CAPTCHA shell with `var dd` runtime `rt:'c'` | Complete bounded runtime descriptor and vendor challenge host required. |
 | `challenge` | Paired Reddit JS challenge form markers or AWSWAF challenge body | Existing v1 behavior preserved. |
 
 These checks run before generic HTTP status handling, so a 200 challenge page, 403 Cloudflare challenge, or 405 AWS WAF CAPTCHA is not misclassified as ordinary content, a generic block, or an application error. The remaining 429, 401/403, redirect, server error and content rules are unchanged.
@@ -109,4 +110,4 @@ wireprint classify --input response-rows.jsonl > response-classified.jsonl
 
 Each input row must be a JSON object with `status` (integer HTTP status), `headers` (Wireprint header array), and optional `body_prefix` (captured text or null). Output retains all original fields and replaces or writes `outcome` with `kind`, `classifier`, and `evidence`. Invalid types are rejected; an omitted body is **not invented**. Unlike the path classifier, the outcome classifier version is `builtin-v6`.
 
-The archived normalized response-header index has independently verified weighted counts of 749 `CF-Mitigated: challenge`, 21 `X-Amzn-Waf-Action: challenge`, 10 `X-Amzn-Waf-Action: captcha`, and 69 `X-DataDome: protected`. These are response signatures, **not** numbers of distinct hosts or proven user sessions. Full methodology, positive and negative controls, and corpus-replay details live on the focused Notion research page, not in this durable high-level reference.
+The archived normalized response-header index has independently verified weighted counts of 749 `CF-Mitigated: challenge`, 21 `X-Amzn-Waf-Action: challenge`, 10 `X-Amzn-Waf-Action: captcha`, and 69 `X-DataDome: protected` **presence** signatures. These are weighted response-signature counts, **not** numbers of distinct hosts, enforced CAPTCHA actions or proven user sessions. Full methodology, positive and negative controls, and corpus-replay details live on the focused Notion research page, not in this durable high-level reference.
