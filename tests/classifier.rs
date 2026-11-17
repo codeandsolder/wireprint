@@ -114,7 +114,7 @@ fn aws_waf_captcha_header_is_a_captcha_even_with_uninformative_body() {
     }];
     let out = classify_response(405, &headers, b"");
     assert_eq!(out.kind, OutcomeKind::Captcha);
-    assert_eq!(out.classifier, "builtin-v6");
+    assert_eq!(out.classifier, "builtin-v7");
     assert_eq!(out.evidence, ["header:x-amzn-waf-action=captcha"]);
 }
 
@@ -244,7 +244,7 @@ fn edgeone_captcha_interstitial_is_detected_even_as_http_200() {
 <script src="https://gcaptcha.eo.gtimg.com/TEOCaptchaWidgetV1-global.js"></script>
 </head><body><div id="captcha"></div><footer>Protected by Tencent Cloud EdgeOne</footer></body></html>"#;
     let result = classify_response(200, &[], body);
-    assert_eq!(result.classifier, "builtin-v6");
+    assert_eq!(result.classifier, "builtin-v7");
     assert_eq!(result.kind, OutcomeKind::Captcha);
     assert_eq!(
         result.evidence,
@@ -423,7 +423,7 @@ fn hcdn_reserved_js_challenge_and_browser_check_are_joint_evidence() {
     for status in [200, 403] {
         let out = classify_response(status, &[], body);
         assert_eq!(out.kind, OutcomeKind::Challenge, "{status}");
-        assert_eq!(out.classifier, "builtin-v6");
+        assert_eq!(out.classifier, "builtin-v7");
         assert_eq!(out.evidence, ["body:hcdn-jschallenge+browser-check"]);
     }
 }
@@ -460,7 +460,7 @@ fn custom_security_verification_javascript_robot_check_is_challenge() {
 <p>This requires JavaScript. Enable JavaScript and then reload the page.</p></html>"#;
     let out = classify_response(405, &[], body);
     assert_eq!(out.kind, OutcomeKind::Challenge);
-    assert_eq!(out.classifier, "builtin-v6");
+    assert_eq!(out.classifier, "builtin-v7");
     assert_eq!(
         out.evidence,
         ["body:security-verification+javascript-robot-check"]
@@ -508,7 +508,7 @@ fn recaptcha_browser_verification_document_is_challenge_not_captcha() {
     for status in [200, 403] {
         let outcome = classify_response(status, &[], html);
         assert_eq!(outcome.kind, OutcomeKind::Challenge);
-        assert_eq!(outcome.classifier, "builtin-v6");
+        assert_eq!(outcome.classifier, "builtin-v7");
         assert_eq!(
             outcome.evidence,
             ["body:recaptcha-challengepage+browser-check"]
@@ -561,7 +561,7 @@ fn datadome_presence_header_does_not_determine_enforcement_outcome() {
         let out = classify_response(status, &headers, b"<html>Ordinary page</html>");
         assert_eq!(out.kind, OutcomeKind::ContentLike);
         assert_eq!(out.evidence, [format!("status:{status}")]);
-        assert_eq!(out.classifier, "builtin-v6");
+        assert_eq!(out.classifier, "builtin-v7");
     }
     for status in [401, 403] {
         let out = classify_response(status, &headers, b"<html>Access denied</html>");
@@ -592,7 +592,7 @@ fn datadome_device_check_and_captcha_are_different_actions() {
             let out = classify_response(status, &header, body.as_bytes());
             assert_eq!(out.kind, expected, "{runtime} {status}");
             assert_eq!(out.evidence, [marker], "{runtime} {status}");
-            assert_eq!(out.classifier, "builtin-v6");
+            assert_eq!(out.classifier, "builtin-v7");
         }
     }
     let variants = [
@@ -636,4 +636,67 @@ fn authenticated_vendor_action_precedes_datadome_document_gate() {
     let result = classify_response(405, &headers, body);
     assert_eq!(result.kind, OutcomeKind::Captcha);
     assert_eq!(result.evidence, ["header:x-amzn-waf-action=captcha"]);
+}
+
+#[test]
+fn datadome_service_body_roles_override_http_200_content_fallback() {
+    for (class, kind, evidence) in [
+        (
+            "device-check",
+            OutcomeKind::Challenge,
+            "body:datadome-service-device-check",
+        ),
+        (
+            "hard-block",
+            OutcomeKind::ExplicitBlock,
+            "body:datadome-service-hard-block",
+        ),
+        (
+            "captcha",
+            OutcomeKind::Captcha,
+            "body:datadome-service-captcha",
+        ),
+    ] {
+        let html = format!(
+            r#"<html><title>Service response</title><body id="page" CLASS='main dd-response-page--{class}'>
+             <p>Protected page</p></body></html>"#
+        );
+        for status in [200, 403] {
+            let result = classify_response(status, &[], html.as_bytes());
+            assert_eq!(result.kind, kind, "{class} {status}");
+            assert_eq!(result.evidence, [evidence], "{class} {status}");
+            assert_eq!(result.classifier, "builtin-v7");
+        }
+    }
+}
+
+#[test]
+fn datadome_service_requires_actual_unambiguous_body_class() {
+    for html in [
+        "<p>Learn about dd-response-page--hard-block</p>",
+        "<div class='dd-response-page--captcha'>Widget</div>",
+        "<style>body.dd-response-page--device-check {display:block}</style>",
+        "<body data-class='dd-response-page--hard-block'>Ordinary</body>",
+        "<body class='dd-response-page--hard-block dd-response-page--captcha'>Conflict</body>",
+        "<body class='dd-response-page--hard-blockish'>Unrelated</body>",
+    ] {
+        let outcome = classify_response(200, &[], html.as_bytes());
+        assert_eq!(outcome.kind, OutcomeKind::ContentLike, "{html}");
+        assert_eq!(outcome.evidence, ["status:200"], "{html}");
+    }
+}
+
+#[test]
+fn documented_vendor_header_precedes_datadome_service_class() {
+    let headers = [Header {
+        name: "X-Amzn-Waf-Action".into(),
+        value: "challenge".into(),
+    }];
+    let result = classify_response(
+        202,
+        &headers,
+        b"<body class='dd-response-page--hard-block'></body>",
+    );
+    assert_eq!(result.kind, OutcomeKind::Challenge);
+    assert_eq!(result.evidence, ["header:x-amzn-waf-action=challenge"]);
 }
