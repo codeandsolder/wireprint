@@ -3,8 +3,8 @@ use std::ffi::{CStr, c_void};
 use std::slice;
 
 use anyhow::{Context, Result, bail};
-use boring::ssl::SslRef;
-use foreign_types_shared::ForeignTypeRef;
+use btls::ssl::SslRef;
+use foreign_types::ForeignTypeRef;
 use serde::{Deserialize, Serialize};
 
 use crate::model::{ProviderEvidenceChannel, ProviderSignal};
@@ -144,8 +144,8 @@ impl TlsMessageCapture {
         // The only call site keeps this capture alive until after the SSL stream
         // is dropped, and BoringSSL invokes the callback synchronously.
         unsafe {
-            boring_sys::SSL_set_msg_callback(ssl.as_ptr(), Some(raw_message_callback));
-            boring_sys::SSL_set_msg_callback_arg(ssl.as_ptr(), arg);
+            btls_sys::SSL_set_msg_callback(ssl.as_ptr(), Some(raw_message_callback));
+            btls_sys::SSL_set_msg_callback_arg(ssl.as_ptr(), arg);
         }
     }
 
@@ -164,7 +164,7 @@ unsafe extern "C" fn raw_message_callback(
     content_type: i32,
     buf: *const c_void,
     len: usize,
-    _ssl: *mut boring_sys::SSL,
+    _ssl: *mut btls_sys::SSL,
     arg: *mut c_void,
 ) {
     if is_write != 0 || arg.is_null() {
@@ -671,7 +671,7 @@ fn group_name(id: u16) -> String {
     // SAFETY: BoringSSL returns either null or a pointer to an internal,
     // NUL-terminated static group-name string; we copy it before returning.
     unsafe {
-        let ptr = boring_sys::SSL_get_group_name(id);
+        let ptr = btls_sys::SSL_get_group_name(id);
         if !ptr.is_null() {
             return CStr::from_ptr(ptr).to_string_lossy().into_owned();
         }

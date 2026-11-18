@@ -9,7 +9,7 @@ use hickory_resolver::{
     proto::rr::{RData, RecordType},
 };
 use url::Url;
-use wreq::dns::{Addrs, GaiResolver, Name, Resolve, Resolving};
+use wreq::dns::{Addrs, Name, Resolve, Resolving};
 
 use crate::address_family::AddressFamily;
 use crate::model::{DnsCnameLink, DnsProvenance, DnsRouteAnswer};
@@ -32,7 +32,6 @@ struct ResolverState {
 
 #[derive(Clone)]
 pub(crate) struct RecordingResolver {
-    inner: GaiResolver,
     family: AddressFamily,
     state: Arc<Mutex<ResolverState>>,
 }
@@ -40,7 +39,6 @@ pub(crate) struct RecordingResolver {
 impl RecordingResolver {
     pub(crate) fn new(family: AddressFamily) -> Self {
         Self {
-            inner: GaiResolver::default(),
             family,
             state: Arc::new(Mutex::new(ResolverState::default())),
         }
@@ -65,11 +63,13 @@ impl RecordingResolver {
 
 impl Resolve for RecordingResolver {
     fn resolve(&self, name: Name) -> Resolving {
-        let inner = self.inner.clone();
         let family = self.family;
         let state = Arc::clone(&self.state);
         Box::pin(async move {
-            let resolved = inner.resolve(name.clone()).await?;
+            // Wreq now keeps its GAI resolver private. Use the same OS
+            // getaddrinfo-backed lookup, with port 0 as required by its
+            // public Resolve contract (the connector supplies the port).
+            let resolved = tokio::net::lookup_host((name.as_str(), 0)).await?;
             let addrs = family.filter(resolved);
             if addrs.is_empty() {
                 return Err(io::Error::new(

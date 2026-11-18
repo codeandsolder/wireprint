@@ -5,9 +5,15 @@ use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 use wreq::{
     http2::{Http2Options, PseudoId, PseudoOrder, SettingId, SettingsOrder},
-    tls::{AlpnProtocol, ExtensionType, KeyShare, TlsOptions, TlsVersion},
+    tls::{AlpnProtocol, ExtensionType, KeyShare, Tls13Cipher, TlsOptions, TlsVersion},
 };
 use wreq_util::{Emulation, Platform, Profile};
+
+const ENVOY_TLS13_CIPHERS: &[Tls13Cipher] = &[
+    Tls13Cipher::AES_128_GCM_SHA256,
+    Tls13Cipher::AES_256_GCM_SHA384,
+    Tls13Cipher::CHACHA20_POLY1305_SHA256,
+];
 
 pub const TRANSPORT_SCHEMA_VERSION: u32 = 1;
 
@@ -352,7 +358,7 @@ impl WreqMeasuredProfileKind {
                         "TLS_RSA_WITH_AES_256_GCM_SHA384:",
                         "TLS_RSA_WITH_AES_256_CBC_SHA"
                     ))
-                    .preserve_tls13_cipher_list(true)
+                    .tls13_cipher_list(ENVOY_TLS13_CIPHERS)
                     .sigalgs_list(concat!(
                         "ecdsa_secp256r1_sha256:",
                         "rsa_pss_rsae_sha256:",
@@ -371,7 +377,7 @@ impl WreqMeasuredProfileKind {
                     .permute_extensions(false)
                     .enable_ocsp_stapling(false)
                     .enable_signed_cert_timestamps(false)
-                    .enable_ech_grease(false)
+                    .ech_grease(None)
                     .renegotiation(true)
                     .session_ticket(true)
                     .extension_permutation(&[
@@ -464,7 +470,7 @@ fn low_fidelity_tls_options() -> TlsOptions {
         .alpn_protocols([AlpnProtocol::HTTP2, AlpnProtocol::HTTP1])
         .min_tls_version(TlsVersion::TLS_1_2)
         .max_tls_version(TlsVersion::TLS_1_3)
-        .enable_ech_grease(false)
+        .ech_grease(None)
         .permute_extensions(false)
         .grease_enabled(false)
         .grease_sigalgs_enabled(false)

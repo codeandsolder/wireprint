@@ -3,7 +3,7 @@ use std::net::{SocketAddr, TcpStream};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow, bail};
-use boring::ssl::{SslConnector, SslMethod, SslVersion};
+use btls::ssl::{SslConnector, SslMethod, SslVersion};
 use url::Url;
 
 use crate::address_family::AddressFamily;

@@ -1,11 +1,7 @@
 use std::net::SocketAddr;
-use std::slice;
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
-use boring::ssl::{SslContextBuilder, SslMethod};
-use foreign_types_shared::ForeignTypeRef;
 use quiche::h3::NameValue;
 use tokio::net::UdpSocket;
 use url::Url;
@@ -105,10 +101,9 @@ pub async fn probe_h3(target: &str, config: &H3ProbeConfig) -> Result<Observatio
     let socket = UdpSocket::bind(bind).await?;
     let local = socket.local_addr()?;
 
-    let raw_peer_transport_parameters = Arc::new(Mutex::new(Vec::new()));
-    let mut quic_config = quic_config(Arc::clone(&raw_peer_transport_parameters))?;
+    let mut quic_config = quic_config()?;
     let mut scid_bytes = [0u8; quiche::MAX_CONN_ID_LEN];
-    boring::rand::rand_bytes(&mut scid_bytes)?;
+    btls::rand::rand_bytes(&mut scid_bytes)?;
     let scid = quiche::ConnectionId::from_ref(&scid_bytes);
     let mut conn = quiche::connect(Some(&host), &scid, local, peer, &mut quic_config)?;
     let h3_config = quiche::h3::Config::new()?;
@@ -184,12 +179,11 @@ pub async fn probe_h3(target: &str, config: &H3ProbeConfig) -> Result<Observatio
                 .as_ref()
                 .and_then(quiche::h3::Connection::peer_settings_raw)
                 .context("peer H3 SETTINGS were not observed")?;
-            let raw_transport_parameters = raw_peer_transport_parameters
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .clone();
+            let raw_transport_parameters = conn
+                .peer_transport_params_wire()
+                .context("peer QUIC transport parameters were not captured")?;
             if raw_transport_parameters.is_empty() {
-                bail!("peer QUIC transport parameters were not captured");
+                bail!("peer QUIC transport parameters were empty");
             }
             let fingerprint = classify_h3_quic(
                 quiche::PROTOCOL_VERSION,
@@ -201,7 +195,7 @@ pub async fn probe_h3(target: &str, config: &H3ProbeConfig) -> Result<Observatio
                         value: *value,
                     })
                     .collect(),
-                &raw_transport_parameters,
+                raw_transport_parameters,
             )?;
             let mut observation = success_observation(H3ObservationParts {
                 target,
@@ -312,31 +306,8 @@ fn success_observation(parts: H3ObservationParts<'_>) -> Observation {
     }
 }
 
-fn quic_config(raw_peer_transport_parameters: Arc<Mutex<Vec<u8>>>) -> Result<quiche::Config> {
-    let mut tls = SslContextBuilder::new(SslMethod::tls())?;
-    tls.set_default_verify_paths()?;
-    tls.set_info_callback(move |ssl, _mode, _value| {
-        // SAFETY: BoringSSL owns the returned transport-parameter buffer for the
-        // live SSL object. We validate the pointer/length pair and copy it during
-        // this synchronous callback before the SSL object can mutate or drop it.
-        unsafe {
-            let mut ptr = std::ptr::null();
-            let mut len = 0usize;
-            boring_sys::SSL_get_peer_quic_transport_params(
-                ssl.as_ptr(),
-                &raw mut ptr,
-                &raw mut len,
-            );
-            if len > 0 && !ptr.is_null() {
-                let raw = slice::from_raw_parts(ptr, len).to_vec();
-                *raw_peer_transport_parameters
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner) = raw;
-            }
-        }
-    });
-
-    let mut config = quiche::Config::with_boring_ssl_ctx_builder(quiche::PROTOCOL_VERSION, tls)?;
+fn quic_config() -> Result<quiche::Config> {
+    let mut config = quiche::Config::new(quiche::PROTOCOL_VERSION)?;
     config.verify_peer(true);
     config.set_application_protos(quiche::h3::APPLICATION_PROTOCOL)?;
     config.set_max_idle_timeout(8_000);

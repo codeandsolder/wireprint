@@ -10,7 +10,7 @@ The observer deliberately preserves facts that high-level QUIC APIs often normal
 - selected DNS candidate and actual UDP peer separately;
 - ordinary response headers and path-element evidence.
 
-The raw transport-parameter bytes are copied from BoringSSL during the QUIC TLS handshake through `SSL_get_peer_quic_transport_params`. quiche still owns packet protection, certificate verification and QUIC state; wireprint only copies the already-authenticated peer extension before quiche's decoded representation loses wire order.
+The raw transport-parameter bytes are borrowed from quiche through `Connection::peer_transport_params_wire()` after the peer extension is parsed and validated. This accessor preserves the authenticated original wire encoding, including parameter order and unknown IDs, without introducing a second TLS callback, raw-pointer dereferences, or an observer-specific intermediate buffer. quiche continues to own packet protection, certificate verification, the original transport-parameter storage and QUIC state; Wireprint decodes the borrowed bytes into the ordered observation while the connection is live.
 
 ## Classifier
 
