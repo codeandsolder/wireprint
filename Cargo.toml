@@ -17,10 +17,12 @@ hyper-util = { version = "=0.1.21", features = ["client", "client-legacy", "http
 rustls = { version = "=0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
 tokio-util = { version = "0.7", features = ["io"] }
 tower-service = "0.3"
-boring = "5.3"
-boring-sys = "5.3"
-foreign-types-shared = "0.3"
-quiche = "0.30"
+btls = { git = "https://github.com/0x676e67/btls", rev = "8879c026b548c25441f83ff58b39d7e22ba1b5b1" }
+btls-sys = { git = "https://github.com/0x676e67/btls", rev = "8879c026b548c25441f83ff58b39d7e22ba1b5b1" }
+foreign-types = "0.5"
+# Use quiche's native TLS FFI, backed by the same unprefixed BoringSSL as Wreq.
+# The raw wire API avoids an observer-specific SSL callback.
+quiche = { git = "https://github.com/codeandsolder/quiche-fast.git", rev = "ece2c0940e6e7fe2ca9e066abe72e40c65498f72", default-features = false }
 clap = { version = "4.5", features = ["derive"] }
 futures-util = "0.3"
 hickory-resolver = { version = "0.26.3", default-features = false, features = ["system-config", "tokio"] }
@@ -30,14 +32,14 @@ serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.11"
 tokio = { version = "1.52", features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }
 url = "2.5"
-wreq = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "f43e50336a6773836e70045076b795f06444913a", features = ["gzip", "brotli", "deflate", "stream", "prefix-symbols"] }
-wreq-util = { version = "0.2.0", features = ["tokio-rt"] }
+wreq = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "8cf38cd66fabb2530e5a41aa992c35fe01fbb636", features = ["gzip", "brotli", "deflate", "stream"] }
+wreq-util = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "8cf38cd66fabb2530e5a41aa992c35fe01fbb636", features = ["tokio-rt"] }
 
 [dev-dependencies]
 pretty_assertions = "1"
 
 [patch.crates-io]
-wreq = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "f43e50336a6773836e70045076b795f06444913a" }
+wreq = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "8cf38cd66fabb2530e5a41aa992c35fe01fbb636" }
 
 [lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
