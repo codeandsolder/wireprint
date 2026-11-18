@@ -32,14 +32,14 @@ serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.11"
 tokio = { version = "1.52", features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }
 url = "2.5"
-wreq = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "8cf38cd66fabb2530e5a41aa992c35fe01fbb636", features = ["gzip", "brotli", "deflate", "stream"] }
-wreq-util = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "8cf38cd66fabb2530e5a41aa992c35fe01fbb636", features = ["tokio-rt"] }
+wreq = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "9efff9bbbdc1ac4cda7a8afdf61af60946997398", features = ["gzip", "brotli", "deflate", "stream"] }
+wreq-util = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "9efff9bbbdc1ac4cda7a8afdf61af60946997398", features = ["tokio-rt"] }
 
 [dev-dependencies]
 pretty_assertions = "1"
 
 [patch.crates-io]
-wreq = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "8cf38cd66fabb2530e5a41aa992c35fe01fbb636" }
+wreq = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "9efff9bbbdc1ac4cda7a8afdf61af60946997398" }
 
 [lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
