@@ -21,7 +21,7 @@ env:
 jobs:
   strict-rust:
     name: Strict Rust
-    uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@c56a893aacd6338669d625f16f235a8cb24a4bad # main
+    uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@004d3f55d72c127169b59add6f74638fd5560403 # main
     with:
       cargo-args: "--locked --workspace --all-targets --all-features"
       allow-test-panics: true
@@ -30,7 +30,7 @@ jobs:
     name: Rust 1.100.0 Linux checks and tests
     permissions:
       contents: read
-    uses: codeandsolder/ci-workflows/.github/workflows/rust-sccache.yml@47aa3c1b587f9933f56310f82427ff86539b3ac9 # main
+    uses: codeandsolder/ci-workflows/.github/workflows/rust-sccache.yml@4b748f18ffb855f167486cb978187ea1c08fbcbb # main
     with:
       runner: ubuntu-26.04
       rust-toolchain: "1.100.0"
