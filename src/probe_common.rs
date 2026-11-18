@@ -15,9 +15,12 @@ use tokio::io::{AsyncBufRead, AsyncRead, AsyncReadExt};
 use tokio::net::ToSocketAddrs;
 
 use crate::address_family::AddressFamily;
+use crate::cf_ray::detect_cf_ray_provenance;
+use crate::classify_response;
 use crate::fusion::assess_endpoint;
-use crate::model::{EndpointEvidence, Header, Observation};
+use crate::model::{CfRayProvenance, EndpointEvidence, Header, Observation, Outcome, PathElement};
 use crate::normalize::{NORMALIZER_VERSION, normalize_response_template};
+use crate::path::detect_path_elements_with_body;
 
 pub(crate) fn unix_ms() -> u128 {
     SystemTime::now()
@@ -111,6 +114,38 @@ pub(crate) async fn capture_body<R: AsyncBufRead + Send + 'static>(
         body,
         error,
         truncated,
+    }
+}
+
+pub(crate) struct ClassifiedResponse {
+    pub(crate) headers: Vec<Header>,
+    pub(crate) captured_bytes: usize,
+    pub(crate) error: Option<String>,
+    pub(crate) truncated: bool,
+    pub(crate) outcome: Outcome,
+    pub(crate) path_elements: Vec<PathElement>,
+    pub(crate) cf_ray_provenance: Option<CfRayProvenance>,
+    pub(crate) evidence: BodyEvidence,
+}
+
+/// Decode and classify the exact bounded body both HTTP transports observed.
+pub(crate) async fn capture_classified_response<R: AsyncBufRead + Send + 'static>(
+    reader: R,
+    mut headers: Vec<Header>,
+    limit: usize,
+    content_length: Option<u64>,
+    status: u16,
+) -> ClassifiedResponse {
+    let captured = capture_body(reader, &mut headers, limit, content_length).await;
+    ClassifiedResponse {
+        outcome: classify_response(status, &headers, &captured.body),
+        path_elements: detect_path_elements_with_body(&headers, &captured.body),
+        cf_ray_provenance: detect_cf_ray_provenance(&headers),
+        evidence: body_evidence(&headers, &captured.body),
+        captured_bytes: captured.body.len(),
+        error: captured.error,
+        truncated: captured.truncated,
+        headers,
     }
 }
 

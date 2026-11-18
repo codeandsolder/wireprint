@@ -352,6 +352,16 @@ fn quic_config(raw_peer_transport_parameters: Arc<Mutex<Vec<u8>>>) -> Result<qui
     Ok(config)
 }
 
+fn h3_headers(headers: &[quiche::h3::Header]) -> Vec<Header> {
+    headers
+        .iter()
+        .map(|header| Header {
+            name: String::from_utf8_lossy(header.name()).into_owned(),
+            value: String::from_utf8_lossy(header.value()).into_owned(),
+        })
+        .collect()
+}
+
 async fn flush_quic(
     socket: &UdpSocket,
     conn: &mut quiche::Connection,

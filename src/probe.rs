@@ -7,16 +7,13 @@ use tokio::io::BufReader;
 use tokio_util::io::StreamReader;
 
 use crate::address_family::AddressFamily;
-use crate::cf_ray::detect_cf_ray_provenance;
-use crate::classify_response;
 use crate::dns::{
     RecordingResolver, RoutingDnsSnapshot, RoutingDnsSnapshotter, build_dns_provenance,
     host_from_url, selected_endpoint,
 };
 use crate::h2::{H2Setting, classify_h2_preface, provider_signals as h2_provider_signals};
 use crate::model::{DnsProvenance, Header, Observation, PathElement, RequestProfile};
-use crate::path::detect_path_elements_with_body;
-use crate::probe_common::{body_evidence, capture_body, finalize_observation, unix_ms};
+use crate::probe_common::{capture_classified_response, finalize_observation, unix_ms};
 use crate::routing::detect_routing_snapshot_elements;
 use crate::routing_context::{
     RoutingContextCollector, enrich_observation as enrich_routing_context,
@@ -214,7 +211,7 @@ async fn probe_one(context: &WreqProbeContext<'_>, target: &str) -> Observation 
     let provider_signals = h2_server_preface
         .as_ref()
         .map_or_default(h2_provider_signals);
-    let mut headers = response
+    let headers = response
         .headers()
         .iter()
         .map(|(key, value)| Header {
@@ -240,15 +237,8 @@ async fn probe_one(context: &WreqProbeContext<'_>, target: &str) -> Observation 
         .bytes_stream()
         .map_err(|error| io::Error::other(error.to_string()));
     let reader = BufReader::new(StreamReader::new(stream));
-    let captured = capture_body(reader, &mut headers, body_bytes, content_length).await;
-    let body = captured.body;
-    let body_error = captured.error;
-    let truncated = captured.truncated;
-
-    let outcome = classify_response(status, &headers, &body);
-    let path_elements = detect_path_elements_with_body(&headers, &body);
-    let cf_ray_provenance = detect_cf_ray_provenance(&headers);
-    let body_evidence = body_evidence(&headers, &body);
+    let captured =
+        capture_classified_response(reader, headers, body_bytes, content_length, status).await;
 
     let mut observation = Observation {
         target: target.into(),
@@ -262,7 +252,7 @@ async fn probe_one(context: &WreqProbeContext<'_>, target: &str) -> Observation 
         transport_profile: transport.name.clone(),
         transport: Some(transport.clone()),
         platform: transport.platform().map(|value| value.name().into()),
-        result: if body_error.is_some() {
+        result: if captured.error.is_some() {
             "partial_response"
         } else {
             "response"
@@ -276,9 +266,9 @@ async fn probe_one(context: &WreqProbeContext<'_>, target: &str) -> Observation 
         remote,
         selected_endpoint,
         dns,
-        response_headers: headers,
-        cf_ray_provenance,
-        path_elements,
+        response_headers: captured.headers,
+        cf_ray_provenance: captured.cf_ray_provenance,
+        path_elements: captured.path_elements,
         routing_elements,
         provider_signals,
         routing_context_snapshot: None,
@@ -286,14 +276,14 @@ async fn probe_one(context: &WreqProbeContext<'_>, target: &str) -> Observation 
         h3_server_fingerprint: None,
         tls_server_morphology: None,
         endpoint_assessment: None,
-        body_captured_bytes: Some(body.len()),
-        body_prefix_sha256: Some(body_evidence.sha256),
-        body_template_sha256: body_evidence.template_sha256,
-        body_template_normalizer: body_evidence.template_normalizer,
-        body_prefix: body_evidence.prefix,
-        body_truncated: Some(truncated),
-        outcome: Some(outcome),
-        error: body_error,
+        body_captured_bytes: Some(captured.captured_bytes),
+        body_prefix_sha256: Some(captured.evidence.sha256),
+        body_template_sha256: captured.evidence.template_sha256,
+        body_template_normalizer: captured.evidence.template_normalizer,
+        body_prefix: captured.evidence.prefix,
+        body_truncated: Some(captured.truncated),
+        outcome: Some(captured.outcome),
+        error: captured.error,
     };
     if let Some(collector) = routing_context_collector {
         enrich_routing_context(&mut observation, collector).await;
