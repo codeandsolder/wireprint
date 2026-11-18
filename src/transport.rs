@@ -9,6 +9,12 @@ use wreq::{
 };
 use wreq_util::{Emulation, Platform, Profile};
 
+const ENVOY_TLS13_CIPHERS: &[Tls13Cipher] = &[
+    Tls13Cipher::AES_128_GCM_SHA256,
+    Tls13Cipher::AES_256_GCM_SHA384,
+    Tls13Cipher::CHACHA20_POLY1305_SHA256,
+];
+
 pub const TRANSPORT_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Copy, ValueEnum, Serialize, Deserialize, PartialEq, Eq)]
@@ -352,11 +358,7 @@ impl WreqMeasuredProfileKind {
                         "TLS_RSA_WITH_AES_256_GCM_SHA384:",
                         "TLS_RSA_WITH_AES_256_CBC_SHA"
                     ))
-                    .tls13_cipher_list([
-                        Tls13Cipher::AES_128_GCM_SHA256,
-                        Tls13Cipher::AES_256_GCM_SHA384,
-                        Tls13Cipher::CHACHA20_POLY1305_SHA256,
-                    ])
+                    .tls13_cipher_list(ENVOY_TLS13_CIPHERS)
                     .sigalgs_list(concat!(
                         "ecdsa_secp256r1_sha256:",
                         "rsa_pss_rsae_sha256:",
