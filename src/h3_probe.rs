@@ -1,14 +1,13 @@
-use std::collections::HashSet;
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 use std::slice;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use boring::ssl::{SslContextBuilder, SslMethod};
 use foreign_types_shared::ForeignTypeRef;
 use quiche::h3::NameValue;
-use tokio::net::{ToSocketAddrs, UdpSocket};
+use tokio::net::UdpSocket;
 use url::Url;
 
 use crate::address_family::AddressFamily;
@@ -18,6 +17,7 @@ use crate::fusion::assess_endpoint;
 use crate::h3::{H3ServerFingerprint, H3Setting, classify_h3_quic, provider_signals};
 use crate::model::{DnsProvenance, EndpointEvidence, Header, Observation};
 use crate::path::detect_path_elements;
+use crate::probe_common::{resolve_candidates, unique_ips, unix_ms};
 use crate::routing::detect_routing_snapshot_elements;
 use crate::routing_context::{
     RoutingContextCollector, enrich_observation as enrich_routing_context,
@@ -369,47 +369,4 @@ async fn flush_quic(
             Err(error) => return Err(error).context("generate QUIC datagram"),
         }
     }
-}
-
-async fn resolve_candidates(
-    target: impl ToSocketAddrs,
-    family: AddressFamily,
-) -> Result<Vec<SocketAddr>> {
-    let mut seen = HashSet::new();
-    let mut out = Vec::new();
-    for address in tokio::net::lookup_host(target).await? {
-        if family.accepts(address) && seen.insert(address) {
-            out.push(address);
-        }
-    }
-    Ok(out)
-}
-
-fn unique_ips(ips: impl IntoIterator<Item = IpAddr>) -> Vec<String> {
-    let mut seen = HashSet::new();
-    let mut out = Vec::new();
-    for ip in ips {
-        let text = ip.to_string();
-        if seen.insert(text.clone()) {
-            out.push(text);
-        }
-    }
-    out
-}
-
-fn h3_headers(headers: &[quiche::h3::Header]) -> Vec<Header> {
-    headers
-        .iter()
-        .map(|header| Header {
-            name: String::from_utf8_lossy(header.name()).into_owned(),
-            value: String::from_utf8_lossy(header.value()).into_owned(),
-        })
-        .collect()
-}
-
-fn unix_ms() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
 }

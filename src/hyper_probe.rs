@@ -1,14 +1,12 @@
-use std::fmt::Write as _;
 use std::future::Future;
 use std::io;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use anyhow::{Result, bail};
-use async_compression::tokio::bufread::{BrotliDecoder, GzipDecoder, ZlibDecoder};
 use bytes::Bytes;
 use futures_util::TryStreamExt;
 use http_body_util::{BodyExt, Empty};
@@ -24,8 +22,7 @@ use hyper_util::{
     },
     rt::TokioExecutor,
 };
-use sha2::{Digest, Sha256};
-use tokio::io::{AsyncRead, AsyncReadExt, BufReader};
+use tokio::io::BufReader;
 use tokio_util::io::StreamReader;
 use tower_service::Service;
 use url::Url;
@@ -33,11 +30,10 @@ use url::Url;
 use crate::address_family::AddressFamily;
 use crate::cf_ray::detect_cf_ray_provenance;
 use crate::classify_response;
-use crate::fusion::assess_endpoint;
-use crate::model::{EndpointEvidence, Header, Observation, RequestProfile};
-use crate::normalize::{NORMALIZER_VERSION, normalize_response_template};
+use crate::model::{Header, Observation, RequestProfile};
 use crate::path::detect_path_elements_with_body;
 use crate::probe::ProbeConfig;
+use crate::probe_common::{body_evidence, capture_body, finalize_observation, unix_ms};
 use crate::routing_context::enrich_observation as enrich_routing_context;
 use crate::transport::{HyperRustlsProfileKind, TransportImplementation, TransportProfile};
 
@@ -135,10 +131,7 @@ async fn probe_one(context: &NativeProbeContext<'_>, target: &str) -> Observatio
     let client = context.client;
     let profile = context.profile;
     let started = Instant::now();
-    let observed_unix_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
+    let observed_unix_ms = unix_ms();
     let mut current = match Url::parse(target) {
         Ok(url) => url,
         Err(error) => {
@@ -275,11 +268,11 @@ async fn finalize_response(
         .map(HttpInfo::remote_addr);
     let remote = remote_addr.map(|value| value.to_string());
     let selected_endpoint = remote_addr.map(|value| value.ip().to_string());
-    let encoding = response
+    let content_length = response
         .headers()
-        .get(header::CONTENT_ENCODING)
+        .get(header::CONTENT_LENGTH)
         .and_then(|value| value.to_str().ok())
-        .map(str::to_ascii_lowercase);
+        .and_then(|value| value.parse::<u64>().ok());
     let mut headers = response
         .headers()
         .iter()
@@ -294,54 +287,15 @@ async fn finalize_response(
         .into_data_stream()
         .map_err(|error| io::Error::other(error.to_string()));
     let reader = BufReader::new(StreamReader::new(stream));
-    let mut reader: Pin<Box<dyn AsyncRead + Send>> = match encoding.as_deref() {
-        Some("gzip") => Box::pin(GzipDecoder::new(reader)),
-        Some("br") => Box::pin(BrotliDecoder::new(reader)),
-        Some("deflate") => Box::pin(ZlibDecoder::new(reader)),
-        _ => Box::pin(reader),
-    };
-    if matches!(encoding.as_deref(), Some("gzip" | "br" | "deflate")) {
-        headers.retain(|field| field.name != "content-encoding" && field.name != "content-length");
-    }
-
-    let mut body = Vec::with_capacity(body_bytes.min(64 * 1024));
-    let mut body_error = None;
-    let mut truncated = false;
-    let mut chunk = [0_u8; 8192];
-    while body.len() <= body_bytes {
-        match reader.read(&mut chunk).await {
-            Ok(0) => break,
-            Ok(read) => {
-                let remaining = body_bytes.saturating_sub(body.len());
-                if read > remaining {
-                    body.extend_from_slice(&chunk[..remaining]);
-                    truncated = true;
-                    break;
-                }
-                body.extend_from_slice(&chunk[..read]);
-            }
-            Err(error) => {
-                body_error = Some(error.to_string());
-                break;
-            }
-        }
-    }
+    let captured = capture_body(reader, &mut headers, body_bytes, content_length).await;
+    let body = captured.body;
+    let body_error = captured.error;
+    let truncated = captured.truncated;
 
     let outcome = classify_response(status, &headers, &body);
     let path_elements = detect_path_elements_with_body(&headers, &body);
     let cf_ray_provenance = detect_cf_ray_provenance(&headers);
-    let digest = hex_digest(Sha256::digest(&body));
-    let textual = is_textual_response(&headers, &body);
-    let (template_digest, template_normalizer, body_prefix) = if textual {
-        let normalized = normalize_response_template(&body);
-        (
-            Some(hex_digest(Sha256::digest(normalized.as_bytes()))),
-            Some(NORMALIZER_VERSION.into()),
-            Some(String::from_utf8_lossy(&body).into_owned()),
-        )
-    } else {
-        (None, None, None)
-    };
+    let body_evidence = body_evidence(&headers, &body);
 
     let mut observation = Observation {
         target: target.into(),
@@ -380,10 +334,10 @@ async fn finalize_response(
         tls_server_morphology: None,
         endpoint_assessment: None,
         body_captured_bytes: Some(body.len()),
-        body_prefix_sha256: Some(digest),
-        body_template_sha256: template_digest,
-        body_template_normalizer: template_normalizer,
-        body_prefix,
+        body_prefix_sha256: Some(body_evidence.sha256),
+        body_template_sha256: body_evidence.template_sha256,
+        body_template_normalizer: body_evidence.template_normalizer,
+        body_prefix: body_evidence.prefix,
         body_truncated: Some(truncated),
         outcome: Some(outcome),
         error: body_error,
@@ -391,8 +345,7 @@ async fn finalize_response(
     if let Some(collector) = routing_context_collector {
         enrich_routing_context(&mut observation, collector).await;
     }
-    observation.endpoint_assessment = Some(assess_endpoint(&EndpointEvidence::from(&observation)));
-    observation
+    finalize_observation(observation)
 }
 
 fn error_observation(
@@ -445,32 +398,6 @@ fn error_observation(
         outcome: None,
         error: Some(error),
     }
-}
-
-fn hex_digest(bytes: impl AsRef<[u8]>) -> String {
-    let bytes = bytes.as_ref();
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        let _ = write!(&mut out, "{byte:02x}");
-    }
-    out
-}
-
-fn is_textual_response(headers: &[Header], body: &[u8]) -> bool {
-    let content_type = headers
-        .iter()
-        .find(|field| field.name.eq_ignore_ascii_case("content-type"))
-        .map(|field| field.value.to_ascii_lowercase());
-    content_type.map_or_else(
-        || std::str::from_utf8(body).is_ok(),
-        |value| {
-            value.starts_with("text/")
-                || value.contains("json")
-                || value.contains("javascript")
-                || value.contains("xml")
-                || value.contains("x-www-form-urlencoded")
-        },
-    )
 }
 
 #[cfg(test)]

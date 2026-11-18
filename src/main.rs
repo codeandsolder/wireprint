@@ -494,22 +494,7 @@ fn read_transport_set(path: &Path) -> Result<TransportSet> {
 
 fn run_classify(args: &ClassifyArgs) -> Result<()> {
     if let Some(input) = &args.input {
-        let reader =
-            BufReader::new(File::open(input).with_context(|| format!("open {}", input.display()))?);
-        for (index, line) in reader.lines().enumerate() {
-            let line_number = index + 1;
-            let line =
-                line.with_context(|| format!("read {} line {line_number}", input.display()))?;
-            if line.trim().is_empty() {
-                continue;
-            }
-            let mut row: serde_json::Value = serde_json::from_str(&line)
-                .with_context(|| format!("parse {} line {line_number}", input.display()))?;
-            classify_outcome_replay_row(&mut row)
-                .with_context(|| format!("classify {} line {line_number}", input.display()))?;
-            println!("{}", serde_json::to_string(&row)?);
-        }
-        return Ok(());
+        return replay_jsonl(input, "classify", classify_outcome_replay_row);
     }
 
     let body_path = args
@@ -528,27 +513,64 @@ fn run_classify(args: &ClassifyArgs) -> Result<()> {
     Ok(())
 }
 
+/// Process replay streams line by line without buffering the archive in memory.
+fn replay_jsonl(
+    input: &Path,
+    operation: &str,
+    mut update: impl FnMut(&mut serde_json::Value) -> Result<()>,
+) -> Result<()> {
+    let reader =
+        BufReader::new(File::open(input).with_context(|| format!("open {}", input.display()))?);
+    for (index, line) in reader.lines().enumerate() {
+        let line_number = index + 1;
+        let line = line.with_context(|| format!("read {} line {line_number}", input.display()))?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let mut row: serde_json::Value = serde_json::from_str(&line)
+            .with_context(|| format!("parse {} line {line_number}", input.display()))?;
+        update(&mut row)
+            .with_context(|| format!("{operation} {} line {line_number}", input.display()))?;
+        println!("{}", serde_json::to_string(&row)?);
+    }
+    Ok(())
+}
+
+fn replay_headers(
+    object: &serde_json::Map<String, serde_json::Value>,
+    kind: &str,
+) -> Result<Vec<Header>> {
+    serde_json::from_value(
+        object
+            .get("headers")
+            .with_context(|| format!("{kind} replay row must contain a `headers` array"))?
+            .clone(),
+    )
+    .with_context(|| format!("{kind} replay `headers` must match the Header schema"))
+}
+
+fn replay_body_prefix<'a>(
+    object: &'a serde_json::Map<String, serde_json::Value>,
+    kind: &str,
+) -> Result<&'a [u8]> {
+    match object.get("body_prefix") {
+        Some(serde_json::Value::String(text)) => Ok(text.as_bytes()),
+        Some(serde_json::Value::Null) | None => Ok(&[]),
+        Some(_) => bail!("{kind} replay `body_prefix` must be a string or null"),
+    }
+}
+
 fn classify_outcome_replay_row(row: &mut serde_json::Value) -> Result<()> {
     let object = row
         .as_object_mut()
         .context("outcome replay row must be a JSON object")?;
-    let headers: Vec<Header> = serde_json::from_value(
-        object
-            .get("headers")
-            .context("outcome replay row must contain a `headers` array")?
-            .clone(),
-    )
-    .context("outcome replay `headers` must match the Header schema")?;
+    let headers = replay_headers(object, "outcome")?;
     let status = object
         .get("status")
         .and_then(serde_json::Value::as_u64)
         .and_then(|value| u16::try_from(value).ok())
         .context("outcome replay `status` must be a valid HTTP status integer")?;
-    let body = match object.get("body_prefix") {
-        Some(serde_json::Value::String(text)) => text.as_bytes(),
-        Some(serde_json::Value::Null) | None => &[],
-        Some(_) => bail!("outcome replay `body_prefix` must be a string or null"),
-    };
+    let body = replay_body_prefix(object, "outcome")?;
     let outcome = classify_response(status, &headers, body);
     let _ = object.insert("outcome".into(), serde_json::to_value(outcome)?);
     Ok(())
@@ -577,40 +599,15 @@ fn run_path(args: &PathArgs) -> Result<()> {
         return Ok(());
     };
 
-    let reader =
-        BufReader::new(File::open(input).with_context(|| format!("open {}", input.display()))?);
-    for (index, line) in reader.lines().enumerate() {
-        let line_number = index + 1;
-        let line = line.with_context(|| format!("read {} line {line_number}", input.display()))?;
-        if line.trim().is_empty() {
-            continue;
-        }
-
-        let mut row: serde_json::Value = serde_json::from_str(&line)
-            .with_context(|| format!("parse {} line {line_number}", input.display()))?;
-        classify_path_replay_row(&mut row)
-            .with_context(|| format!("classify {} line {line_number}", input.display()))?;
-        println!("{}", serde_json::to_string(&row)?);
-    }
-    Ok(())
+    replay_jsonl(input, "classify", classify_path_replay_row)
 }
 
 fn classify_path_replay_row(row: &mut serde_json::Value) -> Result<()> {
     let object = row
         .as_object_mut()
         .context("path replay row must be a JSON object")?;
-    let headers: Vec<Header> = serde_json::from_value(
-        object
-            .get("headers")
-            .context("path replay row must contain a `headers` array")?
-            .clone(),
-    )
-    .context("path replay `headers` must match the wireprint Header schema")?;
-    let body = match object.get("body_prefix") {
-        Some(serde_json::Value::String(body)) => body.as_bytes(),
-        None | Some(serde_json::Value::Null) => &[],
-        Some(_) => bail!("path replay `body_prefix` must be a string or null"),
-    };
+    let headers = replay_headers(object, "path")?;
+    let body = replay_body_prefix(object, "path")?;
     let elements = detect_path_elements_with_body(&headers, body);
     let _ = object.insert(
         "path_classifier".into(),
@@ -729,6 +726,21 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shared_replay_fields_keep_optional_body_and_report_kind() {
+        let row = serde_json::json!({
+            "headers": [{"name":"Content-Type","value":"text/plain"}],
+            "body_prefix": null
+        });
+        let object = row.as_object().unwrap();
+        assert_eq!(replay_headers(object, "outcome").unwrap().len(), 1);
+        assert!(replay_body_prefix(object, "path").unwrap().is_empty());
+
+        let invalid = serde_json::json!({"headers": [], "body_prefix": 3});
+        let error = replay_body_prefix(invalid.as_object().unwrap(), "path").unwrap_err();
+        assert!(error.to_string().contains("path replay"));
+    }
 
     #[test]
     fn path_replay_preserves_input_fields_and_adds_versioned_results() {

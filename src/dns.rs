@@ -2,7 +2,6 @@ use std::collections::{HashMap, HashSet};
 use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use hickory_resolver::{
     TokioResolver,
@@ -14,6 +13,7 @@ use wreq::dns::{Addrs, GaiResolver, Name, Resolve, Resolving};
 
 use crate::address_family::AddressFamily;
 use crate::model::{DnsCnameLink, DnsProvenance, DnsRouteAnswer};
+use crate::probe_common::{unique_ips, unix_ms};
 
 pub const DNS_CAPTURE_VERSION: &str = "builtin-dns-v2";
 
@@ -331,27 +331,8 @@ pub(crate) fn host_from_url(value: &str) -> Option<String> {
     Url::parse(value).ok()?.host_str().map(normalize_dns_name)
 }
 
-fn unique_ips(ips: impl IntoIterator<Item = IpAddr>) -> Vec<String> {
-    let mut seen = HashSet::new();
-    let mut out = Vec::new();
-    for ip in ips {
-        let text = ip.to_string();
-        if seen.insert(text.clone()) {
-            out.push(text);
-        }
-    }
-    out
-}
-
 fn normalize_dns_name(value: &str) -> String {
     value.trim().trim_end_matches('.').to_ascii_lowercase()
-}
-
-fn unix_ms() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
 }
 
 #[cfg(test)]

@@ -1,17 +1,16 @@
-use std::collections::HashSet;
 use std::io::{ErrorKind, Read};
-use std::net::{IpAddr, SocketAddr, TcpStream};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::net::{SocketAddr, TcpStream};
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow, bail};
 use boring::ssl::{SslConnector, SslMethod, SslVersion};
-use tokio::net::ToSocketAddrs;
 use url::Url;
 
 use crate::address_family::AddressFamily;
 use crate::dns::{DNS_CAPTURE_VERSION, RoutingDnsSnapshotter};
 use crate::fusion::assess_endpoint;
 use crate::model::{DnsProvenance, EndpointEvidence, Observation};
+use crate::probe_common::{resolve_candidates, unique_ips, unix_ms};
 use crate::routing::detect_routing_snapshot_elements;
 use crate::routing_context::{
     RoutingContextCollector, enrich_observation as enrich_routing_context,
@@ -219,37 +218,4 @@ fn profile_name(config: &TlsProbeConfig) -> String {
         || "boringssl-h2-tls13-v1".into(),
         |groups| format!("boringssl-h2-tls13-v1:groups={groups}"),
     )
-}
-
-async fn resolve_candidates(
-    target: impl ToSocketAddrs,
-    family: AddressFamily,
-) -> Result<Vec<SocketAddr>> {
-    let mut seen = HashSet::new();
-    let mut out = Vec::new();
-    for address in tokio::net::lookup_host(target).await? {
-        if family.accepts(address) && seen.insert(address) {
-            out.push(address);
-        }
-    }
-    Ok(out)
-}
-
-fn unique_ips(ips: impl IntoIterator<Item = IpAddr>) -> Vec<String> {
-    let mut seen = HashSet::new();
-    let mut out = Vec::new();
-    for ip in ips {
-        let text = ip.to_string();
-        if seen.insert(text.clone()) {
-            out.push(text);
-        }
-    }
-    out
-}
-
-fn unix_ms() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
 }
