@@ -240,10 +240,6 @@ fn same_origin(left: &Url, right: &Url) -> bool {
         && left.port_or_known_default() == right.port_or_known_default()
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "response capture, decoding, classification, and evidence fusion are intentionally emitted as one observation transaction"
-)]
 async fn finalize_response(
     response: hyper::Response<hyper::body::Incoming>,
     context: &NativeProbeContext<'_>,

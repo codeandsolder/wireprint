@@ -22,14 +22,14 @@ use crate::model::{CfRayProvenance, EndpointEvidence, Header, Observation, Outco
 use crate::normalize::{NORMALIZER_VERSION, normalize_response_template};
 use crate::path::detect_path_elements_with_body;
 
-pub(crate) fn unix_ms() -> u128 {
+pub fn unix_ms() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis()
 }
 
-pub(crate) fn unique_ips(ips: impl IntoIterator<Item = IpAddr>) -> Vec<String> {
+pub fn unique_ips(ips: impl IntoIterator<Item = IpAddr>) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut out = Vec::new();
     for ip in ips {
@@ -42,7 +42,7 @@ pub(crate) fn unique_ips(ips: impl IntoIterator<Item = IpAddr>) -> Vec<String> {
 }
 
 /// Resolve and filter before selecting a peer, with no cross-family fallback.
-pub(crate) async fn resolve_candidates(
+pub async fn resolve_candidates(
     target: impl ToSocketAddrs,
     family: AddressFamily,
 ) -> Result<Vec<SocketAddr>> {
@@ -56,15 +56,15 @@ pub(crate) async fn resolve_candidates(
     Ok(out)
 }
 
-pub(crate) struct CapturedBody {
-    pub(crate) body: Vec<u8>,
-    pub(crate) error: Option<String>,
-    pub(crate) truncated: bool,
+pub struct CapturedBody {
+    pub body: Vec<u8>,
+    pub error: Option<String>,
+    pub truncated: bool,
 }
 
 /// Decode known content codings, remove invalidated representation headers,
 /// and read at most `limit` bytes plus one lookahead for truncation.
-pub(crate) async fn capture_body<R: AsyncBufRead + Send + 'static>(
+pub async fn capture_body<R: AsyncBufRead + Send + 'static>(
     reader: R,
     headers: &mut Vec<Header>,
     limit: usize,
@@ -117,19 +117,19 @@ pub(crate) async fn capture_body<R: AsyncBufRead + Send + 'static>(
     }
 }
 
-pub(crate) struct ClassifiedResponse {
-    pub(crate) headers: Vec<Header>,
-    pub(crate) captured_bytes: usize,
-    pub(crate) error: Option<String>,
-    pub(crate) truncated: bool,
-    pub(crate) outcome: Outcome,
-    pub(crate) path_elements: Vec<PathElement>,
-    pub(crate) cf_ray_provenance: Option<CfRayProvenance>,
-    pub(crate) evidence: BodyEvidence,
+pub struct ClassifiedResponse {
+    pub headers: Vec<Header>,
+    pub captured_bytes: usize,
+    pub error: Option<String>,
+    pub truncated: bool,
+    pub outcome: Outcome,
+    pub path_elements: Vec<PathElement>,
+    pub cf_ray_provenance: Option<CfRayProvenance>,
+    pub evidence: BodyEvidence,
 }
 
 /// Decode and classify the exact bounded body both HTTP transports observed.
-pub(crate) async fn capture_classified_response<R: AsyncBufRead + Send + 'static>(
+pub async fn capture_classified_response<R: AsyncBufRead + Send + 'static>(
     reader: R,
     mut headers: Vec<Header>,
     limit: usize,
@@ -149,14 +149,14 @@ pub(crate) async fn capture_classified_response<R: AsyncBufRead + Send + 'static
     }
 }
 
-pub(crate) struct BodyEvidence {
-    pub(crate) sha256: String,
-    pub(crate) template_sha256: Option<String>,
-    pub(crate) template_normalizer: Option<String>,
-    pub(crate) prefix: Option<String>,
+pub struct BodyEvidence {
+    pub sha256: String,
+    pub template_sha256: Option<String>,
+    pub template_normalizer: Option<String>,
+    pub prefix: Option<String>,
 }
 
-pub(crate) fn body_evidence(headers: &[Header], body: &[u8]) -> BodyEvidence {
+pub fn body_evidence(headers: &[Header], body: &[u8]) -> BodyEvidence {
     let sha256 = hex_digest(Sha256::digest(body));
     if !is_textual_response(headers, body) {
         return BodyEvidence {
@@ -201,7 +201,7 @@ fn is_textual_response(headers: &[Header], body: &[u8]) -> bool {
     )
 }
 
-pub(crate) fn finalize_observation(mut observation: Observation) -> Observation {
+pub fn finalize_observation(mut observation: Observation) -> Observation {
     observation.endpoint_assessment = Some(assess_endpoint(&EndpointEvidence::from(&observation)));
     observation
 }
