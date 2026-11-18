@@ -2,12 +2,12 @@ use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
 use hickory_resolver::TokioResolver;
 
 use crate::model::{Observation, RoutingContext, RoutingContextSnapshot};
+use crate::probe_common::unix_ms;
 
 pub const ROUTING_CONTEXT_VERSION: &str = "builtin-routing-context-v1";
 const CYMRU_SOURCE: &str = "team-cymru-ip-to-asn";
@@ -360,13 +360,6 @@ fn nonempty(value: Option<&str>) -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_owned)
-}
-
-fn unix_ms() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
 }
 
 #[cfg(test)]

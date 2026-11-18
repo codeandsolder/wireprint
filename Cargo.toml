@@ -2,7 +2,7 @@
 name = "wireprint"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.99.1"
+rust-version = "1.100.0"
 description = "Cross-layer HTTP edge fingerprinting and benign request-identity differential tooling"
 repository = "https://github.com/codeandsolder/wireprint"
 
