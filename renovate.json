@@ -2,5 +2,20 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "github>codeandsolder/ci-workflows:renovate-fleet"
+  ],
+  "packageRules": [
+    {
+      "description": "Wreq and btls share one native BoringSSL provider. Upgrades require one validated Wreq SHA plus matching direct TLS dependencies; independent digest PRs cannot resolve Cargo native links.",
+      "matchManagers": [
+        "cargo"
+      ],
+      "matchPackageNames": [
+        "btls",
+        "btls-sys",
+        "wreq",
+        "wreq-util"
+      ],
+      "enabled": false
+    }
   ]
 }
