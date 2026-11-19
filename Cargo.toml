@@ -33,7 +33,7 @@ sha2 = "0.11"
 tokio = { version = "1.52", features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }
 url = "2.5"
 wreq = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "e74951071b409f5721783e13411b3a573ab101ef", features = ["gzip", "brotli", "deflate", "stream"] }
-wreq-util = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "e74951071b409f5721783e13411b3a573ab101ef", features = ["tokio-rt"] }
+wreq-util = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "9efff9bbbdc1ac4cda7a8afdf61af60946997398", features = ["tokio-rt"] }
 
 [dev-dependencies]
 pretty_assertions = "1"
