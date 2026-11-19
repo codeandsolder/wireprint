@@ -18,7 +18,7 @@ rustls = { version = "=0.23.46", default-features = false, features = ["ring", "
 tokio-util = { version = "0.7", features = ["io"] }
 tower-service = "0.3"
 btls = { git = "https://github.com/0x676e67/btls", rev = "8879c026b548c25441f83ff58b39d7e22ba1b5b1" }
-btls-sys = { git = "https://github.com/0x676e67/btls", rev = "8879c026b548c25441f83ff58b39d7e22ba1b5b1" }
+btls-sys = { git = "https://github.com/0x676e67/btls", rev = "3c1dd080ba617d78c63cd09285d2ce31abcdcbf9" }
 foreign-types = "0.5"
 # Use quiche's native TLS FFI, backed by the same unprefixed BoringSSL as Wreq.
 # The raw wire API avoids an observer-specific SSL callback.
