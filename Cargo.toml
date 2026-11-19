@@ -22,7 +22,7 @@ btls-sys = { git = "https://github.com/0x676e67/btls", rev = "3c1dd080ba617d78c6
 foreign-types = "0.5"
 # Use quiche's native TLS FFI, backed by the same unprefixed BoringSSL as Wreq.
 # The raw wire API avoids an observer-specific SSL callback.
-quiche = { git = "https://github.com/codeandsolder/quiche-fast.git", rev = "3029ae3ffd6a3813fad30a1bc88a6b76397a75b4", default-features = false }
+quiche = { git = "https://github.com/codeandsolder/quiche-fast.git", rev = "fefa20acb6a0210a9190efaacb51074c4edbba09", default-features = false }
 clap = { version = "4.5", features = ["derive"] }
 futures-util = "0.3"
 hickory-resolver = { version = "0.26.3", default-features = false, features = ["system-config", "tokio"] }
