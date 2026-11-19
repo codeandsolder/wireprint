@@ -2,7 +2,7 @@
 
 Wireprint uses one unprefixed BoringSSL provider for its direct TLS observer, Wreq browser emulations and quiche QUIC. The Cargo btls-sys package has native links = "btls", so different Git revisions of btls-sys cannot coexist. A mechanically independent digest update is therefore not a valid way to upgrade the TLS stack.
 
-The Wreq fork pins btls, btls-sys and tokio-btls as a group. Wireprint's direct btls and btls-sys dependencies **must** use that same revision; its wreq, wreq-util and [patch.crates-io].wreq entries **must** use the same Wreq Git commit. Renovate excludes those four dependency names in Wireprint, but continues to update other dependencies such as quiche normally.
+The Wreq fork pins btls, btls-sys and tokio-btls as a group. Wireprint's direct btls and btls-sys dependencies **must** use that same revision; its wreq, wreq-util and [patch.crates-io].wreq entries **must** use the same Wreq Git commit. Renovate excludes those four dependency names in Wireprint, but continues to update other dependencies such as quiche normally. Match their Renovate depName (Cargo crate aliases), not packageName (the underlying Git repository URL).
 
 To upgrade:
 

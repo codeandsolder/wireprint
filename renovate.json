@@ -9,7 +9,7 @@
       "matchManagers": [
         "cargo"
       ],
-      "matchPackageNames": [
+      "matchDepNames": [
         "btls",
         "btls-sys",
         "wreq",
