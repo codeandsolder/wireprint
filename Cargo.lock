@@ -1248,7 +1248,7 @@ dependencies = [
 [[package]]
 name = "octets"
 version = "0.3.7"
-source = "git+https://github.com/codeandsolder/quiche-fast.git?rev=8df4bd43e2c6c14c0302b9dcc851afe2088841af#8df4bd43e2c6c14c0302b9dcc851afe2088841af"
+source = "git+https://github.com/codeandsolder/quiche-fast.git?rev=c371c9b52f92a2f64901cd2d5a5daa4292911724#c371c9b52f92a2f64901cd2d5a5daa4292911724"
 
 [[package]]
 name = "once_cell"
@@ -1366,7 +1366,7 @@ dependencies = [
 [[package]]
 name = "quiche"
 version = "0.30.0"
-source = "git+https://github.com/codeandsolder/quiche-fast.git?rev=8df4bd43e2c6c14c0302b9dcc851afe2088841af#8df4bd43e2c6c14c0302b9dcc851afe2088841af"
+source = "git+https://github.com/codeandsolder/quiche-fast.git?rev=c371c9b52f92a2f64901cd2d5a5daa4292911724#c371c9b52f92a2f64901cd2d5a5daa4292911724"
 dependencies = [
  "bytes",
  "either",
