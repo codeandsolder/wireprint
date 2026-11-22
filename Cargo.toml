@@ -41,6 +41,10 @@ pretty_assertions = "1"
 [patch.crates-io]
 wreq = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "e74951071b409f5721783e13411b3a573ab101ef" }
 
+# Temporary, exact-revision btls-sys build-system patch (see vendor/README.md).
+[patch."https://github.com/0x676e67/btls"]
+btls-sys = { path = "vendor/btls-sys" }
+
 [lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
 missing_debug_implementations = "warn"
@@ -74,3 +78,6 @@ allow_attributes_without_reason = "deny"
 broken_intra_doc_links = "deny"
 private_intra_doc_links = "warn"
 missing_crate_level_docs = "warn"
+
+[workspace]
+exclude = ["vendor/btls-sys"]

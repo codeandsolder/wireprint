@@ -1,0 +1,45 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: gngpp <gngppz@gmail.com>
+Date: Thu, 18 Sep 2026 00:00:00 +0800
+Subject: [PATCH] boringssl: skip compiler-generated helpers in the symbol audit
+
+Auditing libssl, not just libcrypto, reaches the helper functions the compiler
+emits for C++ code, such as MSVC's array constructor and destructor iterators.
+They belong to the compiler runtime rather than BoringSSL, carry no identifier
+prefixing could rewrite, and being weak they merge instead of colliding. The
+surrounding list already skips their siblings, `__cxa_*`, the unwinder
+personalities and the RTTI records.
+
+Copyright (c) 2025-2026 0x676e67 <gngppz@gmail.com>
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+Upgrade to BoringSSL 0.20260929.0: upstream now skips
+`__clang_call_terminate` itself (d9cace2c9) and audits libssl
+(e98a65645), so only the MSVC iterator rule remains.
+---
+ util/audit_symbols.go | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/util/audit_symbols.go b/util/audit_symbols.go
+index bd066fa27..2825b351e 100644
+--- a/util/audit_symbols.go
++++ b/util/audit_symbols.go
+@@ -81,6 +81,7 @@ var skipWeakSymbols = []*regexp.Regexp{
+ 	regexp.MustCompile(`^\?\?_C\@_.*`),                                  // String literals
+ 	regexp.MustCompile(`^\?\?_R[0-4].*$`),                               // RTTI
+ 	regexp.MustCompile(`^\?__empty_global_delete(@.*)?$`),               // operator delete()
++	regexp.MustCompile(`^\?\?_[HIJLMN]@Y.*`),                            // Array ctor/dtor iterators
+ 	regexp.MustCompile(`^\?memchr(@.*)?$`),                              // memchr()
+ 	regexp.MustCompile(`^\?strchr(@.*)?$`),                              // strchr()
+ 	regexp.MustCompile(`^_Avx2WmemEnabledWeakValue$`),                   // MSVC 14.50+ CRT

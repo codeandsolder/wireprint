@@ -191,7 +191,6 @@ dependencies = [
 [[package]]
 name = "btls-sys"
 version = "0.5.6"
-source = "git+https://github.com/0x676e67/btls?rev=3c1dd080ba617d78c63cd09285d2ce31abcdcbf9#3c1dd080ba617d78c63cd09285d2ce31abcdcbf9"
 dependencies = [
  "bindgen",
  "cmake",

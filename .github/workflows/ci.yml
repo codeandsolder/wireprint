@@ -25,6 +25,7 @@ jobs:
     with:
       cargo-args: "--locked --workspace --all-targets --all-features"
       allow-test-panics: true
+      checkout-submodules: "true"
 
   rust-current-linux:
     name: Rust 1.100.0 Linux checks and tests
@@ -37,7 +38,17 @@ jobs:
       rust-components: "clippy rustfmt"
       rustflags: "-C target-cpu=x86-64-v2"
       command: |
-        cargo +1.100.0 metadata --locked --format-version 1 >/dev/null
+        git submodule update --init vendor/btls-sys/deps/boringssl
+        # A source-only btls update must not silently pair a new wrapper with
+        # this frozen native binding crate. Remove or refresh the patch first.
+        cargo +1.100.0 metadata --locked --format-version 1 | jq -e '
+          [.packages[] | select(.name == "btls-sys")] as $sys
+          | ($sys | length == 1)
+            and ($sys[0].source == null)
+            and ($sys[0].manifest_path | endswith("/vendor/btls-sys/Cargo.toml"))
+            and all(.packages[] | select(.name == "btls" or .name == "tokio-btls");
+              .source | endswith("#3c1dd080ba617d78c63cd09285d2ce31abcdcbf9"))
+        ' >/dev/null
         cargo +1.100.0 fmt --all -- --check
         CARGO_BUILD_WARNINGS=deny cargo +1.100.0 check --locked --workspace --all-targets --all-features
         CARGO_BUILD_WARNINGS=deny cargo +1.100.0 clippy --locked --workspace --all-features -- -D warnings
