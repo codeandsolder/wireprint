@@ -1,3 +1,4 @@
 [submodule "vendor/btls-sys/deps/boringssl"]
 	path = vendor/btls-sys/deps/boringssl
 	url = https://github.com/google/boringssl.git
+	shallow = true
