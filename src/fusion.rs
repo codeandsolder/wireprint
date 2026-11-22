@@ -83,7 +83,7 @@ fn add_routing_elements(
 /// may originate a termination candidate. TLS morphology is confirmatory-only.
 /// Application-platform and middleware path elements remain participation claims
 /// and are preserved verbatim rather than being promoted into outer providers.
-#[must_use]
+#[must_use = "the assessment is returned rather than stored"]
 pub fn assess_endpoint(evidence: &EndpointEvidence) -> EndpointAssessment {
     let mut candidates = BTreeMap::<String, CandidateBuilder>::new();
     let mut path_elements = Vec::new();

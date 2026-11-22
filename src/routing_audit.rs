@@ -114,7 +114,7 @@ struct HostBuild {
     endpoints: BTreeSet<String>,
 }
 
-#[must_use]
+#[must_use = "the derived audit samples are returned rather than stored"]
 pub fn samples_from_observations(observations: &[Observation]) -> Vec<RoutingAuditSample> {
     observations
         .iter()
@@ -161,7 +161,7 @@ pub fn samples_from_observations(observations: &[Observation]) -> Vec<RoutingAud
         .collect()
 }
 
-#[must_use]
+#[must_use = "the audit results are returned rather than stored"]
 #[expect(
     clippy::too_many_lines,
     reason = "the audit is a single corpus accounting pass whose host/ASN/provider invariants are easiest to verify together"

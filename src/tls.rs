@@ -1,9 +1,12 @@
 use std::collections::BTreeMap;
 use std::ffi::{CStr, c_void};
 use std::slice;
+use std::sync::{LazyLock, Mutex};
 
 use anyhow::{Context, Result, bail};
-use btls::ssl::SslRef;
+use btls::error::ErrorStack;
+use btls::ex_data::Index;
+use btls::ssl::{Ssl, SslRef};
 use foreign_types::ForeignTypeRef;
 use serde::{Deserialize, Serialize};
 
@@ -117,74 +120,122 @@ enum CapturedTlsEvent {
 #[derive(Debug, Default)]
 struct CaptureState {
     events: Vec<CapturedTlsEvent>,
+    incomplete: bool,
 }
 
-#[derive(Debug)]
-pub(crate) struct TlsMessageCapture {
-    state: Box<CaptureState>,
+type CaptureIndex = Index<Ssl, Mutex<CaptureState>>;
+
+// BoringSSL allocates extra-data indices process-wide. Reuse one typed
+// index for all connections instead of allocating an index per handshake.
+static CAPTURE_INDEX: LazyLock<Result<CaptureIndex, ErrorStack>> =
+    LazyLock::new(Ssl::new_ex_index::<Mutex<CaptureState>>);
+
+fn capture_index() -> Result<CaptureIndex> {
+    CAPTURE_INDEX
+        .as_ref()
+        .copied()
+        .map_err(|error| anyhow::anyhow!("allocate TLS capture index: {error}"))
 }
 
-impl Default for TlsMessageCapture {
-    fn default() -> Self {
-        Self {
-            state: Box::new(CaptureState::default()),
+/// Install a per-connection message callback whose state is owned by SSL.
+pub(crate) fn install_message_capture(ssl: &mut SslRef) -> Result<()> {
+    let index = capture_index()?;
+    if ssl.ex_data(index).is_some() {
+        bail!("TLS message capture already installed");
+    }
+    let state = Box::into_raw(Box::new(Mutex::new(CaptureState::default())));
+    // SAFETY: the private typed index was allocated with the destructor
+    // for Box<Mutex<CaptureState>>. The exclusive SSL reference ensures
+    // no callback runs during installation. On success SSL owns the box;
+    // on failure the pointer has not been installed and remains ours.
+    unsafe {
+        if btls_sys::SSL_set_ex_data(ssl.as_ptr(), index.as_raw(), state.cast()) != 1 {
+            drop(Box::from_raw(state));
+            bail!("install TLS capture state");
         }
+        btls_sys::SSL_set_msg_callback(ssl.as_ptr(), Some(raw_message_callback));
+        btls_sys::SSL_set_msg_callback_arg(ssl.as_ptr(), std::ptr::null_mut());
     }
+    Ok(())
 }
 
-impl TlsMessageCapture {
-    /// Install a per-connection `BoringSSL` message callback.
-    ///
-    /// `BoringSSL` invokes this synchronously with complete, already-decrypted
-    /// handshake messages and compatibility CCS bodies. The capture object must
-    /// outlive the SSL object on which it is installed.
-    pub(crate) fn install(&mut self, ssl: &mut SslRef) {
-        let arg = (&raw mut *self.state).cast::<c_void>();
-        // SAFETY: `arg` points into the stable allocation owned by `self.state`.
-        // The only call site keeps this capture alive until after the SSL stream
-        // is dropped, and BoringSSL invokes the callback synchronously.
-        unsafe {
-            btls_sys::SSL_set_msg_callback(ssl.as_ptr(), Some(raw_message_callback));
-            btls_sys::SSL_set_msg_callback_arg(ssl.as_ptr(), arg);
-        }
+pub(crate) fn captured_morphology(
+    ssl: &SslRef,
+    client_profile: impl Into<String>,
+    selected_alpn: Option<&[u8]>,
+) -> Result<TlsServerMorphology> {
+    let client_profile = client_profile.into();
+    let state = ssl
+        .ex_data(capture_index()?)
+        .context("TLS capture not installed")?;
+    let state = state
+        .lock()
+        .map_err(|_| anyhow::anyhow!("TLS capture lock poisoned"))?;
+    if state.incomplete {
+        bail!("TLS message capture incomplete");
     }
-
-    pub fn morphology(
-        &self,
-        client_profile: impl Into<String>,
-        selected_alpn: Option<&[u8]>,
-    ) -> Result<TlsServerMorphology> {
-        parse_capture(&self.state.events, client_profile.into(), selected_alpn)
-    }
+    parse_capture(&state.events, client_profile, selected_alpn)
 }
 
+// SAFETY contract: BoringSSL invokes this synchronously with a live SSL
+// and a readable message buffer of the stated length for this invocation.
 unsafe extern "C" fn raw_message_callback(
     is_write: i32,
     _version: i32,
     content_type: i32,
     buf: *const c_void,
     len: usize,
-    _ssl: *mut btls_sys::SSL,
-    arg: *mut c_void,
+    ssl: *mut btls_sys::SSL,
+    _arg: *mut c_void,
 ) {
-    if is_write != 0 || arg.is_null() {
+    if is_write != 0
+        || ssl.is_null()
+        || !matches!(content_type, TLS_HANDSHAKE | TLS_CHANGE_CIPHER_SPEC)
+    {
         return;
     }
-    // SAFETY: `install` supplies a non-null pointer to a live `CaptureState`,
-    // and the capture outlives every callback invocation for this SSL object.
-    let state = unsafe { &mut *arg.cast::<CaptureState>() };
-    match content_type {
-        TLS_HANDSHAKE if !buf.is_null() && len >= 4 => {
-            // SAFETY: BoringSSL guarantees `buf` addresses `len` bytes for the
-            // duration of this synchronous callback; the bytes are copied now.
-            let bytes = unsafe { slice::from_raw_parts(buf.cast::<u8>(), len) };
-            state
-                .events
-                .push(CapturedTlsEvent::Handshake(bytes.to_vec()));
-        }
-        TLS_CHANGE_CIPHER_SPEC => state.events.push(CapturedTlsEvent::ChangeCipherSpec),
-        _ => {}
+    let Ok(index) = &*CAPTURE_INDEX else {
+        return;
+    };
+    // SAFETY: SSL is live for the callback. The private index holds only
+    // a Mutex<CaptureState> owned by this SSL, with the matching destructor.
+    let state = unsafe {
+        btls_sys::SSL_get_ex_data(ssl, index.as_raw())
+            .cast::<Mutex<CaptureState>>()
+            .as_ref()
+    };
+    let Some(state) = state else {
+        return;
+    };
+    let Ok(mut state) = state.lock() else {
+        return;
+    };
+    if state.incomplete {
+        return;
     }
+    let event = if content_type == TLS_HANDSHAKE {
+        if buf.is_null() || len < 4 || len > isize::MAX.cast_unsigned() {
+            state.incomplete = true;
+            return;
+        }
+        // SAFETY: BoringSSL supplies a readable buffer for this callback;
+        // the checked length also satisfies Rust's slice size limit.
+        let bytes = unsafe { slice::from_raw_parts(buf.cast::<u8>(), len) };
+        let mut message = Vec::new();
+        if message.try_reserve_exact(len).is_err() {
+            state.incomplete = true;
+            return;
+        }
+        message.extend_from_slice(bytes);
+        CapturedTlsEvent::Handshake(message)
+    } else {
+        CapturedTlsEvent::ChangeCipherSpec
+    };
+    if state.events.try_reserve(1).is_err() {
+        state.incomplete = true;
+        return;
+    }
+    state.events.push(event);
 }
 
 #[derive(Debug)]
@@ -621,7 +672,7 @@ fn matches_fastly_default_profile(morphology: &TlsServerMorphology) -> bool {
         })
 }
 
-#[must_use]
+#[must_use = "the derived provider signals must be consumed to affect the assessment"]
 pub fn provider_signals(morphology: &TlsServerMorphology) -> Vec<ProviderSignal> {
     let Some(matched) = &morphology.family_match else {
         return Vec::new();
@@ -652,7 +703,7 @@ fn grease_count(extensions: &[TlsExtensionShape]) -> usize {
         .count()
 }
 
-#[must_use]
+#[must_use = "the returned predicate identifies GREASE values"]
 pub const fn is_grease_u16(value: u16) -> bool {
     let [high, low] = value.to_be_bytes();
     (value & 0x0f0f) == 0x0a0a && high == low
@@ -749,6 +800,69 @@ impl<'a> Cursor<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn message_capture_belongs_to_each_ssl_connection() -> Result<()> {
+        use btls::ssl::{SslContextBuilder, SslMethod};
+
+        let context = SslContextBuilder::new(SslMethod::tls())?.build();
+        let mut first = Ssl::new(&context)?;
+        let mut second = Ssl::new(&context)?;
+        install_message_capture(&mut first)?;
+        install_message_capture(&mut second)?;
+        assert!(install_message_capture(&mut first).is_err());
+
+        let messages = [
+            server_hello([0; 32], 29, &[43, 51]),
+            hs(HS_ENCRYPTED_EXTENSIONS, &[0, 0]),
+        ];
+        for message in &messages {
+            // SAFETY: SSL is live and message is readable for the stated
+            // length. Invoke the same callback BoringSSL registered.
+            unsafe {
+                raw_message_callback(
+                    0,
+                    0,
+                    TLS_HANDSHAKE,
+                    message.as_ptr().cast(),
+                    message.len(),
+                    first.as_ptr(),
+                    std::ptr::null_mut(),
+                );
+            }
+        }
+        let first_shape = captured_morphology(&first, "test", None)?;
+        assert_eq!(first_shape.handshake_messages.len(), 2);
+        let index = capture_index()?;
+        let second_state = second.ex_data(index).context("missing capture")?;
+        assert!(
+            second_state
+                .lock()
+                .map_err(|_| anyhow::anyhow!("poisoned"))?
+                .events
+                .is_empty()
+        );
+
+        // An unusable message must not silently produce a complete capture.
+        // SAFETY: SSL is live; the callback explicitly rejects a null buffer
+        // before accessing its bytes.
+        unsafe {
+            raw_message_callback(
+                0,
+                0,
+                TLS_HANDSHAKE,
+                std::ptr::null(),
+                4,
+                second.as_ptr(),
+                std::ptr::null_mut(),
+            );
+        }
+        let error = captured_morphology(&second, "test", None)
+            .err()
+            .context("expected incomplete capture error")?;
+        assert_eq!(error.to_string(), "TLS message capture incomplete");
+        Ok(())
+    }
 
     fn hs(message_type: u8, body: &[u8]) -> Vec<u8> {
         let length = body.len() as u32;

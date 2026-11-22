@@ -397,7 +397,7 @@ fn looks_like_f5_asm_ts_cookie(name: &str) -> bool {
     clippy::too_many_lines,
     reason = "response marker recognition is an ordered audit table; splitting it would obscure precedence and deduplication"
 )]
-#[must_use]
+#[must_use = "the detected path evidence is returned rather than stored"]
 pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
     let mut elements = Vec::new();
     let cookies = cookie_names(headers);
@@ -1835,7 +1835,7 @@ pub fn detect_path_elements(headers: &[Header]) -> Vec<PathElement> {
 /// challenge pages from the two script tags authored by Anubis itself.
 /// Only the first 64 KiB is inspected. HTTP/3's header-only observer should
 /// continue to use `detect_path_elements`.
-#[must_use]
+#[must_use = "the detected path evidence is returned rather than stored"]
 pub fn detect_path_elements_with_body(headers: &[Header], body: &[u8]) -> Vec<PathElement> {
     let mut elements = detect_path_elements(headers);
     if has_anubis_challenge_scripts(body) {

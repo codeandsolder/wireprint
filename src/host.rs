@@ -607,7 +607,7 @@ fn observation_host(observation: &Observation) -> Option<String> {
         })
 }
 
-#[must_use]
+#[must_use = "the aggregated assessments are returned rather than stored"]
 pub fn aggregate_observations(
     observations: &[Observation],
     config: HostAggregationConfig,

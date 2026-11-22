@@ -290,7 +290,7 @@ fn corpus_document_gate(status: u16, lower: &str) -> Option<Outcome> {
     None
 }
 
-#[must_use]
+#[must_use = "the response classification is returned rather than stored"]
 pub fn classify_response(status: u16, headers: &[Header], body: &[u8]) -> Outcome {
     let body = String::from_utf8_lossy(body);
     let lower = body.to_ascii_lowercase();

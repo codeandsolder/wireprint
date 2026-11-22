@@ -15,7 +15,9 @@ use crate::routing::detect_routing_snapshot_elements;
 use crate::routing_context::{
     RoutingContextCollector, enrich_observation as enrich_routing_context,
 };
-use crate::tls::{TlsMessageCapture, TlsServerMorphology, provider_signals};
+use crate::tls::{
+    TlsServerMorphology, captured_morphology, install_message_capture, provider_signals,
+};
 
 #[derive(Debug, Clone)]
 pub struct TlsProbeConfig {
@@ -173,8 +175,7 @@ fn observe_tls(config: BlockingTlsConfig) -> Result<BlockingTlsResult> {
             .with_context(|| format!("configure TLS groups {groups}"))?;
     }
 
-    let mut capture = TlsMessageCapture::default();
-    capture.install(&mut ssl);
+    install_message_capture(&mut ssl)?;
     let mut tls = ssl
         .connect(tcp)
         .map_err(|error| anyhow!("TLS handshake failed: {error}"))?;
@@ -202,7 +203,7 @@ fn observe_tls(config: BlockingTlsConfig) -> Result<BlockingTlsResult> {
     }
 
     let selected_alpn = tls.ssl().selected_alpn_protocol();
-    let mut morphology = capture.morphology(config.profile, selected_alpn)?;
+    let mut morphology = captured_morphology(tls.ssl(), config.profile, selected_alpn)?;
     morphology.post_handshake_window_ms = Some(config.post_handshake_window.as_millis());
     Ok(BlockingTlsResult {
         actual_peer,

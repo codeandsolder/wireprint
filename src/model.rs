@@ -279,7 +279,7 @@ pub struct DnsProvenance {
 
 impl DnsProvenance {
     /// Address membership only: does not certify unrelated CNAMEs.
-    #[must_use]
+    #[must_use = "the binding describes how evidence relates to the selected endpoint"]
     pub fn routing_snapshot_binding(
         &self,
         selected_endpoint: Option<&str>,
@@ -304,7 +304,7 @@ impl DnsProvenance {
     }
 
     /// Only address-owner-linked alias evidence can vote for termination.
-    #[must_use]
+    #[must_use = "only the returned evidence is bound to the selected endpoint"]
     pub fn bound_routing_evidence(&self, selected_endpoint: Option<&str>) -> Vec<String> {
         let Some(peer) = selected_endpoint.and_then(|text| text.parse::<IpAddr>().ok()) else {
             return Vec::new();

@@ -37,7 +37,7 @@ impl Default for RoutingContextCollector {
 }
 
 impl RoutingContextCollector {
-    #[must_use]
+    #[must_use = "the constructed collector is needed to perform lookups"]
     pub fn new() -> Self {
         let built =
             TokioResolver::builder_tokio().and_then(hickory_resolver::ResolverBuilder::build);
