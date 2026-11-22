@@ -41,7 +41,7 @@ Built-in outcome classes currently include:
 
 ## Build
 
-Rust **1.100.0** is pinned in `rust-toolchain.toml`.
+The native dated Rust nightly is pinned in `rust-toolchain.toml`.
 
 ```bash
 cargo build --release
