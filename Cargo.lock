@@ -179,7 +179,7 @@ dependencies = [
 [[package]]
 name = "btls"
 version = "0.5.6"
-source = "git+https://github.com/0x676e67/btls?rev=3c1dd080ba617d78c63cd09285d2ce31abcdcbf9#3c1dd080ba617d78c63cd09285d2ce31abcdcbf9"
+source = "git+https://github.com/codeandsolder/btls-fast.git?rev=91fb0b88c9895f97c37f39a2db265742575a8096#91fb0b88c9895f97c37f39a2db265742575a8096"
 dependencies = [
  "bitflags",
  "btls-sys",
@@ -191,6 +191,7 @@ dependencies = [
 [[package]]
 name = "btls-sys"
 version = "0.5.6"
+source = "git+https://github.com/codeandsolder/btls-fast.git?rev=91fb0b88c9895f97c37f39a2db265742575a8096#91fb0b88c9895f97c37f39a2db265742575a8096"
 dependencies = [
  "bindgen",
  "cmake",
@@ -786,7 +787,7 @@ dependencies = [
 [[package]]
 name = "http2"
 version = "0.5.20"
-source = "git+https://github.com/codeandsolder/wreq-exp.git?rev=e74951071b409f5721783e13411b3a573ab101ef#e74951071b409f5721783e13411b3a573ab101ef"
+source = "git+https://github.com/codeandsolder/wreq-exp.git?rev=85ef8ac0fdbd6b311ffc412aaea68f0eff98ee59#85ef8ac0fdbd6b311ffc412aaea68f0eff98ee59"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -1209,7 +1210,7 @@ checksum = "27b02d87554356db9e9a873add8782d4ea6e3e58ea071a9adb9a2e8ddb884a8b"
 [[package]]
 name = "netty"
 version = "0.2.5"
-source = "git+https://github.com/codeandsolder/wreq-exp.git?rev=e74951071b409f5721783e13411b3a573ab101ef#e74951071b409f5721783e13411b3a573ab101ef"
+source = "git+https://github.com/codeandsolder/wreq-exp.git?rev=85ef8ac0fdbd6b311ffc412aaea68f0eff98ee59#85ef8ac0fdbd6b311ffc412aaea68f0eff98ee59"
 dependencies = [
  "bytes",
  "futures-channel",
@@ -1793,7 +1794,7 @@ dependencies = [
 [[package]]
 name = "tokio-btls"
 version = "0.5.6"
-source = "git+https://github.com/0x676e67/btls?rev=3c1dd080ba617d78c63cd09285d2ce31abcdcbf9#3c1dd080ba617d78c63cd09285d2ce31abcdcbf9"
+source = "git+https://github.com/codeandsolder/btls-fast.git?rev=91fb0b88c9895f97c37f39a2db265742575a8096#91fb0b88c9895f97c37f39a2db265742575a8096"
 dependencies = [
  "btls",
  "btls-sys",
@@ -2266,7 +2267,7 @@ dependencies = [
 [[package]]
 name = "wreq"
 version = "0.16.1"
-source = "git+https://github.com/codeandsolder/wreq-exp.git?rev=e74951071b409f5721783e13411b3a573ab101ef#e74951071b409f5721783e13411b3a573ab101ef"
+source = "git+https://github.com/codeandsolder/wreq-exp.git?rev=85ef8ac0fdbd6b311ffc412aaea68f0eff98ee59#85ef8ac0fdbd6b311ffc412aaea68f0eff98ee59"
 dependencies = [
  "btls",
  "btls-sys",
@@ -2297,7 +2298,7 @@ dependencies = [
 [[package]]
 name = "wreq-util"
 version = "0.2.0"
-source = "git+https://github.com/codeandsolder/wreq-exp.git?rev=e74951071b409f5721783e13411b3a573ab101ef#e74951071b409f5721783e13411b3a573ab101ef"
+source = "git+https://github.com/codeandsolder/wreq-exp.git?rev=85ef8ac0fdbd6b311ffc412aaea68f0eff98ee59#85ef8ac0fdbd6b311ffc412aaea68f0eff98ee59"
 dependencies = [
  "brotli",
  "flate2",
