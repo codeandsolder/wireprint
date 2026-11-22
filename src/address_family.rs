@@ -14,7 +14,7 @@ pub enum AddressFamily {
 }
 
 impl AddressFamily {
-    #[must_use]
+    #[must_use = "address acceptance is returned without altering the address"]
     pub const fn accepts(self, address: SocketAddr) -> bool {
         match self {
             Self::Auto => true,
@@ -24,7 +24,7 @@ impl AddressFamily {
     }
 
     /// Preserve DNS result order and remove addresses from other families.
-    #[must_use]
+    #[must_use = "the filtered addresses are returned as a new collection"]
     pub fn filter(self, addresses: impl IntoIterator<Item = SocketAddr>) -> Vec<SocketAddr> {
         addresses
             .into_iter()

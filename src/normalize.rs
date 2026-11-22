@@ -32,7 +32,7 @@ fn replace_if_compiled(
 /// The raw captured bytes and raw SHA-256 remain authoritative. This normalizer only removes
 /// a small set of high-churn values observed in challenge/interstitial templates: UUIDs, long
 /// hex tokens, HTML nonces, and `DataDome` `cid`/`cookie` object values.
-#[must_use]
+#[must_use = "the normalized template is returned rather than modifying the input"]
 pub fn normalize_response_template(body: &[u8]) -> String {
     let mut value = String::from_utf8_lossy(body).into_owned();
     value = replace_if_compiled(value, &UUID, "<uuid>");

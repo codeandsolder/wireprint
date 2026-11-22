@@ -514,7 +514,7 @@ fn add(elements: &mut Vec<PathElement>, role: PathElementRole, product: &str, ev
     clippy::too_many_lines,
     reason = "routing namespace recognition is an ordered audit table kept contiguous for reviewability"
 )]
-#[must_use]
+#[must_use = "the detected routing evidence is returned rather than stored"]
 pub fn detect_routing_elements(host: &str, cname_chain: &[String]) -> Vec<PathElement> {
     let mut elements = Vec::new();
 
@@ -990,7 +990,7 @@ pub fn detect_routing_elements(host: &str, cname_chain: &[String]) -> Vec<PathEl
 
 /// Preserve every *reachable* CNAME target from either independent DNS query.
 /// Disconnected RRs are kept in the raw query but cannot claim routing participation.
-#[must_use]
+#[must_use = "the detected routing evidence is returned rather than stored"]
 pub fn detect_routing_snapshot_elements(dns: &DnsProvenance) -> Vec<PathElement> {
     use std::collections::HashSet;
 

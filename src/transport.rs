@@ -45,7 +45,7 @@ pub enum BuiltinTransport {
 }
 
 impl BuiltinTransport {
-    #[must_use]
+    #[must_use = "the returned name identifies the selected variant"]
     pub const fn name(self) -> &'static str {
         match self {
             Self::Plain => "plain",
@@ -63,7 +63,7 @@ impl BuiltinTransport {
         }
     }
 
-    #[must_use]
+    #[must_use = "the constructed profile is returned rather than installed"]
     pub fn into_profile(self, platform: PlatformKind) -> TransportProfile {
         let explicit_platform = self.requires_explicit_platform().then_some(platform);
         TransportProfile {
@@ -260,12 +260,12 @@ impl TransportProfile {
         Ok(())
     }
 
-    #[must_use]
+    #[must_use = "the returned predicate indicates whether the profile can run"]
     pub const fn runnable(&self) -> bool {
         self.implementation.is_some()
     }
 
-    #[must_use]
+    #[must_use = "the returned platform identifies the profile's execution target"]
     pub fn platform(&self) -> Option<PlatformKind> {
         match self.implementation.as_ref() {
             Some(TransportImplementation::Builtin { profile, platform }) => {
@@ -519,7 +519,7 @@ pub enum PlatformKind {
 }
 
 impl PlatformKind {
-    #[must_use]
+    #[must_use = "the returned name identifies the selected variant"]
     pub const fn name(self) -> &'static str {
         match self {
             Self::Windows => "windows",

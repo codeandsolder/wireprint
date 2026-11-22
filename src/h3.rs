@@ -275,7 +275,7 @@ pub fn classify_h3_quic(
     })
 }
 
-#[must_use]
+#[must_use = "the derived provider signals must be consumed to affect the assessment"]
 pub fn provider_signals(fingerprint: &H3ServerFingerprint) -> Vec<ProviderSignal> {
     let Some(exact) = fingerprint.exact_match.as_ref() else {
         return Vec::new();
@@ -298,12 +298,12 @@ pub fn provider_signals(fingerprint: &H3ServerFingerprint) -> Vec<ProviderSignal
     }]
 }
 
-#[must_use]
+#[must_use = "the returned predicate determines whether a setting is GREASE"]
 pub const fn is_h3_grease_setting(id: u64) -> bool {
     id >= 0x21 && (id - 0x21).is_multiple_of(0x1f)
 }
 
-#[must_use]
+#[must_use = "the returned predicate identifies GREASE transport parameters"]
 pub const fn is_quic_transport_parameter_grease(id: u64) -> bool {
     id >= 27 && (id - 27).is_multiple_of(31)
 }
