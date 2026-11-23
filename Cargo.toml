@@ -41,6 +41,7 @@ pretty_assertions = "1"
 [patch.crates-io]
 wreq = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "85ef8ac0fdbd6b311ffc412aaea68f0eff98ee59" }
 
+zlib-rs = { git = "https://github.com/codeandsolder/zlib-rs-fast.git", rev = "1ec3a5612ee28803a7756fa52bd013389507a2db" }
 [lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
 missing_debug_implementations = "warn"
