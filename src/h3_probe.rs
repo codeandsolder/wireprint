@@ -106,7 +106,7 @@ pub async fn probe_h3(target: &str, config: &H3ProbeConfig) -> Result<Observatio
     btls::rand::rand_bytes(&mut scid_bytes)?;
     let scid = quiche::ConnectionId::from_ref(&scid_bytes);
     let mut conn = quiche::connect(Some(&host), &scid, local, peer, &mut quic_config)?;
-    let h3_config = quiche::h3::Config::new()?;
+    let h3_config = quiche::h3::Config::new();
     let mut h3 = None;
     let mut request_stream_id = None;
     let mut response_headers = None;
