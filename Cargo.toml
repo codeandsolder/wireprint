@@ -32,14 +32,14 @@ serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.11"
 tokio = { version = "1.52", features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }
 url = "2.5"
-wreq = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "85ef8ac0fdbd6b311ffc412aaea68f0eff98ee59", features = ["gzip", "brotli", "deflate", "stream"] }
-wreq-util = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "85ef8ac0fdbd6b311ffc412aaea68f0eff98ee59", features = ["tokio-rt"] }
+wreq = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "aad8f97d78e40c4c9fc0ddbb0cf88af870f848ac", features = ["gzip", "brotli", "deflate", "stream"] }
+wreq-util = { git = "https://github.com/codeandsolder/cargo-patches.git", tag = "wreq-util-v0.0.2", features = ["tokio-rt"] }
 
 [dev-dependencies]
 pretty_assertions = "1"
 
 [patch.crates-io]
-wreq = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "85ef8ac0fdbd6b311ffc412aaea68f0eff98ee59" }
+wreq = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "aad8f97d78e40c4c9fc0ddbb0cf88af870f848ac" }
 
 zlib-rs = { git = "https://github.com/codeandsolder/zlib-rs-fast.git", rev = "1ec3a5612ee28803a7756fa52bd013389507a2db" }
 [lints.rust]

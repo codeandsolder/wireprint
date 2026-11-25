@@ -48,7 +48,7 @@ cargo build --release
 cargo test
 ```
 
-The transport layer uses the pinned [`wreq` fork](https://github.com/codeandsolder/wreq-exp) and its matching vendored `wreq-util` browser profiles, with a separate pinned `hyper` + `hyper-rustls` + `rustls/ring` backend for header-neutral reconstructed transports. The TLS morphology observer and `quiche` HTTP/3 observer share the same pinned `btls`/BoringSSL provider, avoiding conflicting native SSL libraries; quiche directly exposes the validated raw QUIC transport-parameter bytes. `Cargo.lock` is part of the fingerprinting state: transport-relevant transitive versions can change emitted TLS/H2/H3 morphology even when Wireprint source does not. The [coordinated TLS dependency upgrade procedure](docs/dependency-synchronization.md) keeps Wreq and the native TLS provider synchronized.
+The transport layer uses the pinned [`wreq` fork](https://github.com/codeandsolder/wreq-exp) and its matching [published `wreq-util` browser profiles](https://github.com/codeandsolder/cargo-patches), with a separate pinned `hyper` + `hyper-rustls` + `rustls/ring` backend for header-neutral reconstructed transports. The TLS morphology observer and `quiche` HTTP/3 observer share the same pinned `btls`/BoringSSL provider, avoiding conflicting native SSL libraries; quiche directly exposes the validated raw QUIC transport-parameter bytes. `Cargo.lock` is part of the fingerprinting state: transport-relevant transitive versions can change emitted TLS/H2/H3 morphology even when Wireprint source does not. The [coordinated TLS dependency upgrade procedure](docs/dependency-synchronization.md) keeps Wreq and the native TLS provider synchronized.
 
 ## Probe one identity
 

@@ -44,6 +44,9 @@ jobs:
             and ($tls | map(.source) | unique | length == 1)
             and all($tls[]; .source | startswith("git+https://github.com/codeandsolder/btls-fast.git?rev="))
             and ([.packages[] | select(.name == "boring-sys")] | length == 0)
+            and (.packages as $packages | all(["wreq", "wreq-util", "http2", "netty"][]; . as $name | ([$packages[] | select(.name == $name)] | length == 1)))
+            and ([.packages[] | select(.name == "http2" or .name == "netty") | .source] | unique | length == 1)
+
         ' >/dev/null
         cargo fmt --all -- --check
         CARGO_BUILD_WARNINGS=deny cargo check --locked --workspace --all-targets --all-features
