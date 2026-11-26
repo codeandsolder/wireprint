@@ -6,34 +6,47 @@ rust-version = "1.100.0"
 description = "Cross-layer HTTP edge fingerprinting and benign request-identity differential tooling"
 repository = "https://github.com/codeandsolder/wireprint"
 
+[workspace]
+members = ["crates/wireprint-transport"]
+resolver = "3"
+
+[features]
+default = ["active-probes"]
+active-probes = ["dep:async-compression", "dep:bytes", "dep:http-body-util", "dep:hyper", "dep:hyper-rustls", "dep:hyper-util", "dep:rustls", "dep:tokio-util", "dep:tower-service", "dep:quiche", "dep:futures-util", "dep:hickory-resolver", "dep:tokio", "wreq/gzip", "wreq/brotli", "wreq/deflate", "wreq/stream"]
+
+[[bin]]
+name = "wireprint"
+path = "src/main.rs"
+required-features = ["active-probes"]
+
 [dependencies]
 anyhow = "1"
-async-compression = { version = "0.4", features = ["tokio", "gzip", "brotli", "zlib"] }
-bytes = "1"
-http-body-util = "0.1"
-hyper = { version = "=1.12.0", features = ["client", "http1", "http2"] }
-hyper-rustls = { version = "=0.27.10", default-features = false, features = ["http1", "http2", "webpki-roots", "ring"] }
-hyper-util = { version = "=0.1.21", features = ["client", "client-legacy", "http1", "http2", "tokio"] }
-rustls = { version = "=0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
-tokio-util = { version = "0.7", features = ["io"] }
-tower-service = "0.3"
+async-compression = { version = "0.4", features = ["tokio", "gzip", "brotli", "zlib"], optional = true }
+bytes = { version = "1", optional = true }
+http-body-util = { version = "0.1", optional = true }
+hyper = { version = "=1.12.0", features = ["client", "http1", "http2"], optional = true }
+hyper-rustls = { version = "=0.27.10", default-features = false, features = ["http1", "http2", "webpki-roots", "ring"], optional = true }
+hyper-util = { version = "=0.1.21", features = ["client", "client-legacy", "http1", "http2", "tokio"], optional = true }
+rustls = { version = "=0.23.46", default-features = false, features = ["ring", "std", "tls12"], optional = true }
+tokio-util = { version = "0.7", features = ["io"], optional = true }
+tower-service = { version = "0.3", optional = true }
 btls = { git = "https://github.com/codeandsolder/btls-fast.git", rev = "91fb0b88c9895f97c37f39a2db265742575a8096" }
 btls-sys = { git = "https://github.com/codeandsolder/btls-fast.git", rev = "91fb0b88c9895f97c37f39a2db265742575a8096" }
 foreign-types = "0.5"
 # Use quiche's native TLS FFI, backed by the same unprefixed BoringSSL as Wreq.
 # The raw wire API avoids an observer-specific SSL callback.
-quiche = { git = "https://github.com/codeandsolder/quiche-fast.git", rev = "19ef65c7b2ad48cb53cb904516b1666039b8f7e1", default-features = false }
+quiche = { git = "https://github.com/codeandsolder/quiche-fast.git", rev = "19ef65c7b2ad48cb53cb904516b1666039b8f7e1", default-features = false, optional = true }
 clap = { version = "4.5", features = ["derive"] }
-futures-util = "0.3"
-hickory-resolver = { version = "0.26.3", default-features = false, features = ["system-config", "tokio"] }
+futures-util = { version = "0.3", optional = true }
+hickory-resolver = { version = "0.26.3", default-features = false, features = ["system-config", "tokio"], optional = true }
 regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.11"
-tokio = { version = "1.52", features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }
+tokio = { version = "1.52", features = ["io-util", "macros", "net", "rt-multi-thread", "time"], optional = true }
 url = "2.5"
-wreq = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "aad8f97d78e40c4c9fc0ddbb0cf88af870f848ac", features = ["gzip", "brotli", "deflate", "stream"] }
-wreq-util = { git = "https://github.com/codeandsolder/cargo-patches.git", tag = "wreq-util-v0.0.2", features = ["tokio-rt"] }
+wreq = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "aad8f97d78e40c4c9fc0ddbb0cf88af870f848ac" }
+wireprint-transport = { path = "crates/wireprint-transport", version = "0.1.0" }
 
 [dev-dependencies]
 pretty_assertions = "1"
@@ -42,7 +55,10 @@ pretty_assertions = "1"
 wreq = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "aad8f97d78e40c4c9fc0ddbb0cf88af870f848ac" }
 
 zlib-rs = { git = "https://github.com/codeandsolder/zlib-rs-fast.git", rev = "1ec3a5612ee28803a7756fa52bd013389507a2db" }
-[lints.rust]
+[lints]
+workspace = true
+
+[workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
 missing_debug_implementations = "warn"
 rust_2024_compatibility = { level = "warn", priority = -1 }
@@ -51,7 +67,7 @@ unfulfilled_lint_expectations = "deny"
 unused_results = "warn"
 unused_qualifications = "warn"
 
-[lints.clippy]
+[workspace.lints.clippy]
 correctness = { level = "deny", priority = -1 }
 suspicious = { level = "deny", priority = -1 }
 style = { level = "deny", priority = -1 }
@@ -71,7 +87,7 @@ await_holding_lock = "deny"
 allow_attributes = "deny"
 allow_attributes_without_reason = "deny"
 
-[lints.rustdoc]
+[workspace.lints.rustdoc]
 broken_intra_doc_links = "deny"
 private_intra_doc_links = "warn"
 missing_crate_level_docs = "warn"
