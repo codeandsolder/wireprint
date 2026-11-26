@@ -141,7 +141,7 @@ mod tests {
                 headers.push_str(&line);
             }
             let mut payload = [0; 3];
-            stream.read_exact(&mut payload).await?;
+            let _ = stream.read_exact(&mut payload).await?;
             assert_eq!(&payload, b"abc");
             let lower = headers.to_ascii_lowercase();
             assert!(headers.starts_with("PUT /bucket/object%20name HTTP/1.1\r\n"));

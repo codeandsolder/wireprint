@@ -43,7 +43,9 @@ pub fn h2_from_wreq_response(response: &wreq::Response) -> Option<H2ServerPrefac
 }
 
 /// Classify an existing observation using its actual headers, bounded decoded
-/// body prefix, DNS and transport evidence. The caller owns body capture and
+/// body prefix, DNS and transport evidence.
+///
+/// The caller owns body capture and
 /// decides whether to persist raw body bytes separately. This function clears
 /// any previously stored raw body prefix. Repeated calls replace derived
 /// evidence rather than append duplicate provider signals.
