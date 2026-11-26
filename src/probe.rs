@@ -11,7 +11,7 @@ use crate::dns::{
     RecordingResolver, RoutingDnsSnapshot, RoutingDnsSnapshotter, build_dns_provenance,
     host_from_url, selected_endpoint,
 };
-use crate::h2::{H2Setting, classify_h2_preface, provider_signals as h2_provider_signals};
+use crate::h2::provider_signals as h2_provider_signals;
 use crate::model::{DnsProvenance, Header, Observation, PathElement, RequestProfile};
 use crate::probe_common::{capture_classified_response, finalize_observation, unix_ms};
 use crate::routing::detect_routing_snapshot_elements;
@@ -190,24 +190,7 @@ async fn probe_one(context: &WreqProbeContext<'_>, target: &str) -> Observation 
     let remote_addr = response.remote_addr();
     let remote = remote_addr.map(|value| value.to_string());
     let content_length = response.content_length();
-    let h2_server_preface = response
-        .extensions()
-        .get::<wreq::http2::Http2Info>()
-        .map(|info| {
-            classify_h2_preface(
-                info.peer_initial_settings_received(),
-                info.peer_initial_settings()
-                    .iter()
-                    .map(|setting| H2Setting {
-                        id: setting.id(),
-                        value: setting.value(),
-                    })
-                    .collect(),
-                info.peer_first_connection_window_update(),
-                info.peer_first_connection_window_update_before_settings_ack(),
-                info.peer_acknowledged_local_initial_settings(),
-            )
-        });
+    let h2_server_preface = crate::passive::h2_from_wreq_response(&response);
     let provider_signals = h2_server_preface
         .as_ref()
         .map_or_default(h2_provider_signals);

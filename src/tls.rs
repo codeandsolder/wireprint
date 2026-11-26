@@ -138,7 +138,10 @@ fn capture_index() -> Result<CaptureIndex> {
 }
 
 /// Install a per-connection message callback whose state is owned by SSL.
-pub(crate) fn install_message_capture(ssl: &mut SslRef) -> Result<()> {
+///
+/// # Errors
+/// Returns an error if the capture state cannot be installed or is already present.
+pub fn install_message_capture(ssl: &mut SslRef) -> Result<()> {
     let index = capture_index()?;
     if ssl.ex_data(index).is_some() {
         bail!("TLS message capture already installed");
@@ -159,7 +162,11 @@ pub(crate) fn install_message_capture(ssl: &mut SslRef) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn captured_morphology(
+/// Classify the handshake messages captured on this actual TLS connection.
+///
+/// # Errors
+/// Returns an error if capture is absent, incomplete, or invalid.
+pub fn captured_morphology(
     ssl: &SslRef,
     client_profile: impl Into<String>,
     selected_alpn: Option<&[u8]>,

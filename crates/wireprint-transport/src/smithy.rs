@@ -18,10 +18,18 @@ use aws_smithy_types::body::SdkBody;
 
 type Timeouts = (Option<Duration>, Option<Duration>);
 
-#[derive(Debug)]
 struct Connector {
     client: Result<wreq::Client, String>,
     read_timeout: Option<Duration>,
+}
+
+impl std::fmt::Debug for Connector {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Connector")
+            .field("read_timeout", &self.read_timeout)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Connector {

@@ -48,6 +48,11 @@ jobs:
             and ([.packages[] | select(.name == "http2" or .name == "netty") | .source] | unique | length == 1)
 
         ' >/dev/null
+        # Embedded diagnostics must not compile comparative TLS backends or active QUIC probes.
+        cargo metadata --locked --no-default-features --format-version 1 | jq -e '
+          all(.packages[]; (.name | test("^(rustls|hyper-rustls|openssl|openssl-sys|native-tls|aws-lc-rs|aws-lc-sys|quiche)$")) | not)
+        ' >/dev/null
+        cargo test --locked -p wireprint --no-default-features --lib --tests
         cargo fmt --all -- --check
         CARGO_BUILD_WARNINGS=deny cargo check --locked --workspace --all-targets --all-features
         CARGO_BUILD_WARNINGS=deny cargo clippy --locked --workspace --all-features -- -D warnings

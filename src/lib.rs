@@ -8,28 +8,37 @@
 pub mod address_family;
 pub mod cf_ray;
 pub mod classify;
+#[cfg(feature = "active-probes")]
 pub mod dns;
 pub mod fusion;
 pub mod h2;
 pub mod h3;
+#[cfg(feature = "active-probes")]
 pub mod h3_probe;
 pub mod host;
+#[cfg(feature = "active-probes")]
 mod hyper_probe;
 pub mod model;
 pub mod normalize;
+pub mod passive;
 pub mod path;
+#[cfg(feature = "active-probes")]
 pub mod probe;
+#[cfg(feature = "active-probes")]
 mod probe_common;
 pub mod routing;
 pub mod routing_audit;
+#[cfg(feature = "active-probes")]
 pub mod routing_context;
 pub mod tls;
+#[cfg(feature = "active-probes")]
 pub mod tls_probe;
 pub use wireprint_transport as transport;
 
 pub use address_family::AddressFamily;
 pub use cf_ray::{CF_RAY_PROVENANCE_VERSION, detect_cf_ray_provenance};
 pub use classify::classify_response;
+#[cfg(feature = "active-probes")]
 pub use dns::DNS_CAPTURE_VERSION;
 pub use fusion::{ENDPOINT_FUSION_VERSION, assess_endpoint};
 pub use h2::{
@@ -41,6 +50,7 @@ pub use h3::{
     H3Setting, QuicStableTransportParameters, QuicTransportParameterWire, QuicTransportStructure,
     QuicVersionInformation, classify_h3_quic, provider_signals as h3_provider_signals,
 };
+#[cfg(feature = "active-probes")]
 pub use h3_probe::{H3ProbeConfig, probe_h3};
 pub use host::{
     DEFAULT_HOST_FRESHNESS_WINDOW_MS, DEFAULT_SUPPORT_BUCKET_MS, HOST_FUSION_VERSION,
@@ -57,6 +67,7 @@ pub use model::{
 };
 pub use normalize::{NORMALIZER_VERSION, normalize_response_template};
 pub use path::{PATH_CLASSIFIER_VERSION, detect_path_elements, detect_path_elements_with_body};
+#[cfg(feature = "active-probes")]
 pub use probe::{ProbeConfig, probe_batch};
 pub use routing::{
     ROUTING_CLASSIFIER_VERSION, detect_routing_elements, detect_routing_snapshot_elements,
@@ -66,6 +77,7 @@ pub use routing_audit::{
     ROUTING_CONTEXT_AUDIT_VERSION, RoutingAuditSample, RoutingContextAudit, audit_routing_samples,
     samples_from_observations,
 };
+#[cfg(feature = "active-probes")]
 pub use routing_context::{
     ROUTING_CONTEXT_VERSION, RoutingContextCollector, enrich_observation as enrich_routing_context,
     observation_routing_address,
@@ -74,6 +86,7 @@ pub use tls::{
     TLS_MORPHOLOGY_VERSION, TlsExtensionShape, TlsHandshakeMessageShape, TlsMorphologyMatch,
     TlsServerMorphology, TlsSessionTicketShape, provider_signals as tls_provider_signals,
 };
+#[cfg(feature = "active-probes")]
 pub use tls_probe::{TlsProbeConfig, probe_tls};
 pub use transport::{
     BuiltinTransport, HyperRustlsProfileKind, PlatformKind, TRANSPORT_SCHEMA_VERSION,
