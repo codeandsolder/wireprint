@@ -19,22 +19,17 @@ env:
   CARGO_BUILD_WARNINGS: deny
 
 jobs:
-  strict-rust:
-    name: Strict Rust
-    uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@cc0c19b7564aaf100c6a802826b0224c87d19b88 # main
-    with:
-      cargo-args: "--locked --workspace --all-targets --all-features"
-      allow-test-panics: true
-
   rust-current-linux:
     name: Native nightly Linux checks and tests
     permissions:
       contents: read
-    uses: codeandsolder/ci-workflows/.github/workflows/rust-sccache.yml@3f6eb6d7cc2125a063bec3a23de8457d2fff29a3 # main
+    uses: codeandsolder/ci-workflows/.github/workflows/rust-sccache.yml@169c8823c1bb0f5e5645ad813b441d605d49d5bb # main
     with:
       runner: ubuntu-26.04
       rust-components: "clippy rustfmt"
       rustflags: "-C target-cpu=x86-64-v2"
+      strict-suites: |
+        [{"name":"all-features","cargo":["--locked","--workspace","--all-targets","--all-features"],"allow-test-panics":true}]
       command: |
         # Require the wrapper family to resolve to one immutable fork source.
         cargo metadata --locked --format-version 1 | jq -e '
@@ -53,8 +48,6 @@ jobs:
           all(.packages[]; (.name | test("^(rustls|hyper-rustls|openssl|openssl-sys|native-tls|aws-lc-rs|aws-lc-sys|quiche)$")) | not)
         ' >/dev/null
         cargo test --locked -p wireprint --no-default-features --lib --tests
-        cargo fmt --all -- --check
         CARGO_BUILD_WARNINGS=deny cargo check --locked --workspace --all-targets --all-features
-        CARGO_BUILD_WARNINGS=deny cargo clippy --locked --workspace --all-features -- -D warnings
         cargo test --locked --workspace --all-features
         RUSTDOCFLAGS='-D warnings' cargo doc --locked --workspace --all-features --no-deps
