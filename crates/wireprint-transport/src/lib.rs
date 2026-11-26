@@ -1,3 +1,5 @@
+//! Reusable transport profile configuration, independent of diagnostic probes.
+
 use std::collections::HashSet;
 
 use anyhow::{Result, bail};
@@ -7,7 +9,7 @@ use wreq::{
     http2::{Http2Options, PseudoId, PseudoOrder, SettingId, SettingsOrder},
     tls::{AlpnProtocol, ExtensionType, KeyShare, Tls13Cipher, TlsOptions, TlsVersion},
 };
-use wreq_util::{Emulation, Platform, Profile};
+pub use wreq_util::{Emulation, Platform, Profile};
 
 const ENVOY_TLS13_CIPHERS: &[Tls13Cipher] = &[
     Tls13Cipher::AES_128_GCM_SHA256,
@@ -133,6 +135,7 @@ impl BuiltinTransport {
                     .emulation(browser_emulation(
                         Profile::Chrome149,
                         self.required_platform(platform)?.into(),
+                        false,
                     ))
                     .http2_options(None);
             }
@@ -141,35 +144,50 @@ impl BuiltinTransport {
                     .emulation(browser_emulation(
                         Profile::Chrome149,
                         self.required_platform(platform)?.into(),
+                        false,
                     ))
                     .tls_options(None);
             }
             Self::SafariIos18 => {
-                builder =
-                    builder.emulation(browser_emulation(Profile::SafariIos18_1_1, Platform::IOS));
+                builder = builder.emulation(browser_emulation(
+                    Profile::SafariIos18_1_1,
+                    Platform::IOS,
+                    false,
+                ));
             }
             Self::SafariIos16 => {
-                builder =
-                    builder.emulation(browser_emulation(Profile::SafariIos16_5, Platform::IOS));
+                builder = builder.emulation(browser_emulation(
+                    Profile::SafariIos16_5,
+                    Platform::IOS,
+                    false,
+                ));
             }
             Self::FirefoxAndroid135 => {
                 builder = builder.emulation(browser_emulation(
                     Profile::FirefoxAndroid135,
                     Platform::Android,
+                    false,
                 ));
             }
             Self::Chromium100Era => {
-                builder =
-                    builder.emulation(browser_emulation(Profile::Chrome100, Platform::Android));
+                builder = builder.emulation(browser_emulation(
+                    Profile::Chrome100,
+                    Platform::Android,
+                    false,
+                ));
             }
             Self::Okhttp39 => {
-                builder =
-                    builder.emulation(browser_emulation(Profile::OkHttp3_9, Platform::Android));
+                builder = builder.emulation(browser_emulation(
+                    Profile::OkHttp3_9,
+                    Platform::Android,
+                    false,
+                ));
             }
             Self::Chrome149 => {
                 builder = builder.emulation(browser_emulation(
                     Profile::Chrome149,
                     self.required_platform(platform)?.into(),
+                    false,
                 ));
             }
         }
@@ -456,11 +474,13 @@ pub enum TransportObservationCompleteness {
     Partial,
 }
 
-fn browser_emulation(profile: Profile, platform: Platform) -> Emulation {
+/// Configure a browser profile, with application headers included only when requested.
+#[must_use = "the resulting emulation is applied to a client or request"]
+pub fn browser_emulation(profile: Profile, platform: Platform, headers: bool) -> Emulation {
     Emulation::builder()
         .profile(profile)
         .platform(platform)
-        .headers(false)
+        .headers(headers)
         .http2(true)
         .build()
 }

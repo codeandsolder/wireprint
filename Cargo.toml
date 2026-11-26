@@ -6,6 +6,10 @@ rust-version = "1.100.0"
 description = "Cross-layer HTTP edge fingerprinting and benign request-identity differential tooling"
 repository = "https://github.com/codeandsolder/wireprint"
 
+[workspace]
+members = ["crates/wireprint-transport"]
+resolver = "3"
+
 [dependencies]
 anyhow = "1"
 async-compression = { version = "0.4", features = ["tokio", "gzip", "brotli", "zlib"] }
@@ -33,7 +37,7 @@ sha2 = "0.11"
 tokio = { version = "1.52", features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }
 url = "2.5"
 wreq = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "aad8f97d78e40c4c9fc0ddbb0cf88af870f848ac", features = ["gzip", "brotli", "deflate", "stream"] }
-wreq-util = { git = "https://github.com/codeandsolder/cargo-patches.git", tag = "wreq-util-v0.0.2", features = ["tokio-rt"] }
+wireprint-transport = { path = "crates/wireprint-transport", version = "0.1.0" }
 
 [dev-dependencies]
 pretty_assertions = "1"
@@ -42,7 +46,10 @@ pretty_assertions = "1"
 wreq = { git = "https://github.com/codeandsolder/wreq-exp.git", rev = "aad8f97d78e40c4c9fc0ddbb0cf88af870f848ac" }
 
 zlib-rs = { git = "https://github.com/codeandsolder/zlib-rs-fast.git", rev = "1ec3a5612ee28803a7756fa52bd013389507a2db" }
-[lints.rust]
+[lints]
+workspace = true
+
+[workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
 missing_debug_implementations = "warn"
 rust_2024_compatibility = { level = "warn", priority = -1 }
@@ -51,7 +58,7 @@ unfulfilled_lint_expectations = "deny"
 unused_results = "warn"
 unused_qualifications = "warn"
 
-[lints.clippy]
+[workspace.lints.clippy]
 correctness = { level = "deny", priority = -1 }
 suspicious = { level = "deny", priority = -1 }
 style = { level = "deny", priority = -1 }
@@ -71,7 +78,7 @@ await_holding_lock = "deny"
 allow_attributes = "deny"
 allow_attributes_without_reason = "deny"
 
-[lints.rustdoc]
+[workspace.lints.rustdoc]
 broken_intra_doc_links = "deny"
 private_intra_doc_links = "warn"
 missing_crate_level_docs = "warn"

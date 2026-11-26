@@ -25,7 +25,7 @@ pub mod routing_audit;
 pub mod routing_context;
 pub mod tls;
 pub mod tls_probe;
-pub mod transport;
+pub use wireprint_transport as transport;
 
 pub use address_family::AddressFamily;
 pub use cf_ray::{CF_RAY_PROVENANCE_VERSION, detect_cf_ray_provenance};

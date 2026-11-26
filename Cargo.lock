@@ -2261,6 +2261,17 @@ dependencies = [
  "tokio-util",
  "tower-service",
  "url",
+ "wireprint-transport",
+ "wreq",
+]
+
+[[package]]
+name = "wireprint-transport"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "serde",
  "wreq",
  "wreq-util",
 ]
@@ -2303,6 +2314,7 @@ source = "git+https://github.com/codeandsolder/cargo-patches.git?tag=wreq-util-v
 dependencies = [
  "brotli",
  "flate2",
+ "serde",
  "typed-builder",
  "wreq",
  "zstd",
