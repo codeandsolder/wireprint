@@ -1,5 +1,8 @@
 //! Reusable transport profile configuration, independent of diagnostic probes.
 
+#[cfg(feature = "smithy")]
+pub mod smithy;
+
 use std::collections::HashSet;
 
 use anyhow::{Result, bail};
