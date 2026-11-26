@@ -21,7 +21,7 @@ env:
 jobs:
   strict-rust:
     name: Strict Rust
-    uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@7d0552029497cf094787c3593f804d5bce137c4b # main
+    uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@cc0c19b7564aaf100c6a802826b0224c87d19b88 # main
     with:
       cargo-args: "--locked --workspace --all-targets --all-features"
       allow-test-panics: true
@@ -30,7 +30,7 @@ jobs:
     name: Native nightly Linux checks and tests
     permissions:
       contents: read
-    uses: codeandsolder/ci-workflows/.github/workflows/rust-sccache.yml@83ceff49d93d152cd95a1c9d6addb5cf03169477 # main
+    uses: codeandsolder/ci-workflows/.github/workflows/rust-sccache.yml@3f6eb6d7cc2125a063bec3a23de8457d2fff29a3 # main
     with:
       runner: ubuntu-26.04
       rust-components: "clippy rustfmt"
