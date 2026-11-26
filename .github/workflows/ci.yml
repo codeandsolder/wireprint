@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  merge_group:
   workflow_dispatch:
 
 concurrency:
@@ -51,3 +52,13 @@ jobs:
         CARGO_BUILD_WARNINGS=deny cargo check --locked --workspace --all-targets --all-features
         cargo test --locked --workspace --all-features
         RUSTDOCFLAGS='-D warnings' cargo doc --locked --workspace --all-features --no-deps
+
+  merge-gate:
+    name: CI merge gate
+    if: ${{ always() }}
+    needs: [rust-current-linux]
+    uses: codeandsolder/ci-workflows/.github/workflows/merge-gate.yml@343303848026ed142e48a6a82e7a889080b99b26 # main
+    with:
+      needs-json: ${{ toJSON(needs) }}
+      expected-results: |
+        [["rust-current-linux","success"]]
