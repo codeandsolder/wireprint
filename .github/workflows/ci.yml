@@ -24,7 +24,7 @@ jobs:
     name: Native nightly Linux checks and tests
     permissions:
       contents: read
-    uses: codeandsolder/ci-workflows/.github/workflows/rust-sccache.yml@5991b873ab28ec8fae36c2c8ef944a3f67f5f9b3 # main
+    uses: codeandsolder/ci-workflows/.github/workflows/rust-sccache.yml@db22785ec97c653cf0ec96b6964ded8158436f3c # main
     with:
       runner: ubuntu-26.04
       rust-components: "clippy rustfmt"
@@ -57,7 +57,7 @@ jobs:
     name: CI merge gate
     if: ${{ always() }}
     needs: [rust-current-linux]
-    uses: codeandsolder/ci-workflows/.github/workflows/merge-gate.yml@5991b873ab28ec8fae36c2c8ef944a3f67f5f9b3 # main
+    uses: codeandsolder/ci-workflows/.github/workflows/merge-gate.yml@db22785ec97c653cf0ec96b6964ded8158436f3c # main
     with:
       needs-json: ${{ toJSON(needs) }}
       expected-results: |
