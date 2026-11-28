@@ -1,0 +1,5 @@
+
+[[allow_overlap]]
+package = "wireprint"
+providers = ["btls", "rustls"]
+reason = "Independent TLS transport implementations are intentional experimental axes of the cross-layer fingerprinting tool."
